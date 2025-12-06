@@ -2,8 +2,8 @@
 const nextConfig = {
   reactStrictMode: true,
   async rewrites() {
-    // Use Railway private domain if available, otherwise localhost
-    const vncHost = process.env.RAILWAY_PRIVATE_DOMAIN || 'localhost';
+    // VNC server runs in the same container via supervisor, so use localhost
+    const vncHost = 'localhost';
     const vncPort = process.env.VNC_PORT || '6080';
 
     return [

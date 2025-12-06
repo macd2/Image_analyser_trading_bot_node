@@ -14,15 +14,16 @@ export async function GET() {
     // noVNC port (default 6080)
     const vncPort = process.env.VNC_PORT || '6080';
 
-    // Railway private domain for internal connections
-    const railwayPrivateDomain = process.env.RAILWAY_PRIVATE_DOMAIN || 'localhost';
+    // For Railway internal connections, use localhost (works within the same container)
+    // Railway's supervisor runs all services in the same container
+    const vncHost = 'localhost';
 
     // Try to detect if VNC server is actually running by checking if we can reach it
     let vncServerReachable = false;
     if (enableVnc) {
       try {
-        // Try to fetch the noVNC index page using Railway private domain
-        const vncCheckUrl = `http://${railwayPrivateDomain}:${vncPort}/vnc.html`;
+        // Try to fetch the noVNC index page (localhost since supervisor runs in same container)
+        const vncCheckUrl = `http://${vncHost}:${vncPort}/vnc.html`;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout
 
@@ -35,7 +36,7 @@ export async function GET() {
         vncServerReachable = response.ok;
         console.log(`VNC server check: ${vncCheckUrl} - ${response.ok ? 'OK' : 'FAILED'}`);
       } catch (error) {
-        console.log(`VNC server not reachable at ${railwayPrivateDomain}:${vncPort}:`, error instanceof Error ? error.message : 'Unknown error');
+        console.log(`VNC server not reachable at ${vncHost}:${vncPort}:`, error instanceof Error ? error.message : 'Unknown error');
         vncServerReachable = false;
       }
     }
@@ -51,12 +52,12 @@ export async function GET() {
       enableVnc,
       vncServerReachable,
       vncPort,
-      railwayPrivateDomain,
+      vncHost,
       vncUrl,
       message: available
         ? 'VNC server available'
         : enableVnc
-          ? `VNC enabled but server not reachable at ${railwayPrivateDomain}:${vncPort}`
+          ? `VNC enabled but server not reachable at ${vncHost}:${vncPort}`
           : 'VNC not enabled (set ENABLE_VNC=true in environment)'
     });
   } catch (error) {
