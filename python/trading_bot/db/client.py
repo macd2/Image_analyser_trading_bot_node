@@ -25,14 +25,23 @@ from typing import Any, List, Tuple, Optional, Union
 # Database configuration
 DB_TYPE = os.getenv('DB_TYPE', 'sqlite')
 DATABASE_URL = os.getenv('DATABASE_URL', '')
+
+# Unified data folder at project root: ./data/
+# Path resolution: client.py -> db -> trading_bot -> python -> PROJECT_ROOT -> data
 DB_DIR = Path(__file__).parent.parent.parent.parent / "data"
-DB_PATH = DB_DIR / "trading.db"
+DB_PATH = os.getenv('TRADING_DB_PATH', str(DB_DIR / "trading.db"))
+if not Path(DB_PATH).is_absolute():
+    # If relative path from env, resolve relative to project root
+    DB_PATH = Path(__file__).parent.parent.parent.parent / DB_PATH
+else:
+    DB_PATH = Path(DB_PATH)
 
 
 def get_db_path() -> Path:
     """Get the path to trading.db, creating directory if needed."""
-    DB_DIR.mkdir(parents=True, exist_ok=True)
-    return DB_PATH
+    db_path = Path(DB_PATH) if isinstance(DB_PATH, str) else DB_PATH
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    return db_path
 
 
 def get_connection():

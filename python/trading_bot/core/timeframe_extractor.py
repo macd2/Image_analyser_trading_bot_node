@@ -1,6 +1,7 @@
 import base64
 import io
 import logging
+from pathlib import Path
 from typing import Optional
 
 import requests
@@ -9,7 +10,12 @@ from dotenv import load_dotenv
 from trading_bot.core.secrets_manager import get_openai_api_key
 from trading_bot.config.settings_v2 import ConfigV2
 
-load_dotenv()
+# Load .env.local from project root (unified env file)
+_env_path = Path(__file__).parent.parent.parent.parent / '.env.local'
+if _env_path.exists():
+    load_dotenv(_env_path)
+else:
+    load_dotenv()
 
 class TimeframeExtractor:
     def __init__(self, config: Optional[ConfigV2] = None):

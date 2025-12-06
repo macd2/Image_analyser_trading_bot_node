@@ -24,11 +24,13 @@
 # =================================================================================
 
 # File Paths Configuration
+# All paths relative to project root (not python/ folder)
+# Unified data folder used by both dashboard and Python bot
 paths:
-  database: "trading_bot/data/analysis_results.db"
-  charts: "trading_bot/data/charts"
+  database: "data/analysis_results.db"
+  charts: "data/charts"
   logs: "logs"
-  session_file: "trading_bot/data/"
+  session_file: "data/"
 
 # Logging Configuration
 logging:

@@ -67,7 +67,8 @@ class PathManager:
 
     @property
     def data_dir(self) -> Path:
-        """Path to the data directory."""
+        """Path to the unified data directory at project root."""
+        # All data (charts, dbs, session files) stored in PROJECT_ROOT/data/
         return self.prototype_root / "data"
 
     @property

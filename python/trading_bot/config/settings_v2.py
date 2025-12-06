@@ -15,7 +15,12 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env.local from project root (unified env file)
+_env_path = Path(__file__).parent.parent.parent.parent / '.env.local'
+if _env_path.exists():
+    load_dotenv(_env_path)
+else:
+    load_dotenv()  # Fallback to default .env lookup
 
 logger = logging.getLogger(__name__)
 

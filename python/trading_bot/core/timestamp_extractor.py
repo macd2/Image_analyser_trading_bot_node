@@ -7,11 +7,17 @@ from typing import Dict, Any, Optional
 import requests
 from PIL import Image
 from dotenv import load_dotenv
+from pathlib import Path
 from trading_bot.core.secrets_manager import get_openai_api_key
 from trading_bot.core.timestamp_validator import TimestampValidator
 from trading_bot.config.settings_v2 import ConfigV2
 
-load_dotenv()
+# Load .env.local from project root (unified env file)
+_env_path = Path(__file__).parent.parent.parent.parent / '.env.local'
+if _env_path.exists():
+    load_dotenv(_env_path)
+else:
+    load_dotenv()
 
 class TimestampExtractor:
     def __init__(self, config: Optional[ConfigV2] = None):

@@ -1,53 +1,223 @@
-# dependencies
-/node_modules
-/.pnpm-store
-/yarn.lock
-/package-lock.json
-/pnpm-lock.yaml
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
-# testing
-/coverage
+# C extensions
+*.so
 
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
 *.pem
+*.csv
+*.jpg
+*.png
+**/logs/**
+trading_bot/data/
+trading_bot/data/**
+.tradingview_session_*
+*tradingview_session*
+# Idenitfier
+*:Zone.Identifier
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# debug
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other info into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   having no cross-platform support, pipenv may install dependencies that don't work, or not
+#   install all needed dependencies.
+#Pipfile.lock
+
+# poetry
+#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
+#   This is especially recommended for binary packages to ensure reproducibility, and is more
+#   commonly ignored for libraries.
+#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
+#poetry.lock
+
+# pdm
+#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
+#pdm.lock
+#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
+#   in version control.
+#   https://pdm.fming.dev/#use-with-ide
+.pdm.toml
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# Tests
+.Tests/
+
+# Docker secrets (production)
+docker/secrets/
+docker/secrets/*
+*.txt
+!docker/secrets/.secrets.template
+prompt_performance/raw_outputs/
+
+# Next.js specific
+.next/
+.out/
+node_modules/
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-store/
 
-# local env files
-.env
+# Next.js build outputs
+.next/cache/
+.next/static/
+.next/server/
+
+
+# Local environment files
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
-# IDE
-.vscode
-.idea
-*.swp
-*.swo
+# Test and coverage
+coverage/
+nyc_output/
 
-# Database (SQLite for dev - use PostgreSQL in production)
-/data/*.db
-/data/*.db-wal
-/data/*.db-shm
+# TypeScript
+tsconfig.tsbuildinfo
 
-# Charts and runtime data
-/data/charts/
-/data/*.png
-/data/*.json
+# Misc
+.DS_Store
+*.local
 
-# Python runtime data (legacy - now consolidated to /data/)
-/python/trading_bot/data/
-*.bk
+# Python specific additions for this project
+# Unified data folder (used by both dashboard and Python bot)
+data/
+
+# Legacy Python data folder (no longer used)
+python/trading_bot/data/
+
+
 

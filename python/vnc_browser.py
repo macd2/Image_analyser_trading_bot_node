@@ -148,7 +148,12 @@ class InteractiveBrowser:
         """Get session file path (same logic as sourcer)."""
         import os
         from dotenv import load_dotenv
-        load_dotenv()
+        # Load .env.local from project root (unified env file)
+        _env_path = Path(__file__).parent.parent / '.env.local'
+        if _env_path.exists():
+            load_dotenv(_env_path)
+        else:
+            load_dotenv()
 
         username = os.getenv('TRADINGVIEW_EMAIL', '')
         # Sanitize for filename

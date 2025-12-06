@@ -13,6 +13,7 @@ import path from 'path';
 export type DbType = 'sqlite' | 'postgres';
 
 const DB_TYPE: DbType = (process.env.DB_TYPE as DbType) || 'sqlite';
+// Unified data folder at project root: ./data/
 const TRADING_DB_PATH = process.env.TRADING_DB_PATH || path.join(process.cwd(), 'data', 'trading.db');
 const DATABASE_URL = process.env.DATABASE_URL || '';
 

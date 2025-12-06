@@ -8,9 +8,10 @@ import path from 'path';
 
 export async function GET() {
   try {
+    // Unified data folder at project root
     const chartsDir = process.env.PYTHON_CHARTS_PATH
       ? path.resolve(process.cwd(), process.env.PYTHON_CHARTS_PATH)
-      : path.resolve(process.cwd(), '../../data/charts/.backup');
+      : path.resolve(process.cwd(), 'data/charts');
 
     // Read all files in charts directory
     const files = await readdir(chartsDir);
