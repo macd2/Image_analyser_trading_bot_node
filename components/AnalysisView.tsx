@@ -26,7 +26,7 @@ export default function AnalysisView() {
       <div className="p-6">
         <div className="bg-red-900/30 border border-red-500 rounded-lg p-4 text-red-300">
           Error loading analysis data: {error}
-          <button onClick={refetch} className="ml-4 text-blue-400 hover:underline">Retry</button>
+          <button onClick={() => refetch()} className="ml-4 text-blue-400 hover:underline">Retry</button>
         </div>
       </div>
     )
@@ -46,7 +46,7 @@ export default function AnalysisView() {
           <p className="text-slate-400 text-sm">Chart analyzer with confidence scoring</p>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={refetch} className="text-slate-400 hover:text-white">
+          <button onClick={() => refetch()} className="text-slate-400 hover:text-white">
             <RefreshCw size={16} />
           </button>
           <div className="bg-slate-800 rounded-lg px-4 py-2 text-sm">
