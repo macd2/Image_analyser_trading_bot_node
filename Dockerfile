@@ -1,12 +1,13 @@
 # Multi-runtime: Node.js + Python
 FROM node:20-slim AS base
 
-# Install Python and dependencies for native modules
+# Install Python and dependencies for native modules + PostgreSQL client
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
     build-essential \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3 /usr/bin/python
 
