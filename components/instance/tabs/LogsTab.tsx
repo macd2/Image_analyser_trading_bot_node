@@ -34,9 +34,17 @@ interface RunWithLogs {
 const levelColors: Record<LogLevel, string> = {
   all: 'text-slate-300',
   error: 'text-red-400',
-  warning: 'text-yellow-400',
+  warning: 'text-amber-400',
   info: 'text-blue-400',
   debug: 'text-slate-400',
+}
+
+const levelLabels: Record<LogLevel, string> = {
+  all: 'All',
+  error: 'Errors',
+  warning: 'Warnings',
+  info: 'Info',
+  debug: 'Debug',
 }
 
 export function LogsTab({ instanceId }: LogsTabProps) {
@@ -151,11 +159,13 @@ export function LogsTab({ instanceId }: LogsTabProps) {
                 variant={filter === level ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => setFilter(level)}
-                className="h-7 px-2 text-xs"
+                className="h-7 px-3 text-xs"
               >
-                {level === 'all' ? 'All' : level.charAt(0).toUpperCase()}
+                <span className={level !== 'all' ? levelColors[level] : ''}>
+                  {levelLabels[level]}
+                </span>
                 {level !== 'all' && logCounts[level] > 0 && (
-                  <span className={`ml-1 ${levelColors[level]}`}>{logCounts[level]}</span>
+                  <span className="ml-1.5 text-slate-400">({logCounts[level]})</span>
                 )}
               </Button>
             ))}
