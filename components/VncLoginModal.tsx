@@ -178,7 +178,7 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm, loginState }
             </button>
             <button
               onClick={handleConfirm}
-              disabled={!loginState.browser_opened || confirming}
+              disabled={confirming}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
             >
               {confirming ? (
