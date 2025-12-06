@@ -10,7 +10,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 # Import centralized database client
-from trading_bot.db.client import get_connection, get_db_path
+from trading_bot.db.client import get_connection, get_db_path, DB_TYPE
 
 
 SCHEMA_SQL = """
@@ -278,8 +278,13 @@ CREATE INDEX IF NOT EXISTS idx_error_timestamp ON error_logs(timestamp);
 """
 
 
-def run_migrations(conn: sqlite3.Connection) -> None:
+def run_migrations(conn) -> None:
     """Run database migrations for existing databases BEFORE schema init."""
+    # Skip migrations for PostgreSQL - schema is managed externally (Supabase)
+    if DB_TYPE == 'postgres':
+        print("📦 PostgreSQL mode - skipping SQLite migrations")
+        return
+
     cursor = conn.cursor()
 
     # Check if recommendations table exists first
@@ -334,18 +339,28 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     cursor.close()
 
 
-def init_schema(conn: sqlite3.Connection) -> None:
+def init_schema(conn) -> None:
     """Initialize the database schema."""
     # Run migrations FIRST for existing databases
     run_migrations(conn)
 
-    # Then run CREATE TABLE IF NOT EXISTS statements
+    # Skip schema init for PostgreSQL - schema is managed externally (Supabase)
+    if DB_TYPE == 'postgres':
+        print("📦 PostgreSQL mode - skipping schema init (managed by Supabase)")
+        return
+
+    # Then run CREATE TABLE IF NOT EXISTS statements (SQLite only)
     conn.executescript(SCHEMA_SQL)
     conn.commit()
 
 
-def seed_default_config(conn: sqlite3.Connection) -> None:
+def seed_default_config(conn) -> None:
     """Seed default config values if they don't exist."""
+    # Skip for PostgreSQL - config is managed externally
+    if DB_TYPE == 'postgres':
+        print("📦 PostgreSQL mode - skipping default config seed")
+        return
+
     defaults = [
         # Trading settings (symbols come from TradingView watchlist, not configured here)
         ("trading.timeframe", "1h", "string", "trading", "Trading timeframe"),
@@ -379,7 +394,7 @@ def seed_default_config(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def init_database() -> sqlite3.Connection:
+def init_database():
     """Initialize the database and return connection."""
     conn = get_connection()
     init_schema(conn)
