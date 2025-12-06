@@ -56,7 +56,7 @@ function InstanceCardForNewDesign({ instance, onAction }: { instance: InstanceCa
             </div>
             <div>
               <div className="text-slate-400 text-xs">Win Rate</div>
-              <div className="text-white font-semibold">{(instance.win_rate * 100).toFixed(0)}%</div>
+              <div className="text-white font-semibold">{instance.win_rate.toFixed(0)}%</div>
               <div className="text-slate-500 text-xs">-</div>
             </div>
             <div>

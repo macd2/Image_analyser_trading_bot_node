@@ -95,7 +95,7 @@ export function TradesTab({ instanceId }: TradesTabProps) {
 
   const refetch = useCallback(async () => {
     try {
-      const res = await fetch(`/api/bot/trades?group_by_run=true&instance_id=${instanceId}&limit=20`)
+      const res = await fetch(`/api/bot/trades?group_by_run=true&instance_id=${instanceId}&limit=300`)
       if (!res.ok) throw new Error('Failed to fetch trades')
       const json = await res.json()
       setData(json)
@@ -283,9 +283,9 @@ export function TradesTab({ instanceId }: TradesTabProps) {
                                 <div className="flex flex-col gap-1">
                                   {/* Trade Type Badge (Paper vs Live) */}
                                   <span className={`text-xs px-2 py-0.5 rounded text-center ${
-                                    trade.dry_run === 1 ? 'bg-yellow-900/50 text-yellow-400' : 'bg-blue-900/50 text-blue-400'
+                                    trade.dry_run === 1 || trade.status === 'paper_trade' ? 'bg-yellow-900/50 text-yellow-400' : 'bg-blue-900/50 text-blue-400'
                                   }`}>
-                                    {trade.dry_run === 1 ? '📄 Paper' : '💰 Live'}
+                                    {trade.dry_run === 1 || trade.status === 'paper_trade' ? '📄 Paper' : '💰 Live'}
                                   </span>
                                   {/* Status Badge */}
                                   <span className={`text-xs px-2 py-0.5 rounded text-center ${
