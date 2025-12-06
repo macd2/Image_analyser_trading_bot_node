@@ -58,7 +58,9 @@ export async function GET() {
     }
 
     // Build VNC URL - use /vnc/ proxy path configured in next.config.js
-    const vncUrl = `/vnc/vnc.html?autoconnect=true&resize=scale`;
+    // Use path parameter to specify WebSocket path (relative to vnc.html location)
+    // The websockify server is at /websockify relative to the noVNC root
+    const vncUrl = `/vnc/vnc.html?autoconnect=true&resize=scale&path=websockify`;
 
     // VNC is available if enabled AND server is reachable
     const available = enableVnc && vncServerReachable;
