@@ -322,7 +322,7 @@ class StateManager:
                 exec_record.exec_value,
                 exec_record.exec_fee,
                 exec_record.exec_pnl,
-                1 if exec_record.is_maker else 0,
+                exec_record.is_maker,  # Pass boolean directly
                 exec_record.exec_time,
             ))
             self._db.commit()

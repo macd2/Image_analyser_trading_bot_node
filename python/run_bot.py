@@ -202,7 +202,7 @@ class TradingBot:
             self.instance_id,  # Link to parent instance
             datetime.now(timezone.utc).isoformat(),
             timeframe,
-            1 if self.paper_trading else 0,
+            self.paper_trading,  # Pass boolean directly (works for both SQLite and PostgreSQL)
             self.config.trading.min_confidence_threshold,
             self.config.trading.leverage,
             json.dumps(config_snapshot),

@@ -219,7 +219,7 @@ class TradingEngine:
                 signal.get("take_profit", 0),
                 "rejected",
                 rejection_reason,
-                1 if self.paper_trading else 0,
+                self.paper_trading,  # Pass boolean directly
                 signal.get("confidence", 0),
                 signal.get("rr_ratio", 0),
                 signal.get("timeframe"),
@@ -523,7 +523,7 @@ class TradingEngine:
                 trade.get("confidence"),
                 trade.get("rr_ratio"),
                 trade.get("timeframe"),  # Store timeframe for chart display
-                1 if self.paper_trading else 0,  # Set dry_run flag
+                self.paper_trading,  # Pass boolean directly
                 trade["timestamp"].isoformat(),
             ))
             self._db.commit()
