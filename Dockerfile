@@ -1,7 +1,7 @@
 # Multi-runtime: Node.js + Python
 FROM node:20-slim AS base
 
-# Install Python and dependencies for native modules + PostgreSQL client + Playwright/Chromium dependencies
+# Install Python and dependencies for native modules + PostgreSQL client + Playwright/Chromium dependencies + VNC
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
@@ -39,6 +39,12 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     libu2f-udev \
     libvulkan1 \
+    # VNC server dependencies
+    xvfb \
+    x11vnc \
+    fluxbox \
+    supervisor \
+    net-tools \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3 /usr/bin/python
 
@@ -62,22 +68,34 @@ RUN python3 -m pip install --break-system-packages -r python/requirements.txt
 ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/playwright
 RUN python3 -m playwright install chromium --with-deps
 
+# Install noVNC for web-based VNC access
+RUN wget -qO- https://github.com/novnc/noVNC/archive/v1.4.0.tar.gz | tar xz -C /opt && \
+    mv /opt/noVNC-1.4.0 /opt/noVNC && \
+    ln -s /opt/noVNC/vnc.html /opt/noVNC/index.html && \
+    wget -qO- https://github.com/novnc/websockify/archive/v0.11.0.tar.gz | tar xz -C /opt && \
+    mv /opt/websockify-0.11.0 /opt/websockify
+
 # Copy all source code
 COPY . .
 
 # Build Next.js
 RUN pnpm build
 
-# Create data directories
-RUN mkdir -p data/charts data/charts/.backup logs
+# Create data directories and log directories
+RUN mkdir -p data/charts data/charts/.backup logs /var/log/supervisor
 
-# Expose port
+# Copy supervisor configuration
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Expose ports
 EXPOSE 3000
+EXPOSE 6080
 
-# Set environment
+# Set environment variables
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV DISPLAY=:99
 
-# Start the server
-CMD ["pnpm", "start"]
+# Start all services via supervisor
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
 

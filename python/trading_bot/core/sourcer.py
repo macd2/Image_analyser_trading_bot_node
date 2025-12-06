@@ -66,6 +66,13 @@ except ImportError:
 from trading_bot.config.settings_v2 import Config, TradingViewConfig
 from trading_bot.core.utils import check_system_resources, normalize_symbol_for_bybit # Import normalize_symbol_for_bybit
 
+
+def is_railway_environment() -> bool:
+    """Detect if running on Railway platform."""
+    return os.environ.get('RAILWAY_ENVIRONMENT') is not None or \
+           os.environ.get('RAILWAY_SERVICE_NAME') is not None
+
+
 class ChartSourcer:
     """Responsible for sourcing chart images from various sources."""
     
@@ -352,6 +359,16 @@ class ChartSourcer:
                     return False
                 
                 try:
+                    # Detect Railway environment and auto-enable VNC mode
+                    on_railway = is_railway_environment()
+                    if on_railway:
+                        self.logger.info("🚂 Railway environment detected - enabling VNC mode")
+                        # Force VNC mode on Railway
+                        self.tv_config.browser.use_vnc = True
+                        self.tv_config.browser.vnc_display = ':99'
+                        # Ensure DISPLAY is set
+                        os.environ['DISPLAY'] = ':99'
+
                     # Prepare Firefox-specific browser arguments - optimized for both local and server environments
                     browser_args = []
 
