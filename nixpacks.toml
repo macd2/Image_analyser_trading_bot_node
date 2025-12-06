@@ -1,9 +1,8 @@
 # Nixpacks configuration for Railway deployment
-# Specifies Node.js 20, pnpm, and Python for native module compilation
+# Specifies Node.js 20 and Python for native module compilation
 
 [phases.setup]
-nixPkgs = ["nodejs_20", "python3", "gcc", "gnumake"]
-cmds = ["npm install -g pnpm"]
+nixPkgs = ["nodejs_20", "nodePackages.pnpm", "python3", "gcc", "gnumake"]
 
 [phases.install]
 cmds = ["pnpm install"]
