@@ -16,13 +16,18 @@ Railway supports exposing TCP ports (like VNC) using **TCP Proxy** feature.
 
 ### Step 1: Enable TCP Proxy in Railway
 
+**For Desktop VNC Clients (RealVNC, TigerVNC, etc.):**
 1. Go to your Railway project
 2. Click on your service
 3. Go to **Settings** tab
 4. Scroll to **Public Networking** section
 5. Click **Add TCP Proxy**
-6. Enter port: `6080` (noVNC WebSocket port)
+6. Enter port: `5900` (x11vnc VNC server port)
 7. Railway will generate a public address like: `interchange.proxy.rlwy.net:13575`
+
+**For Web Browser (noVNC) - Optional:**
+1. Add another TCP Proxy for port: `6080` (noVNC WebSocket port)
+2. Railway will generate another address like: `interchange.proxy.rlwy.net:13576`
 
 ### Step 2: Configure Environment Variables
 
@@ -33,13 +38,16 @@ Add these environment variables in Railway:
 ENABLE_VNC=true
 VNC_PORT=6080
 
-# Railway TCP Proxy configuration (get these from Railway dashboard)
+# Railway TCP Proxy configuration for VNC (port 5900)
+# Get these from Railway dashboard after adding TCP Proxy for port 5900
 # Example: interchange.proxy.rlwy.net:13575
 RAILWAY_TCP_PROXY_DOMAIN=interchange.proxy.rlwy.net
 RAILWAY_TCP_PROXY_PORT=13575
 ```
 
-**Important**: Replace `interchange.proxy.rlwy.net` and `13575` with the actual values from Railway's TCP Proxy settings.
+**Important**:
+- Add TCP Proxy for port **5900** (not 6080) for desktop VNC clients
+- Replace `interchange.proxy.rlwy.net` and `13575` with the actual values from Railway's TCP Proxy settings for port 5900
 
 ### Step 3: Deploy
 
@@ -135,10 +143,24 @@ The bot will use the saved session until it expires again.
 
 ## Architecture
 
+### Desktop VNC Client (RealVNC, TigerVNC)
 ```
-User's VNC Client
+User's VNC Client (RealVNC)
        ↓
-Railway TCP Proxy (interchange.proxy.rlwy.net:13575)
+Railway TCP Proxy for port 5900 (interchange.proxy.rlwy.net:13575)
+       ↓
+x11vnc VNC Server (localhost:5900)
+       ↓
+Xvfb Virtual Display (:99)
+       ↓
+Playwright Browser (Chromium)
+```
+
+### Web Browser (noVNC)
+```
+User's Web Browser
+       ↓
+Railway TCP Proxy for port 6080 (interchange.proxy.rlwy.net:13576)
        ↓
 noVNC WebSocket Server (localhost:6080)
        ↓
