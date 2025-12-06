@@ -83,29 +83,30 @@ class ChartSourcer:
         # Debug directory same as data dir
         self.debug_dir = self.data_dir
         self.tv_config = self.config.tradingview
-        
+
         # TradingView automation state
         self.browser = None
         self.context = None
         self.page = None
         self.session_data = None
         self.last_request_time = 0.0
-        
+
         # Setup logging
         self.logger = logging.getLogger(__name__)
-        
+
         # Analysis queue for parallel processing
         self.analysis_queue = queue.Queue()
         self.analysis_results = {}
-        
+
         # Check TradingView availability
         self.tradingview_enabled = (
             TRADINGVIEW_AVAILABLE and
+            self.tv_config is not None and
             self.tv_config.enabled and
             self._check_credentials()
         )
-        
-        if not self.tradingview_enabled and self.tv_config.enabled:
+
+        if not self.tradingview_enabled and self.tv_config is not None and self.tv_config.enabled:
             self.logger.warning(
                 "TradingView automation disabled: missing dependencies or credentials"
             )
