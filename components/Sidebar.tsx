@@ -15,10 +15,16 @@ interface EnvConfig {
   storage_type: 'local' | 'supabase'
 }
 
+interface SimulatorStatus {
+  running: boolean
+  last_check: string | null
+}
+
 export default function Sidebar() {
   const pathname = usePathname()
   const [instanceStatus, setInstanceStatus] = useState<InstanceStatus>({ runningCount: 0, totalCount: 0 })
   const [envConfig, setEnvConfig] = useState<EnvConfig | null>(null)
+  const [simulatorStatus, setSimulatorStatus] = useState<SimulatorStatus>({ running: false, last_check: null })
 
   // Poll instance status every 5 seconds
   useEffect(() => {
@@ -44,6 +50,25 @@ export default function Sidebar() {
     return () => clearInterval(interval)
   }, [])
 
+  // Poll simulator status every 5 seconds
+  useEffect(() => {
+    const fetchSimulatorStatus = async () => {
+      try {
+        const res = await fetch('/api/bot/simulator/monitor')
+        if (res.ok) {
+          const data = await res.json()
+          setSimulatorStatus({ running: data.running, last_check: data.last_check })
+        }
+      } catch {
+        // Ignore fetch errors
+      }
+    }
+
+    fetchSimulatorStatus()
+    const interval = setInterval(fetchSimulatorStatus, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
   // Fetch env config once on mount
   useEffect(() => {
     fetch('/api/config/env')
@@ -55,7 +80,7 @@ export default function Sidebar() {
   const tabs = [
     { id: 'dashboard', href: '/', label: 'Dashboard', icon: BarChart3, desc: 'Overview' },
     { id: 'instances', href: '/instances', label: 'Instances', icon: Activity, desc: 'Instance View', showInstanceCount: true },
-    { id: 'simulator', href: '/simulator', label: 'Simulator', icon: Zap, desc: 'Paper Trade Sim' },
+    { id: 'simulator', href: '/simulator', label: 'Simulator', icon: Zap, desc: 'Paper Trade Sim', showSimulatorStatus: true },
     { id: 'bot', href: '/bot', label: 'Bot Control', icon: Bot, desc: 'Start/Stop Bot' },
     { id: 'browser', href: '/browser', label: 'Browser View', icon: Monitor, desc: 'Live Debug' },
     { id: 'logs', href: '/logs', label: 'Log Trail', icon: Activity, desc: 'Audit Trail' },
@@ -81,6 +106,7 @@ export default function Sidebar() {
           const Icon = tab.icon
           const isActive = pathname === tab.href || (tab.id === 'learning' && (pathname === '/backtest' || pathname === '/find-best-prompt'))
           const showInstanceCount = tab.showInstanceCount
+          const showSimulatorStatus = 'showSimulatorStatus' in tab && tab.showSimulatorStatus
           return (
             <div key={tab.id}>
               <Link
@@ -93,6 +119,17 @@ export default function Sidebar() {
                 <div className="flex-1">
                   <div className="text-sm font-medium flex items-center gap-1.5">
                     {tab.label}
+                    {/* Simulator status indicator */}
+                    {showSimulatorStatus && (
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          simulatorStatus.running
+                            ? 'bg-green-500 animate-pulse'
+                            : 'bg-slate-500'
+                        }`}
+                        title={simulatorStatus.running ? 'Auto-monitor running' : 'Auto-monitor stopped'}
+                      />
+                    )}
                     {/* Running instances count for Bot Control */}
                     {showInstanceCount && (
                       <span

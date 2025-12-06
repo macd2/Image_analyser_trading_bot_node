@@ -1,7 +1,32 @@
 import { createServer } from 'http';
 import { parse } from 'url';
 import next from 'next';
+import fs from 'fs';
+import path from 'path';
 import { initSocketServer } from './lib/ws/socket-server';
+
+// Auto-start simulator monitor on server boot
+function startSimulatorMonitor() {
+  const statusFile = path.join(process.cwd(), 'data', 'simulator_status.json');
+  const dir = path.dirname(statusFile);
+
+  // Ensure data directory exists
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  const status = {
+    running: true,
+    last_check: null,
+    trades_checked: 0,
+    trades_closed: 0,
+    next_check: null,
+    results: []
+  };
+
+  fs.writeFileSync(statusFile, JSON.stringify(status, null, 2));
+  console.log('  ➜  Simulator: Auto-monitor started');
+}
 
 // Handle uncaught exceptions from WebSocket timeouts and DB pooler errors gracefully
 process.on('uncaughtException', (err: Error & { code?: string }) => {
@@ -74,11 +99,14 @@ app.prepare().then(() => {
   httpServer.listen(port, () => {
     console.log(`
   🚀 V2 Trading Bot Dashboard (with Real-Time)
-  
+
   ➜  Local:   http://${hostname}:${port}
   ➜  Mode:    ${dev ? 'development' : 'production'}
   ➜  WS:      Bybit ${process.env.BYBIT_TESTNET === 'true' ? '(testnet)' : '(mainnet)'}
     `);
+
+    // Auto-start the simulator monitor
+    startSimulatorMonitor();
   });
 });
 
