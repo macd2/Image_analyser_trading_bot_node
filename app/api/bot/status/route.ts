@@ -60,14 +60,17 @@ from trading_bot.config.settings_v2 import ConfigV2
 from trading_bot.db.client import get_connection, query_one, query, DB_TYPE
 
 try:
+    import sys
     config = ConfigV2.load()
+    print(f"[DEBUG] Config loaded: paper_trading={config.trading.paper_trading}", file=sys.stderr)
+
     executor = OrderExecutor(testnet=False)
+    print(f"[DEBUG] OrderExecutor initialized", file=sys.stderr)
 
     # Get wallet balance
     wallet = executor.get_wallet_balance()
 
     # Log wallet response for debugging
-    import sys
     print(f"[DEBUG] Wallet response: {wallet}", file=sys.stderr)
 
     # Get positions
