@@ -10,7 +10,13 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 # Import centralized database client
-from trading_bot.db.client import get_connection, get_db_path, DB_TYPE
+from trading_bot.db.client import (
+    get_connection,
+    get_db_path,
+    should_run_migrations,
+    should_init_schema,
+    should_seed_defaults
+)
 
 
 SCHEMA_SQL = """
@@ -281,7 +287,7 @@ CREATE INDEX IF NOT EXISTS idx_error_timestamp ON error_logs(timestamp);
 def run_migrations(conn) -> None:
     """Run database migrations for existing databases BEFORE schema init."""
     # Skip migrations for PostgreSQL - schema is managed externally (Supabase)
-    if DB_TYPE == 'postgres':
+    if not should_run_migrations():
         print("📦 PostgreSQL mode - skipping SQLite migrations")
         return
 
@@ -345,7 +351,7 @@ def init_schema(conn) -> None:
     run_migrations(conn)
 
     # Skip schema init for PostgreSQL - schema is managed externally (Supabase)
-    if DB_TYPE == 'postgres':
+    if not should_init_schema():
         print("📦 PostgreSQL mode - skipping schema init (managed by Supabase)")
         return
 
@@ -357,7 +363,7 @@ def init_schema(conn) -> None:
 def seed_default_config(conn) -> None:
     """Seed default config values if they don't exist."""
     # Skip for PostgreSQL - config is managed externally
-    if DB_TYPE == 'postgres':
+    if not should_seed_defaults():
         print("📦 PostgreSQL mode - skipping default config seed")
         return
 

@@ -192,6 +192,78 @@ def get_timestamp_type() -> str:
     return 'TIMESTAMP' if DB_TYPE == 'postgres' else 'DATETIME'
 
 
+def get_table_name(logical_name: str) -> str:
+    """
+    Get the actual table name for the current database.
+    Handles table name differences between SQLite and PostgreSQL.
+
+    Args:
+        logical_name: Logical table name (e.g., 'klines_store', 'sessions')
+
+    Returns:
+        Actual table name for the current database
+    """
+    # Table name mappings for PostgreSQL (Supabase managed)
+    table_mappings = {
+        'klines_store': 'klines',  # PostgreSQL uses 'klines', SQLite uses 'klines_store'
+        'sessions': 'tradingview_sessions',  # PostgreSQL uses 'tradingview_sessions', SQLite uses 'sessions'
+    }
+
+    if DB_TYPE == 'postgres' and logical_name in table_mappings:
+        return table_mappings[logical_name]
+    return logical_name
+
+
+def get_boolean_value(value: bool) -> Union[bool, str]:
+    """
+    Get the appropriate boolean value for the current database.
+
+    Args:
+        value: Python boolean value
+
+    Returns:
+        For PostgreSQL: returns the boolean as-is
+        For SQLite: returns the boolean as-is (SQLite accepts both)
+
+    Note: This function exists for clarity but both databases now accept
+    Python boolean values directly. Use this for explicit conversions if needed.
+    """
+    return value
+
+
+def should_run_migrations() -> bool:
+    """
+    Check if database migrations should be run.
+
+    Returns:
+        True for SQLite (local migrations needed)
+        False for PostgreSQL (managed by Supabase)
+    """
+    return DB_TYPE != 'postgres'
+
+
+def should_init_schema() -> bool:
+    """
+    Check if schema initialization should be run.
+
+    Returns:
+        True for SQLite (local schema needed)
+        False for PostgreSQL (managed by Supabase)
+    """
+    return DB_TYPE != 'postgres'
+
+
+def should_seed_defaults() -> bool:
+    """
+    Check if default data seeding should be run.
+
+    Returns:
+        True for SQLite (local defaults needed)
+        False for PostgreSQL (managed by Supabase)
+    """
+    return DB_TYPE != 'postgres'
+
+
 def normalize_sql(sql: str) -> str:
     """
     Normalize SQL for the current database type.
@@ -287,6 +359,11 @@ __all__ = [
     'get_table_columns',
     'add_column_if_missing',
     'get_timestamp_type',
+    'get_table_name',
+    'get_boolean_value',
+    'should_run_migrations',
+    'should_init_schema',
+    'should_seed_defaults',
     'normalize_sql',
     'safe_execute',
     'DB_TYPE',

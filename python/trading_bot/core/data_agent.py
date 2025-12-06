@@ -10,7 +10,6 @@ from typing import Dict, Any, List, Optional, Union
 
 from trading_bot.db.client import (
     get_connection as get_db_connection,
-    DB_TYPE,
     get_table_columns,
     add_column_if_missing,
     get_timestamp_type,
@@ -127,9 +126,8 @@ class DataAgent:
                     columns_added.append(col_name)
                 except Exception as e:
                     print(f"⚠️  Warning: Could not add column {col_name}: {e}")
-                    # Rollback the transaction on error (PostgreSQL requirement)
-                    if DB_TYPE == 'postgres':
-                        conn.rollback()
+                    # Rollback handled by add_column_if_missing() in centralized layer
+                    conn.rollback()
 
         if columns_added:
             print(f"✅ Auto-migration: Added {len(columns_added)} missing columns to trades table: {', '.join(columns_added)}")
@@ -288,8 +286,7 @@ class DataAgent:
                 cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_order_id_unique ON trades(order_id)")
             except Exception as e:
                 # If constraint already exists or transaction is aborted, rollback and continue
-                if DB_TYPE == 'postgres':
-                    conn.rollback()
+                conn.rollback()
                 pass
             
             # Create optimized indexes for trades table

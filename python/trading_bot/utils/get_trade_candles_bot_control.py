@@ -19,7 +19,7 @@ from typing import List, Dict, Any
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Use centralized database client
-from trading_bot.db.client import get_connection, query, execute, DB_TYPE
+from trading_bot.db.client import get_connection, query, execute, get_table_name, DB_TYPE
 
 
 def _convert_timeframe_to_bybit(timeframe: str) -> str:
@@ -123,7 +123,7 @@ def _get_candles_from_db(symbol: str, timeframe: str, start_ts: int, end_ts: int
         norm_symbol = symbol[:-2] if symbol.endswith('.P') else symbol
 
         # Table name differs: 'klines' for PostgreSQL, 'klines_store' for SQLite
-        table_name = 'klines' if DB_TYPE == 'postgres' else 'klines_store'
+        table_name = get_table_name('klines_store')
 
         rows = query(conn, f"""
             SELECT symbol, timeframe, category, start_time, open_price, high_price,
@@ -161,7 +161,7 @@ def _insert_candles_to_db(candles: List[Dict[str, Any]], symbol: str, timeframe:
         norm_symbol = symbol[:-2] if symbol.endswith('.P') else symbol
 
         # Table name differs: 'klines' for PostgreSQL, 'klines_store' for SQLite
-        table_name = 'klines' if DB_TYPE == 'postgres' else 'klines_store'
+        table_name = get_table_name('klines_store')
 
         for c in candles:
             try:
