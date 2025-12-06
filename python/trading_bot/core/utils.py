@@ -1011,10 +1011,10 @@ def validate_file_timestamp_against_current_boundary(filename: str, timeframe: s
 def get_bybit_server_time(session) -> Optional[int]:
     """
     Get current server time from Bybit using existing session.
-    
+
     Args:
         session: Bybit HTTP session instance
-        
+
     Returns:
         Server timestamp in milliseconds, or None if failed
     """
@@ -1025,7 +1025,7 @@ def get_bybit_server_time(session) -> Optional[int]:
             result = response.get("result", {})
             time_second = result.get("timeSecond")
             time_nano = result.get("timeNano")
-            
+
             if time_second:
                 # Use timeSecond as primary source
                 server_time_ms = int(time_second) * 1000
@@ -1037,9 +1037,19 @@ def get_bybit_server_time(session) -> Optional[int]:
                 logger.debug(f"Server time from timeNano: {server_time_ms}")
                 return server_time_ms
         else:
-            logger.error(f"Server time API error: retCode={response.get('retCode')}, retMsg={response.get('retMsg')}")
+            # Don't log error for 403 (rate limit/geo restriction) - it's expected
+            ret_code = response.get('retCode')
+            if ret_code == 403 or '403' in str(response.get('retMsg', '')):
+                logger.debug(f"Server time API blocked (403) - using fallback offset")
+            else:
+                logger.error(f"Server time API error: retCode={ret_code}, retMsg={response.get('retMsg')}")
     except Exception as e:
-        logger.error(f"Failed to get Bybit server time: {e}")
+        # Check if it's a 403 error
+        error_msg = str(e)
+        if '403' in error_msg or 'rate limit' in error_msg.lower() or 'usa' in error_msg.lower():
+            logger.debug(f"Server time API blocked - using fallback offset")
+        else:
+            logger.error(f"Failed to get Bybit server time: {e}")
     return None
 
 
@@ -1059,21 +1069,16 @@ def sync_server_time(session) -> bool:
     current_time = time.time()
 
     # Always attempt to synchronize if called, as this function is now triggered on demand
-    logger.info("🕐 Synchronizing with Bybit server time...")
+    logger.debug("🕐 Synchronizing with Bybit server time...")
 
     local_time_ms = int(current_time * 1000)
     server_time_ms = None
 
-    # Try multiple times to get server time
-    for attempt in range(3):
-        try:
-            server_time_ms = get_bybit_server_time(session)
-            if server_time_ms is not None:
-                break # Successfully got server time
-        except Exception as e:
-            logger.warning(f"Server time sync attempt {attempt + 1} failed: {e}")
-            if attempt < 2:
-                time.sleep(0.5) # Small delay before retry
+    # Try only once to get server time (don't spam the API if it's blocked)
+    try:
+        server_time_ms = get_bybit_server_time(session)
+    except Exception as e:
+        logger.debug(f"Server time sync failed: {e}")
 
     if server_time_ms is not None:
         # Calculate offset (server_time - local_time)
@@ -1085,12 +1090,13 @@ def sync_server_time(session) -> bool:
     else:
         # If offset is still 0 (never successfully synced), use conservative fallback
         if _server_time_offset == 0:
-            _server_time_offset = 1000  # Conservative 1000ms (1 second) offset instead of 10000ms
-            logger.warning(f"⚠️ Using fallback time offset: {_server_time_offset}ms as server time sync failed.")
+            _server_time_offset = 0  # Use 0ms offset (assume local time is accurate)
+            logger.info(f"ℹ️ Using fallback time offset: {_server_time_offset}ms (server time sync unavailable)")
+        else:
+            logger.debug(f"Using current offset: {_server_time_offset}ms (server time sync unavailable)")
 
         # Update last sync time to prevent constant retries if sync repeatedly fails
         _last_sync_time = current_time
-        logger.error(f"❌ Failed to synchronize with server time. Using current offset: {_server_time_offset}ms")
         return False
 
 

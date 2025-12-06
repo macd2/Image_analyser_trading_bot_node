@@ -84,13 +84,13 @@ class BybitAPIManager:
                 timeout=30,  # Set a 30-second timeout for API calls
             )
             logger.info(f"✅ Bybit client initialized with recv_window: {recv_window_ms}ms (testnet: {self.use_testnet})")
-            
+
             # Perform initial timestamp synchronization
-            logger.info("🕐 Performing initial timestamp synchronization...")
+            logger.debug("🕐 Performing initial timestamp synchronization...")
             if self._enhanced_timestamp_sync():
                 logger.info("✅ Initial timestamp sync completed successfully")
             else:
-                logger.warning("⚠️ Initial timestamp sync failed - will retry on first API error")
+                logger.info("ℹ️ Initial timestamp sync unavailable - using local time (this is normal if API is rate-limited)")
 
         except Exception as e:
             logger.error(f"Failed to initialize Bybit client: {e}")
