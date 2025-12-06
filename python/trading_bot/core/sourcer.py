@@ -442,14 +442,20 @@ class ChartSourcer:
                         os.environ['DISPLAY'] = display
                         self.logger.info(f"📺 Using DISPLAY={display} for VNC")
 
-                        # VNC-specific browser arguments - MINIMAL flags for stability
-                        # Only essential flags - browser crashes with too many conflicting flags
+                        # CRITICAL: Clear browser_args to avoid inheriting aggressive flags from visual mode
+                        # TradingView detects --disable-web-security and crashes the browser
+                        browser_args = []
+
+                        # VNC-specific browser arguments - ULTRA MINIMAL for TradingView compatibility
+                        # TradingView is very sensitive to automation detection - keep flags minimal
                         vnc_args = [
                             f'--display={display}',
                             f'--window-size={self.tv_config.browser.vnc_window_size}',
                             '--disable-dev-shm-usage',  # Critical for limited /dev/shm in Docker
-                            '--no-sandbox',  # Required for Docker
-                            '--disable-gpu',  # No GPU on Railway
+                            '--no-sandbox',  # Required for Docker (no choice)
+                            # DO NOT add --disable-web-security (causes TradingView to crash)
+                            # DO NOT add --disable-gpu (let browser decide)
+                            # DO NOT add --disable-features (causes detection)
                         ]
                         browser_args.extend(vnc_args)
 
