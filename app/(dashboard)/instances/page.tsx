@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Plus, RefreshCw, Play } from 'lucide-react'
+import { Plus, RefreshCw, Play, TrendingUp, TrendingDown, Target, DollarSign, Brain, Beaker, FileText, Flame } from 'lucide-react'
 import { InstanceCardData } from '@/components/InstanceCard'
 import StatsBar from '@/components/StatsBar'
 import { useRealtime } from '@/hooks/useRealtime'
@@ -24,62 +24,109 @@ function InstanceCardForNewDesign({ instance, onAction }: { instance: InstanceCa
 
   const isRunning = instance.is_running
 
+  // Calculate wins/losses for win rate breakdown
+  const totalTrades = instance.total_trades
+  const winRate = instance.win_rate / 100
+  const wins = Math.round(totalTrades * winRate)
+  const losses = totalTrades - wins
+
+  // Calculate P&L percentage (assuming starting balance or using absolute value)
+  const pnl = instance.total_pnl
+  const pnlPercent = totalTrades > 0 ? (pnl / totalTrades) * 10 : 0 // Rough estimate
+
   return (
     <Link href={`/instances/${instance.id}`} className="block">
-      <div className="bg-slate-800 rounded-xl border border-slate-700 hover:border-slate-600 transition overflow-hidden">
+      <div className="bg-slate-800 rounded-xl border border-slate-700 hover:border-slate-600 hover:shadow-lg hover:shadow-slate-900/50 hover:-translate-y-0.5 transition-all duration-200 overflow-hidden">
         {/* Header */}
-        <div className="p-4 border-b border-slate-700 hover:bg-slate-700/50 transition cursor-pointer">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <h3 className="font-semibold text-white text-lg">{instance.name}</h3>
-              {isRunning ? (
-                <span className="px-2 py-0.5 text-xs font-medium bg-green-600/20 text-green-400 rounded-full flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></span>
-                  Running
-                </span>
-              ) : (
-                <span className="px-2 py-0.5 text-xs font-medium bg-slate-600/20 text-slate-400 rounded-full">
-                  Stopped
-                </span>
-              )}
-            </div>
+        <div className="p-5 border-b border-slate-700 hover:bg-slate-700/50 transition cursor-pointer">
+          <div className="flex items-start justify-between mb-2">
+            <h3 className="font-bold text-white text-xl">{instance.name}</h3>
+            {isRunning ? (
+              <span className="px-3 py-1 text-sm font-medium bg-green-600/20 text-green-400 rounded-full flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                Running
+              </span>
+            ) : (
+              <span className="px-3 py-1 text-sm font-medium bg-slate-600/20 text-slate-400 rounded-full">
+                Stopped
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 text-sm text-slate-400">
+            <Brain className="w-4 h-4" />
+            <span>{instance.prompt_name || 'No prompt set'}</span>
           </div>
         </div>
 
         {/* Stats */}
-        <div className="p-4 space-y-3">
-          <div className="grid grid-cols-3 gap-2">
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-3 gap-4">
+            {/* Trades */}
             <div>
-              <div className="text-slate-400 text-xs">Trades</div>
-              <div className="text-white font-semibold">{instance.total_trades}</div>
-              <div className="text-slate-500 text-xs">{instance.live_trades} live</div>
-            </div>
-            <div>
-              <div className="text-slate-400 text-xs">Win Rate</div>
-              <div className="text-white font-semibold">{instance.win_rate.toFixed(0)}%</div>
-              <div className="text-slate-500 text-xs">-</div>
-            </div>
-            <div>
-              <div className="text-slate-400 text-xs">P&L</div>
-              <div className={`font-semibold ${instance.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                ${instance.total_pnl.toFixed(2)}
+              <div className="flex items-center gap-1.5 text-slate-400 text-xs mb-1.5">
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>Trades</span>
               </div>
-              <div className="text-slate-500 text-xs">-</div>
+              <div className="text-white text-2xl font-bold">{instance.total_trades}</div>
+              {instance.live_trades > 0 && (
+                <div className="text-slate-400 text-xs mt-1">{instance.live_trades} live</div>
+              )}
             </div>
-          </div>
 
-          {/* Prompt */}
-          <div className="text-xs text-slate-400">
-            {instance.prompt_name || 'No prompt'}
+            {/* Win Rate */}
+            <div>
+              <div className="flex items-center gap-1.5 text-slate-400 text-xs mb-1.5">
+                <Target className="w-3.5 h-3.5" />
+                <span>Win Rate</span>
+              </div>
+              <div className="text-white text-2xl font-bold">{instance.win_rate.toFixed(0)}%</div>
+              {totalTrades > 0 && (
+                <div className="text-slate-400 text-xs mt-1">
+                  {wins}W / {losses}L
+                </div>
+              )}
+            </div>
+
+            {/* P&L with Trend Arrow */}
+            <div>
+              <div className="flex items-center gap-1.5 text-slate-400 text-xs mb-1.5">
+                <DollarSign className="w-3.5 h-3.5" />
+                <span>P&L</span>
+              </div>
+              <div className={`text-2xl font-bold ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {pnl >= 0 ? '+' : '-'}${Math.abs(pnl).toFixed(2)}
+              </div>
+              {pnl !== 0 && (
+                <div className={`flex items-center gap-0.5 text-xs mt-1 ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {pnl >= 0 ? (
+                    <TrendingUp className="w-3 h-3" />
+                  ) : (
+                    <TrendingDown className="w-3 h-3" />
+                  )}
+                  <span>{pnl >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Mode badges */}
           <div className="flex gap-2">
             {instance.config.use_testnet && (
-              <span className="px-2 py-1 text-xs bg-blue-600/20 text-blue-400 rounded">Testnet</span>
+              <span className="px-3 py-1.5 text-xs font-medium bg-blue-600/20 text-blue-400 rounded-lg flex items-center gap-1.5">
+                <Beaker className="w-3.5 h-3.5" />
+                Testnet
+              </span>
             )}
-            {instance.config.paper_trading && (
-              <span className="px-2 py-1 text-xs bg-amber-600/20 text-amber-400 rounded">Dry Run</span>
+            {instance.config.paper_trading ? (
+              <span className="px-3 py-1.5 text-xs font-medium bg-amber-600/20 text-amber-400 rounded-lg flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5" />
+                Dry Run
+              </span>
+            ) : (
+              <span className="px-3 py-1.5 text-xs font-medium bg-red-600/20 text-red-400 rounded-lg flex items-center gap-1.5">
+                <Flame className="w-3.5 h-3.5" />
+                Live Trading
+              </span>
             )}
           </div>
         </div>
