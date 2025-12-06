@@ -27,6 +27,8 @@ class LoginState:
     """Enum-like class for login states."""
     IDLE = "idle"
     WAITING_FOR_LOGIN = "waiting_for_login"
+    WAITING_FOR_BROWSER_OPEN = "waiting_for_browser_open"  # VNC mode: waiting for user to click "Open Browser"
+    BROWSER_OPEN_REQUESTED = "browser_open_requested"  # VNC mode: user clicked "Open Browser", VNC ready
     LOGIN_CONFIRMED = "login_confirmed"
     BROWSER_OPENED = "browser_opened"
 
@@ -116,6 +118,22 @@ def is_login_confirmed() -> bool:
     """Check if user has confirmed login."""
     state = get_login_state()
     return state.get("state") == LoginState.LOGIN_CONFIRMED
+
+
+def set_waiting_for_browser_open(message: str = "Click 'Open Browser' to start VNC and launch browser") -> None:
+    """Set state to waiting for browser open (VNC mode only)."""
+    set_login_state(LoginState.WAITING_FOR_BROWSER_OPEN, message, browser_opened=False)
+
+
+def set_browser_open_requested() -> None:
+    """Mark that user clicked 'Open Browser' and VNC is ready (VNC mode only)."""
+    set_login_state(LoginState.BROWSER_OPEN_REQUESTED, "VNC ready - browser launching", browser_opened=False)
+
+
+def is_browser_open_requested() -> bool:
+    """Check if user has requested browser open (VNC mode)."""
+    state = get_login_state()
+    return state.get("state") == LoginState.BROWSER_OPEN_REQUESTED
 
 
 def clear_state() -> None:

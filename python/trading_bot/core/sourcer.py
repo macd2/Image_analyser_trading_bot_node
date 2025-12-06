@@ -3268,22 +3268,46 @@ class ChartSourcer:
 
         This function:
         1. Sets login state to 'waiting_for_login' for dashboard to detect
-        2. Switches to non-headless mode so user can see the browser
-        3. Navigates to TradingView signin page
-        4. Polls for dashboard confirmation (user clicks 'Confirm Login' button)
-        5. Verifies login, saves session, and continues
+        2. In VNC mode: waits for user to click "Open Browser" button before launching browser
+        3. In local mode: immediately switches to visible browser
+        4. Navigates to TradingView signin page
+        5. Polls for dashboard confirmation (user clicks 'Confirm Login' button)
+        6. Verifies login, saves session, and continues
         """
         from trading_bot.core.login_state_manager import (
-            set_waiting_for_login, set_browser_opened, is_login_confirmed,
-            set_idle, get_login_state, LoginState
+            set_waiting_for_login, set_waiting_for_browser_open, set_browser_opened,
+            is_login_confirmed, is_browser_open_requested, set_idle, get_login_state, LoginState
         )
 
         try:
             original_headless = self.tv_config.browser.headless
 
-            # Set state so dashboard knows manual login is required
-            set_waiting_for_login("TradingView session expired - manual login required")
-            self.logger.info("🔐 Manual login required - notifying dashboard")
+            # VNC MODE: Wait for user to click "Open Browser" button before launching browser
+            if self.tv_config.browser.use_vnc:
+                self.logger.info("🖥️ VNC mode detected - waiting for user to click 'Open Browser' button")
+                set_waiting_for_browser_open("Click 'Open Browser' to start VNC and launch browser")
+
+                # Poll for browser open request (max 5 minutes)
+                max_wait_seconds = 300
+                poll_interval = 2
+                waited = 0
+
+                while waited < max_wait_seconds:
+                    if is_browser_open_requested():
+                        self.logger.info("✅ Browser open requested - VNC is ready, launching browser")
+                        break
+
+                    await asyncio.sleep(poll_interval)
+                    waited += poll_interval
+
+                if waited >= max_wait_seconds:
+                    self.logger.error("❌ Timeout waiting for browser open request")
+                    set_idle()
+                    return False
+            else:
+                # LOCAL MODE: Set state immediately
+                set_waiting_for_login("TradingView session expired - manual login required")
+                self.logger.info("🔐 Manual login required - notifying dashboard")
 
             # Switch to non-headless mode for manual login
             if self.tv_config.browser.headless:
@@ -3313,12 +3337,12 @@ class ChartSourcer:
             await self.page.wait_for_load_state('domcontentloaded')
 
             # Mark browser as opened ONLY if NOT in VNC mode
-            # In VNC mode, browser is not visible to user - they need to click "Open Browser Login" in dashboard
+            # In VNC mode, browser is not visible to user - they need to connect via VNC client
             if not self.tv_config.browser.use_vnc:
                 set_browser_opened()
                 self.logger.info("📺 Browser opened for manual login - waiting for dashboard confirmation")
             else:
-                self.logger.info("🖥️ VNC mode: Browser ready - user must click 'Open Browser Login' in dashboard")
+                self.logger.info("🖥️ VNC mode: Browser opened - connect via VNC to login")
 
             # Poll for dashboard confirmation (max 5 minutes)
             max_wait_seconds = 380

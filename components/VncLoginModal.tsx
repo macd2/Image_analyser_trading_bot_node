@@ -17,8 +17,8 @@ interface VncLoginModalProps {
 export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginModalProps) {
   const [confirming, setConfirming] = useState(false)
   const [killingVnc, setKillingVnc] = useState(false)
-  const [startingVnc, setStartingVnc] = useState(false)
-  const [vncStarted, setVncStarted] = useState(false)
+  const [openingBrowser, setOpeningBrowser] = useState(false)
+  const [browserOpened, setBrowserOpened] = useState(false)
   const [vncEnabled, setVncEnabled] = useState<boolean | null>(null)
 
   // Check if VNC is enabled when modal opens
@@ -28,15 +28,12 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
     }
   }, [isOpen, vncEnabled])
 
-  // Start VNC services when modal opens (only if VNC is enabled), reset when closed
+  // Reset state when modal closes
   useEffect(() => {
-    if (isOpen && vncEnabled === true && !vncStarted) {
-      startVncServices()
-    } else if (!isOpen && vncStarted) {
-      // Reset state when modal closes
-      setVncStarted(false)
+    if (!isOpen && browserOpened) {
+      setBrowserOpened(false)
     }
-  }, [isOpen, vncEnabled, vncStarted])
+  }, [isOpen, browserOpened])
 
   const checkVncEnabled = async () => {
     try {
@@ -50,28 +47,50 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
     }
   }
 
-  const startVncServices = async () => {
-    setStartingVnc(true)
+  const handleOpenBrowser = async () => {
+    setOpeningBrowser(true)
     try {
-      const response = await fetch('/api/vnc/control', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'start' })
-      })
-      const data = await response.json()
+      // Step 1: Start VNC services (only in VNC mode)
+      if (vncEnabled) {
+        console.log('Starting VNC services...')
+        const vncResponse = await fetch('/api/vnc/control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'start' })
+        })
+        const vncData = await vncResponse.json()
 
-      if (data.success) {
-        console.log('VNC services started successfully')
-        setVncStarted(true)
+        if (!vncData.success) {
+          console.error('Failed to start VNC:', vncData.error)
+          alert(`Failed to start VNC services: ${vncData.error || 'Unknown error'}`)
+          return
+        }
+
+        console.log('VNC services started, waiting 5 seconds for Xvfb to initialize...')
+        // Step 2: Wait 5 seconds for Xvfb to fully initialize
+        await new Promise(resolve => setTimeout(resolve, 5000))
+      }
+
+      // Step 3: Signal Python that VNC is ready and browser should launch
+      console.log('Signaling Python to launch browser...')
+      const readyResponse = await fetch('/api/vnc/browser-ready', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      const readyData = await readyResponse.json()
+
+      if (readyData.success) {
+        console.log('Browser launch signal sent successfully')
+        setBrowserOpened(true)
       } else {
-        console.error('Failed to start VNC:', data.error)
-        alert(`Failed to start VNC services: ${data.error || 'Unknown error'}`)
+        console.error('Failed to signal browser ready:', readyData.error)
+        alert(`Failed to signal browser ready: ${readyData.error || 'Unknown error'}`)
       }
     } catch (error) {
-      console.error('Failed to start VNC:', error)
-      alert('Failed to start VNC services. Check console for details.')
+      console.error('Failed to open browser:', error)
+      alert('Failed to open browser. Check console for details.')
     } finally {
-      setStartingVnc(false)
+      setOpeningBrowser(false)
     }
   }
 
@@ -96,7 +115,7 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
 
       if (data.success) {
         alert('VNC services stopped successfully. Browser session closed.')
-        setVncStarted(false) // Reset state so VNC can be restarted if modal reopens
+        setBrowserOpened(false) // Reset state so browser can be reopened if needed
       } else {
         alert(`Failed to stop VNC: ${data.error || 'Unknown error'}`)
       }
@@ -135,15 +154,30 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
         {/* Content - Instructions based on VNC mode */}
         <div className="flex-1 overflow-auto p-4">
           <div className="h-full flex flex-col gap-4">
-            {/* VNC Starting Status */}
-            {startingVnc && (
+            {/* Browser Opening Status */}
+            {openingBrowser && (
               <div className="bg-blue-900/30 border border-blue-600 rounded-lg p-4">
                 <div className="flex items-center gap-3">
                   <RefreshCw className="w-6 h-6 text-blue-400 animate-spin flex-shrink-0" />
                   <div className="text-sm text-blue-100">
-                    <strong className="text-base block mb-1">Starting VNC Services...</strong>
+                    <strong className="text-base block mb-1">Opening Browser...</strong>
                     <p className="text-xs text-blue-200">
-                      Launching Xvfb and x11vnc. This may take a few seconds.
+                      {vncEnabled ? 'Starting VNC services and launching browser. This may take a few seconds.' : 'Launching browser window...'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Browser Opened Status */}
+            {browserOpened && (
+              <div className="bg-green-900/30 border border-green-600 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <CheckCircle className="w-6 h-6 text-green-400 flex-shrink-0" />
+                  <div className="text-sm text-green-100">
+                    <strong className="text-base block mb-1">Browser Opened!</strong>
+                    <p className="text-xs text-green-200">
+                      {vncEnabled ? 'Connect via VNC to see the browser and login to TradingView.' : 'Browser window is now open. Please login to TradingView.'}
                     </p>
                   </div>
                 </div>
@@ -235,10 +269,10 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
           </div>
         </div>
 
-        {/* Footer - Buttons based on VNC mode */}
+        {/* Footer - Buttons */}
         <div className="flex items-center justify-between p-4 border-t border-slate-600">
-          {/* Left side - Kill VNC button (only visible in VNC mode) */}
-          {vncEnabled === true ? (
+          {/* Left side - Kill VNC button (only visible in VNC mode after browser opened) */}
+          {vncEnabled === true && browserOpened ? (
             <button
               onClick={handleKillVnc}
               disabled={killingVnc || confirming}
@@ -261,30 +295,55 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
             <div></div>
           )}
 
-          {/* Right side - Cancel and Confirm buttons (always visible) */}
+          {/* Right side - Open Browser and Confirm buttons */}
           <div className="flex items-center gap-2">
+            {/* Open Browser button - only show if browser not opened yet */}
+            {!browserOpened && (
+              <button
+                onClick={handleOpenBrowser}
+                disabled={openingBrowser}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+              >
+                {openingBrowser ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Opening...
+                  </>
+                ) : (
+                  <>
+                    <Info className="w-4 h-4" />
+                    Open Browser for Login
+                  </>
+                )}
+              </button>
+            )}
+
+            {/* Confirm Login button - only show after browser opened */}
+            {browserOpened && (
+              <button
+                onClick={handleConfirm}
+                disabled={confirming}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+              >
+                {confirming ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Confirming...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    Confirm Login
+                  </>
+                )}
+              </button>
+            )}
+
             <button
               onClick={onClose}
               className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition text-white"
             >
               Cancel
-            </button>
-            <button
-              onClick={handleConfirm}
-              disabled={confirming}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
-            >
-              {confirming ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  Confirming...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="w-4 h-4" />
-                  Confirm Login
-                </>
-              )}
             </button>
           </div>
         </div>
