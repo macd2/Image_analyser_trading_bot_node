@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Activity, Clock, Maximize2, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react'
+import { Activity, Clock, Maximize2, AlertTriangle, CheckCircle, RefreshCw, X } from 'lucide-react'
 import { LoadingState, ErrorState } from '@/components/shared'
 import LiveTradeChart from '@/components/LiveTradeChart'
 import StatsBar, { StatsScope } from '@/components/StatsBar'
 import { useBotState } from '@/lib/context/BotStateContext'
 import { useRealtime } from '@/hooks/useRealtime'
+import VncLoginModal from '@/components/VncLoginModal'
 
 type LogLevel = 'error' | 'warning' | 'info' | 'debug' | 'all'
 
@@ -105,6 +106,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
     can_confirm: boolean
   }>({ state: 'idle', message: null, browser_opened: false, requires_action: false, can_confirm: false })
   const [loginActionLoading, setLoginActionLoading] = useState(false)
+  const [vncModalOpen, setVncModalOpen] = useState(false)
 
   // Track logs length in ref to avoid stale closure in fetchData
   const logsLengthRef = useRef(logs.length)
@@ -248,17 +250,26 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
             <div>
               <h3 className="text-amber-200 font-semibold">🔐 Manual Login Required</h3>
               <p className="text-amber-300/80 text-sm">
-                {loginState.message || 'TradingView session expired. Please login in the browser window.'}
+                {loginState.message || 'TradingView session expired. Click below to login.'}
               </p>
               {loginState.browser_opened && (
                 <p className="text-amber-400 text-xs mt-1">
-                  ✓ Browser window opened - complete login there, then click Confirm below
+                  ✓ Browser window opened - complete login, then click Confirm below
                 </p>
               )}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {loginState.browser_opened ? (
+            {!loginState.browser_opened && (
+              <button
+                onClick={() => setVncModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition font-medium"
+              >
+                <Maximize2 className="w-4 h-4" />
+                Open Browser Login
+              </button>
+            )}
+            {loginState.browser_opened && (
               <button
                 onClick={handleLoginConfirm}
                 disabled={loginActionLoading}
@@ -271,12 +282,21 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
                 )}
                 Confirm Login
               </button>
-            ) : (
-              <div className="flex items-center gap-2 px-4 py-2 text-amber-300 text-sm">
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Opening browser...
-              </div>
             )}
+            <button
+              onClick={async () => {
+                await fetch('/api/bot/login', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'reset' })
+                })
+                setLoginState({ state: 'idle', message: null, browser_opened: false, requires_action: false, can_confirm: false })
+              }}
+              className="p-2 rounded hover:bg-amber-800/50 transition"
+              title="Dismiss"
+            >
+              <X className="w-4 h-4 text-amber-400" />
+            </button>
           </div>
         </div>
       )}
@@ -604,6 +624,14 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
           </div>
         </div>
       )}
+
+      {/* VNC Login Modal */}
+      <VncLoginModal
+        isOpen={vncModalOpen}
+        onClose={() => setVncModalOpen(false)}
+        onConfirm={handleLoginConfirm}
+        loginState={loginState}
+      />
     </div>
   )
 }
