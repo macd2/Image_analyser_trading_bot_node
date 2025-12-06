@@ -147,7 +147,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
   const fetchData = async () => {
     try {
       const [statusRes, tradesRes, controlRes, loginRes] = await Promise.all([
-        fetch('/api/bot/status'),
+        fetch(`/api/bot/status?instance_id=${instanceId}`),
         fetch(`/api/bot/trades?limit=20&instance_id=${instanceId}`),
         fetch('/api/bot/control'),
         fetch('/api/bot/login')

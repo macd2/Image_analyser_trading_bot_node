@@ -66,6 +66,10 @@ try:
     # Get wallet balance
     wallet = executor.get_wallet_balance()
 
+    # Log wallet response for debugging
+    import sys
+    print(f"[DEBUG] Wallet response: {wallet}", file=sys.stderr)
+
     # Get positions
     positions_result = executor.get_positions()
 
@@ -100,15 +104,20 @@ try:
         last_cycle = last_cycle_row.get('started_at') if isinstance(last_cycle_row, dict) else last_cycle_row[0]
     conn.close()
 
+    # Check if wallet has error
+    wallet_error = wallet.get("error")
+    if wallet_error:
+        print(f"[ERROR] Wallet API error: {wallet_error}", file=sys.stderr)
+
     status = {
         "running": False,  # TODO: Check actual process status
         "mode": "paper" if config.trading.paper_trading else "live",
         "network": "mainnet",
         "uptime_seconds": None,
         "wallet": {
-            "balance_usdt": wallet.get("wallet_balance", 0),
-            "available_usdt": wallet.get("available", 0),
-            "equity_usdt": wallet.get("equity", 0),
+            "balance_usdt": wallet.get("wallet_balance", 0) if not wallet_error else 0,
+            "available_usdt": wallet.get("available", 0) if not wallet_error else 0,
+            "equity_usdt": wallet.get("equity", 0) if not wallet_error else 0,
         },
         "positions": positions_result.get("positions", []),
         "open_orders": [],  # TODO: Add open orders query
@@ -118,7 +127,7 @@ try:
             "available": max_trades - len(positions_result.get("positions", [])),
         },
         "last_cycle": last_cycle,
-        "error": None,
+        "error": wallet_error,  # Include wallet error if present
     }
 
     print(json.dumps(status))
