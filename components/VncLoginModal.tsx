@@ -100,29 +100,60 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm, loginState }
             </div>
           ) : (
             <div className="h-full flex flex-col gap-4">
-              {/* Instructions */}
-              <div className="bg-blue-900/30 border border-blue-600 rounded-lg p-3">
+              {/* Connection Instructions */}
+              <div className="bg-blue-900/30 border border-blue-600 rounded-lg p-4">
                 <div className="flex items-start gap-3">
-                  <Info className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
-                  <div className="text-sm text-blue-200">
-                    <strong>Instructions:</strong>
-                    <ol className="list-decimal list-inside mt-1 space-y-1">
-                      <li>Log in to TradingView in the browser window below</li>
-                      <li>Verify you can access your charts</li>
-                      <li>Click &quot;Confirm Login&quot; when done</li>
-                    </ol>
+                  <Info className="w-6 h-6 text-blue-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-blue-100">
+                    <strong className="text-base block mb-2">Connect with VNC Client</strong>
+                    <p className="mb-3">
+                      Use a VNC client (RealVNC, TigerVNC, TightVNC, or noVNC web client) to connect to the browser.
+                    </p>
+
+                    <div className="bg-slate-900/50 rounded-lg p-3 mb-3">
+                      <p className="font-mono text-xs text-green-400 mb-1">VNC Server Address:</p>
+                      <p className="font-mono text-base text-white break-all">
+                        {vncUrl || 'Loading...'}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2 mb-3">
+                      <p className="font-semibold">Option 1: Desktop VNC Client (Recommended)</p>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>Download a VNC client:
+                          <ul className="list-disc list-inside ml-4 text-xs mt-1">
+                            <li><a href="https://www.realvnc.com/en/connect/download/viewer/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">RealVNC Viewer</a> (Windows/Mac/Linux)</li>
+                            <li><a href="https://tigervnc.org/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">TigerVNC</a> (Open Source)</li>
+                          </ul>
+                        </li>
+                        <li>Connect to the address above</li>
+                        <li>No password required</li>
+                        <li>Log in to TradingView in the VNC window</li>
+                        <li>Return here and click &quot;Confirm Login&quot;</li>
+                      </ol>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="font-semibold">Option 2: Web Browser (noVNC)</p>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>Open the VNC web client:
+                          {vncUrl && (
+                            <a
+                              href={vncUrl.replace(/:\d+$/, '') + '/vnc.html?host=' + vncUrl.split(':')[0] + '&port=' + vncUrl.split(':')[1] + '&autoconnect=true'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-400 hover:underline ml-2"
+                            >
+                              Open noVNC
+                            </a>
+                          )}
+                        </li>
+                        <li>Log in to TradingView</li>
+                        <li>Return here and click &quot;Confirm Login&quot;</li>
+                      </ol>
+                    </div>
                   </div>
                 </div>
-              </div>
-
-              {/* VNC Viewer */}
-              <div className="flex-1 bg-black rounded-lg overflow-hidden border border-slate-600">
-                <iframe
-                  src={vncUrl}
-                  className="w-full h-full"
-                  title="VNC Browser View"
-                  allow="clipboard-read; clipboard-write"
-                />
               </div>
             </div>
           )}
