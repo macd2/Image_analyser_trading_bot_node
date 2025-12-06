@@ -446,18 +446,20 @@ class ChartSourcer:
                         # TradingView detects --disable-web-security and crashes the browser
                         browser_args = []
 
-                        # VNC-specific browser arguments - ULTRA MINIMAL for TradingView compatibility
-                        # TradingView is very sensitive to automation detection - keep flags minimal
+                        # VNC-specific browser arguments - ULTRA MINIMAL for Railway/Docker compatibility
+                        # Railway has limited /dev/shm (64MB) - use single-process mode to avoid OOM crashes
                         vnc_args = [
                             f'--display={display}',
                             f'--window-size={self.tv_config.browser.vnc_window_size}',
                             '--disable-dev-shm-usage',  # Critical for limited /dev/shm in Docker
                             '--no-sandbox',  # Required for Docker (no choice)
+                            '--single-process',  # CRITICAL: Run in single process to avoid /dev/shm exhaustion
                             # DO NOT add --disable-web-security (causes TradingView to crash)
                             # DO NOT add --disable-gpu (let browser decide)
                             # DO NOT add --disable-features (causes detection)
                         ]
                         browser_args.extend(vnc_args)
+                        self.logger.info(f"🔧 VNC browser args: {vnc_args}")
 
                         # Verify VNC connection
                         if not await self._verify_vnc_connection():
