@@ -73,7 +73,9 @@ db.sqlite3
 db.sqlite3-journal
 
 # Flask stuff:
+# Note: This ignores Flask's instance/ folder but NOT components/instance/
 instance/
+!components/instance/
 .webassets-cache
 
 # Scrapy stuff:

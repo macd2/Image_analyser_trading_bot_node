@@ -1,12 +1,40 @@
 /**
- * ⚠️ DEPRECATED: This dashboard is deprecated!
- *
- * Use the new /instances page with tabs instead:
- * - /instances - Main instance management with tabbed interface
- * - Better organization with separate tabs for positions, trades, settings, etc.
- * - Improved UI/UX with modern design
- *
- * This file is kept for reference only.
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║                                                                              ║
+ * ║  ⛔ DEPRECATED - DO NOT MODIFY THIS FILE ⛔                                  ║
+ * ║                                                                              ║
+ * ║  This dashboard component is DEPRECATED and kept for REFERENCE ONLY.        ║
+ * ║                                                                              ║
+ * ║  ⚠️  WARNING TO AI AGENTS / DEVELOPERS:                                     ║
+ * ║  • DO NOT make any changes to this file                                     ║
+ * ║  • DO NOT add new features here                                             ║
+ * ║  • DO NOT fix bugs here (unless critical security issue)                    ║
+ * ║  • DO NOT refactor this code                                                ║
+ * ║  • DO NOT update dependencies or imports                                    ║
+ * ║                                                                              ║
+ * ║  ✅ USE INSTEAD:                                                             ║
+ * ║  • /instances page - Main instance management                               ║
+ * ║  • components/instance/InstancePage.tsx - New dashboard                     ║
+ * ║  • components/instance/tabs/* - Tabbed interface components                 ║
+ * ║                                                                              ║
+ * ║  📍 ROUTES:                                                                  ║
+ * ║  • OLD (this file): /bot/[instanceId]                                       ║
+ * ║  • NEW (use this):  /instances/[id]?tab=overview                            ║
+ * ║                                                                              ║
+ * ║  🎯 BENEFITS OF NEW DASHBOARD:                                              ║
+ * ║  • Better organization with separate tabs                                   ║
+ * ║  • Improved UI/UX with modern design                                        ║
+ * ║  • Better performance and maintainability                                   ║
+ * ║  • Consistent with rest of application                                      ║
+ * ║                                                                              ║
+ * ║  📝 THIS FILE IS KEPT ONLY FOR:                                             ║
+ * ║  • Reference during migration                                               ║
+ * ║  • Backward compatibility (temporary)                                       ║
+ * ║  • Code examples for new features                                           ║
+ * ║                                                                              ║
+ * ║  🗑️  SCHEDULED FOR REMOVAL: After full migration to /instances              ║
+ * ║                                                                              ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 
 'use client'
