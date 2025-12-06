@@ -31,8 +31,8 @@ COPY . .
 # Build Next.js
 RUN pnpm build
 
-# Create data directory
-RUN mkdir -p data
+# Create data directories
+RUN mkdir -p data/charts data/charts/.backup logs
 
 # Expose port
 EXPOSE 3000
