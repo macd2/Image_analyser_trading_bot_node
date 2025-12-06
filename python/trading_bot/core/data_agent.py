@@ -12,7 +12,9 @@ from trading_bot.db.client import (
     get_connection as get_db_connection,
     DB_TYPE,
     get_table_columns,
-    add_column_if_missing
+    add_column_if_missing,
+    get_timestamp_type,
+    normalize_sql
 )
 
 
@@ -81,8 +83,8 @@ class DataAgent:
         existing_columns = get_table_columns(conn, "trades")
 
         # Define all required columns with their types and defaults
-        # Use TIMESTAMP for PostgreSQL, DATETIME for SQLite
-        timestamp_type = 'TIMESTAMP' if DB_TYPE == 'postgres' else 'DATETIME'
+        # Use centralized timestamp type (TIMESTAMP for PostgreSQL, DATETIME for SQLite)
+        timestamp_type = get_timestamp_type()
 
         required_columns = [
             ('id', 'TEXT', None),
@@ -140,11 +142,9 @@ class DataAgent:
             conn = self.get_connection()
             cursor = conn.cursor()
 
-            # Use TIMESTAMP for PostgreSQL, DATETIME for SQLite
-            timestamp_type = 'TIMESTAMP' if DB_TYPE == 'postgres' else 'DATETIME'
-
             # Create analysis results table with UUID
-            cursor.execute(f'''
+            # Use normalize_sql() to handle DATETIME -> TIMESTAMP conversion
+            cursor.execute(normalize_sql('''
                 CREATE TABLE IF NOT EXISTS analysis_results (
                     id TEXT PRIMARY KEY,
                     symbol TEXT NOT NULL,
@@ -163,12 +163,12 @@ class DataAgent:
                     risk_factors TEXT,  -- JSON string
                     analysis_data TEXT,  -- Full JSON analysis
                     analysis_prompt TEXT,  -- Raw prompt sent to AI
-                    timestamp {timestamp_type},
+                    timestamp DATETIME,
                     image_path TEXT,
                     market_condition TEXT,
                     market_direction TEXT
                 )
-            ''')
+            '''))
             
             # Migration: Add new columns if they don't exist using centralized helper
             existing_columns = get_table_columns(conn, "analysis_results")
@@ -212,7 +212,7 @@ class DataAgent:
             ''')
 
             # Create latest recommendations table
-            cursor.execute(f'''
+            cursor.execute(normalize_sql('''
                 CREATE TABLE IF NOT EXISTS latest_recommendations (
                     id TEXT PRIMARY KEY,
                     symbol TEXT NOT NULL,
@@ -229,12 +229,12 @@ class DataAgent:
                     rr REAL,
                     risk_factors TEXT,  -- JSON string
                     analysis_data TEXT,  -- Full JSON analysis
-                    timestamp {timestamp_type},
+                    timestamp DATETIME,
                     image_path TEXT,
                     market_condition TEXT,
                     market_direction TEXT
                 )
-            ''')
+            '''))
 
             # Migration: Add new columns to latest_recommendations if they don't exist
             existing_lr_columns = get_table_columns(conn, "latest_recommendations")
@@ -250,7 +250,7 @@ class DataAgent:
                 print("✅ Added 'market_data' column to latest_recommendations table")
 
             # Create trades table for position management with comprehensive metadata
-            cursor.execute(f'''
+            cursor.execute(normalize_sql('''
                 CREATE TABLE IF NOT EXISTS trades (
                     id TEXT PRIMARY KEY,
                     recommendation_id TEXT,
@@ -267,8 +267,8 @@ class DataAgent:
                     state TEXT DEFAULT 'trade',
                     avg_exit_price REAL,
                     closed_size REAL,
-                    created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
-                    updated_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     placed_by TEXT DEFAULT 'BOT',
                     alteration_details TEXT, -- New column for alteration details
                     -- Additional comprehensive metadata fields
@@ -278,7 +278,7 @@ class DataAgent:
                     risk_reward_ratio REAL,
                     order_type TEXT DEFAULT 'Limit'
                 )
-            ''')
+            '''))
 
             # Ensure all columns exist (for existing databases)
             self._ensure_trades_columns_exist(conn, cursor)
@@ -446,11 +446,8 @@ class DataAgent:
     def _create_analytics_tables(self, cursor):
         """Create analytics tables for trading statistics."""
 
-        # Use TIMESTAMP for PostgreSQL, DATETIME for SQLite
-        timestamp_type = 'TIMESTAMP' if DB_TYPE == 'postgres' else 'DATETIME'
-
         # Trading stats table for EV and profit factor calculations
-        cursor.execute(f'''
+        cursor.execute(normalize_sql('''
             CREATE TABLE IF NOT EXISTS trading_stats (
                 id TEXT PRIMARY KEY,
                 symbol TEXT NOT NULL,
@@ -470,10 +467,10 @@ class DataAgent:
                 max_win REAL DEFAULT 0.0,
                 max_loss REAL DEFAULT 0.0,
                 avg_holding_period_hours REAL DEFAULT 0.0,
-                last_updated {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+                last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(symbol, timeframe)
             )
-        ''')
+        '''))
         
         # Migration: Add missing columns to existing trading_stats table (silent)
         try:
@@ -489,7 +486,7 @@ class DataAgent:
             print(f"Migration warning for trading_stats: {e}")
         
         # Position tracking table for live R/R monitoring
-        cursor.execute(f'''
+        cursor.execute(normalize_sql('''
             CREATE TABLE IF NOT EXISTS position_tracking (
                 id TEXT PRIMARY KEY,
                 recommendation_id TEXT,
@@ -505,15 +502,15 @@ class DataAgent:
                 unrealized_pnl REAL NOT NULL,
                 risk_amount REAL NOT NULL,
                 position_size REAL NOT NULL,
-                checked_at {timestamp_type} NOT NULL,
-                created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+                checked_at DATETIME NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (recommendation_id) REFERENCES analysis_results(id),
                 FOREIGN KEY (trade_id) REFERENCES trades(id)
             )
-        ''')
+        '''))
         
         # Holding period analysis table
-        cursor.execute(f'''
+        cursor.execute(normalize_sql('''
             CREATE TABLE IF NOT EXISTS holding_period_stats (
                 id TEXT PRIMARY KEY,
                 symbol TEXT NOT NULL,
@@ -533,10 +530,10 @@ class DataAgent:
                 max_win REAL DEFAULT 0.0,
                 max_loss REAL DEFAULT 0.0,
                 avg_holding_hours REAL DEFAULT 0.0,
-                last_updated {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
+                last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(symbol, timeframe, holding_period_bucket)
             )
-        ''')
+        '''))
         
         # Create indexes for analytics tables
         cursor.execute('''

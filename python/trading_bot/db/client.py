@@ -182,6 +182,61 @@ def get_table_columns(conn, table_name: str) -> set:
         return {row[1] for row in cursor.fetchall()}
 
 
+def get_timestamp_type() -> str:
+    """
+    Get the appropriate timestamp type for the current database.
+
+    Returns:
+        'TIMESTAMP' for PostgreSQL, 'DATETIME' for SQLite
+    """
+    return 'TIMESTAMP' if DB_TYPE == 'postgres' else 'DATETIME'
+
+
+def normalize_sql(sql: str) -> str:
+    """
+    Normalize SQL for the current database type.
+    Converts SQLite-specific syntax to PostgreSQL-compatible syntax.
+
+    This is the centralized place for handling SQL dialect differences.
+
+    Args:
+        sql: SQL query string (can contain DATETIME, etc.)
+
+    Returns:
+        Normalized SQL for the current database type
+    """
+    if DB_TYPE == 'postgres':
+        # Replace DATETIME with TIMESTAMP for PostgreSQL
+        sql = sql.replace('DATETIME', 'TIMESTAMP')
+    return sql
+
+
+def safe_execute(conn, sql: str, params: Tuple = (), rollback_on_error: bool = True) -> int:
+    """
+    Execute SQL with automatic error handling and transaction management.
+    For PostgreSQL, automatically rolls back on error to prevent
+    'InFailedSqlTransaction' errors.
+
+    Args:
+        conn: Database connection
+        sql: SQL query with ? placeholders
+        params: Query parameters
+        rollback_on_error: Whether to rollback on error (PostgreSQL only)
+
+    Returns:
+        Number of affected rows
+
+    Raises:
+        Exception: Re-raises the original exception after rollback
+    """
+    try:
+        return execute(conn, sql, params)
+    except Exception as e:
+        if DB_TYPE == 'postgres' and rollback_on_error:
+            conn.rollback()
+        raise
+
+
 def add_column_if_missing(conn, table_name: str, column_name: str, column_type: str, default_value: str = None) -> bool:
     """
     Add a column to a table if it doesn't exist.
@@ -204,13 +259,22 @@ def add_column_if_missing(conn, table_name: str, column_name: str, column_type: 
 
     cursor = conn.cursor()
 
+    # Normalize the column type (e.g., DATETIME -> TIMESTAMP for PostgreSQL)
+    column_type = normalize_sql(column_type)
+
     if default_value:
         sql = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type} DEFAULT {default_value}"
     else:
         sql = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
 
-    cursor.execute(sql)
-    return True
+    try:
+        cursor.execute(sql)
+        return True
+    except Exception as e:
+        # Rollback on error for PostgreSQL
+        if DB_TYPE == 'postgres':
+            conn.rollback()
+        raise
 
 
 __all__ = [
@@ -222,6 +286,9 @@ __all__ = [
     'convert_placeholders',
     'get_table_columns',
     'add_column_if_missing',
+    'get_timestamp_type',
+    'normalize_sql',
+    'safe_execute',
     'DB_TYPE',
 ]
 
