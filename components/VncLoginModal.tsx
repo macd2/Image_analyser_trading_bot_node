@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, CheckCircle, RefreshCw, Info, Power } from 'lucide-react'
+import { X, CheckCircle, RefreshCw, Info, Power, Monitor } from 'lucide-react'
 
 interface VncLoginModalProps {
   isOpen: boolean
@@ -16,11 +16,12 @@ interface VncLoginModalProps {
 
 export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginModalProps) {
   const [confirming, setConfirming] = useState(false)
+  const [startingVnc, setStartingVnc] = useState(false)
+  const [startingBrowser, setStartingBrowser] = useState(false)
   const [killingVnc, setKillingVnc] = useState(false)
-  const [openingBrowser, setOpeningBrowser] = useState(false)
-  const [browserOpened, setBrowserOpened] = useState(false)
   const [vncEnabled, setVncEnabled] = useState<boolean | null>(null)
   const [vncRunning, setVncRunning] = useState<boolean>(false)
+  const [browserStarted, setBrowserStarted] = useState<boolean>(false)
 
   // Check VNC status when modal opens
   useEffect(() => {
@@ -35,10 +36,10 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
 
   // Reset state when modal closes
   useEffect(() => {
-    if (!isOpen && browserOpened) {
-      setBrowserOpened(false)
+    if (!isOpen && browserStarted) {
+      setBrowserStarted(false)
     }
-  }, [isOpen, browserOpened])
+  }, [isOpen, browserStarted])
 
   const checkVncStatus = async () => {
     try {
@@ -54,50 +55,51 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
     }
   }
 
-  const handleOpenBrowser = async () => {
-    setOpeningBrowser(true)
+  const handleStartVnc = async () => {
+    setStartingVnc(true)
     try {
-      // Step 1: Start VNC services (only in VNC mode)
-      if (vncEnabled) {
-        console.log('Starting VNC services...')
-        const vncResponse = await fetch('/api/vnc/control', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'start' })
-        })
-        const vncData = await vncResponse.json()
-
-        if (!vncData.success) {
-          console.error('Failed to start VNC:', vncData.error)
-          alert(`Failed to start VNC services: ${vncData.error || 'Unknown error'}`)
-          return
-        }
-
-        console.log('VNC services started, waiting 5 seconds for Xvfb to initialize...')
-        // Step 2: Wait 5 seconds for Xvfb to fully initialize
-        await new Promise(resolve => setTimeout(resolve, 5000))
-      }
-
-      // Step 3: Signal Python that VNC is ready and browser should launch
-      console.log('Signaling Python to launch browser...')
-      const readyResponse = await fetch('/api/vnc/browser-ready', {
+      console.log('[VNC Modal] Starting VNC services...')
+      const response = await fetch('/api/vnc/control', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start' })
       })
-      const readyData = await readyResponse.json()
+      const data = await response.json()
 
-      if (readyData.success) {
-        console.log('Browser launch signal sent successfully')
-        setBrowserOpened(true)
-      } else {
-        console.error('Failed to signal browser ready:', readyData.error)
-        alert(`Failed to signal browser ready: ${readyData.error || 'Unknown error'}`)
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to start VNC services')
       }
+
+      console.log('[VNC Modal] ✅ VNC services started')
+      // Status will update via polling
     } catch (error) {
-      console.error('Failed to open browser:', error)
-      alert('Failed to open browser. Check console for details.')
+      console.error('[VNC Modal] Error starting VNC:', error)
+      alert(`Failed to start VNC services: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
-      setOpeningBrowser(false)
+      setStartingVnc(false)
+    }
+  }
+
+  const handleStartBrowser = async () => {
+    setStartingBrowser(true)
+    try {
+      console.log('[VNC Modal] Signaling Python to open browser...')
+      const response = await fetch('/api/vnc/browser-ready', {
+        method: 'POST'
+      })
+      const data = await response.json()
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to signal browser open')
+      }
+
+      console.log('[VNC Modal] ✅ Browser open signal sent')
+      setBrowserStarted(true)
+    } catch (error) {
+      console.error('[VNC Modal] Error starting browser:', error)
+      alert(`Failed to start browser: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setStartingBrowser(false)
     }
   }
 
@@ -122,7 +124,7 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
 
       if (data.success) {
         alert('VNC services stopped successfully. Browser session closed.')
-        setBrowserOpened(false) // Reset state so browser can be reopened if needed
+        setBrowserStarted(false) // Reset state so browser can be reopened if needed
       } else {
         alert(`Failed to stop VNC: ${data.error || 'Unknown error'}`)
       }
@@ -170,172 +172,143 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
           </button>
         </div>
 
-        {/* Content - Instructions based on VNC mode */}
+        {/* Content - Step-by-step instructions */}
         <div className="flex-1 overflow-auto p-4">
           <div className="h-full flex flex-col gap-4">
-            {/* Browser Opening Status */}
-            {openingBrowser && (
-              <div className="bg-blue-900/30 border border-blue-600 rounded-lg p-4">
-                <div className="flex items-center gap-3">
-                  <RefreshCw className="w-6 h-6 text-blue-400 animate-spin flex-shrink-0" />
-                  <div className="text-sm text-blue-100">
-                    <strong className="text-base block mb-1">Opening Browser...</strong>
-                    <p className="text-xs text-blue-200">
-                      {vncEnabled ? 'Starting VNC services and launching browser. This may take a few seconds.' : 'Launching browser window...'}
-                    </p>
-                  </div>
-                </div>
+            {/* VNC Connection Info */}
+            {vncEnabled && (
+              <div className="bg-slate-900/50 border border-slate-600 rounded-lg p-4">
+                <p className="font-mono text-xs text-slate-400 mb-1">VNC Server Address:</p>
+                <p className="font-mono text-base text-white">
+                  Check Railway TCP Proxy settings for connection details
+                </p>
+                <p className="font-mono text-xs text-slate-400 mt-1">
+                  Default port: 5900 (x11vnc)
+                </p>
               </div>
             )}
 
-            {/* Browser Opened Status */}
-            {browserOpened && (
-              <div className="bg-green-900/30 border border-green-600 rounded-lg p-4">
-                <div className="flex items-center gap-3">
-                  <CheckCircle className="w-6 h-6 text-green-400 flex-shrink-0" />
-                  <div className="text-sm text-green-100">
-                    <strong className="text-base block mb-1">Browser Opened!</strong>
-                    <p className="text-xs text-green-200">
-                      {vncEnabled ? 'Connect via VNC to see the browser and login to TradingView.' : 'Browser window is now open. Please login to TradingView.'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Step-by-step Instructions */}
+            <div className="bg-blue-900/30 border border-blue-600 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <Info className="w-6 h-6 text-blue-400 mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-blue-100 w-full">
+                  <strong className="text-base block mb-3">📋 Step-by-Step Instructions</strong>
 
-            {/* VNC Mode Instructions (Railway) */}
-            {vncEnabled === true && (
-              <div className="bg-blue-900/30 border border-blue-600 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <Info className="w-6 h-6 text-blue-400 mt-0.5 flex-shrink-0" />
-                  <div className="text-sm text-blue-100">
-                    <strong className="text-base block mb-2">Connect with VNC Client</strong>
-                    <p className="mb-3">
-                      Use a desktop VNC client to connect to the browser for manual TradingView login.
-                    </p>
+                  <div className="space-y-3">
+                    {/* Step 1 */}
+                    <div className="flex items-start gap-2">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">1</span>
+                      <div className="flex-1">
+                        <p className="font-semibold">Press "Start VNC" button below</p>
+                        <p className="text-xs text-blue-200 mt-1">This starts the VNC server (Xvfb + x11vnc)</p>
+                      </div>
+                    </div>
 
-                  <div className="bg-slate-900/50 rounded-lg p-3 mb-3">
-                    <p className="font-mono text-xs text-green-400 mb-1">VNC Server Address:</p>
-                    <p className="font-mono text-base text-white">
-                      Check Railway TCP Proxy settings for connection details
-                    </p>
-                    <p className="font-mono text-xs text-slate-400 mt-1">
-                      Default port: 5900 (x11vnc)
-                    </p>
-                  </div>
+                    {/* Step 2 */}
+                    <div className="flex items-start gap-2">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">2</span>
+                      <div className="flex-1">
+                        <p className="font-semibold">Connect to VNC using a VNC client</p>
+                        <p className="text-xs text-blue-200 mt-1">
+                          Use the address above. Recommended clients:
+                          <a href="https://www.realvnc.com/en/connect/download/viewer/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline ml-1">RealVNC Viewer</a> or
+                          <a href="https://tigervnc.org/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline ml-1">TigerVNC</a>
+                        </p>
+                      </div>
+                    </div>
 
-                  <div className="space-y-2 mb-3">
-                    <p className="font-semibold">Steps:</p>
-                    <ol className="list-decimal list-inside space-y-1 ml-2">
-                      <li>Download a VNC client:
-                        <ul className="list-disc list-inside ml-4 text-xs mt-1">
-                          <li><a href="https://www.realvnc.com/en/connect/download/viewer/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">RealVNC Viewer</a> (Windows/Mac/Linux)</li>
-                          <li><a href="https://tigervnc.org/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">TigerVNC</a> (Open Source)</li>
-                        </ul>
-                      </li>
-                      <li>Connect to the Railway TCP Proxy address (port 5900)</li>
-                      <li>No password required</li>
-                      <li>Log in to TradingView in the VNC window</li>
-                      <li>Return here and click &quot;Confirm Login&quot; below</li>
-                      <li>Click &quot;Kill VNC&quot; to stop services when done</li>
-                    </ol>
-                  </div>
+                    {/* Step 3 */}
+                    <div className="flex items-start gap-2">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">3</span>
+                      <div className="flex-1">
+                        <p className="font-semibold">Press "Start Browser" button below</p>
+                        <p className="text-xs text-blue-200 mt-1">This opens TradingView in the VNC session</p>
+                      </div>
+                    </div>
 
-                  <div className="bg-amber-900/30 border border-amber-600 rounded-lg p-3">
-                    <p className="font-semibold text-amber-200 mb-1">⚠️ Important:</p>
-                    <ul className="list-disc list-inside space-y-1 text-xs text-amber-100">
-                      <li>Browser may take 10-15 seconds to appear in VNC</li>
-                      <li>If browser crashes, click &quot;Kill VNC&quot; and try again</li>
-                      <li>Always click &quot;Kill VNC&quot; when done to free resources</li>
-                    </ul>
+                    {/* Step 4 */}
+                    <div className="flex items-start gap-2">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">4</span>
+                      <div className="flex-1">
+                        <p className="font-semibold">Login to TradingView in the VNC window</p>
+                        <p className="text-xs text-blue-200 mt-1">Complete the login process in your VNC client</p>
+                      </div>
+                    </div>
+
+                    {/* Step 5 */}
+                    <div className="flex items-start gap-2">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-600 text-white text-xs flex items-center justify-center font-bold">5</span>
+                      <div className="flex-1">
+                        <p className="font-semibold">Press "Confirm Login" button below</p>
+                        <p className="text-xs text-green-200 mt-1">This saves your session and resumes the bot</p>
+                      </div>
+                    </div>
+
+                    {/* Step 6 */}
+                    <div className="flex items-start gap-2">
+                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-red-600 text-white text-xs flex items-center justify-center font-bold">6</span>
+                      <div className="flex-1">
+                        <p className="font-semibold">Press "Kill VNC" button to cleanup</p>
+                        <p className="text-xs text-red-200 mt-1">Stops VNC services to free resources</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-            )}
-
-            {/* Local Mode Instructions (No VNC) */}
-            {vncEnabled === false && (
-              <div className="bg-green-900/30 border border-green-600 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <Info className="w-6 h-6 text-green-400 mt-0.5 flex-shrink-0" />
-                  <div className="text-sm text-green-100">
-                    <strong className="text-base block mb-2">Browser Window Opened</strong>
-                    <p className="mb-3">
-                      A browser window should have opened on your desktop for manual TradingView login.
-                    </p>
-
-                    <div className="space-y-2 mb-3">
-                      <p className="font-semibold">Steps:</p>
-                      <ol className="list-decimal list-inside space-y-1 ml-2">
-                        <li>Check your desktop for the browser window</li>
-                        <li>Log in to TradingView in the browser</li>
-                        <li>Navigate to your chart to verify login works</li>
-                        <li>Return here and click &quot;Confirm Login&quot; below</li>
-                      </ol>
-                    </div>
-
-                    <div className="bg-amber-900/30 border border-amber-600 rounded-lg p-3">
-                      <p className="font-semibold text-amber-200 mb-1">⚠️ Note:</p>
-                      <p className="text-xs text-amber-100">
-                        If you don&apos;t see a browser window, check your taskbar or try clicking &quot;Open Browser Login&quot; again.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
-        {/* Footer - Buttons (ALWAYS VISIBLE) */}
-        <div className="flex items-center justify-between p-4 border-t border-slate-600">
-          {/* Left side - Kill VNC button (ALWAYS VISIBLE) */}
-          <button
-            onClick={handleKillVnc}
-            disabled={killingVnc || confirming || !vncRunning}
-            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
-            title={vncRunning ? "Stop VNC services and close browser session" : "VNC not running"}
-          >
-            {killingVnc ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Stopping...
-              </>
-            ) : (
-              <>
-                <Power className="w-4 h-4" />
-                Kill VNC
-              </>
-            )}
-          </button>
-
-          {/* Right side - All action buttons (ALWAYS VISIBLE) */}
-          <div className="flex items-center gap-2">
-            {/* Open Browser button (ALWAYS VISIBLE) */}
+        {/* Footer - 4 Action Buttons (ALWAYS VISIBLE) */}
+        <div className="p-4 border-t border-slate-600">
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            {/* Button 1: Start VNC */}
             <button
-              onClick={handleOpenBrowser}
-              disabled={openingBrowser}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+              onClick={handleStartVnc}
+              disabled={startingVnc || vncRunning}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+              title="Start VNC services (Xvfb + x11vnc)"
             >
-              {openingBrowser ? (
+              {startingVnc ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Opening...
+                  Starting...
                 </>
               ) : (
                 <>
-                  <Info className="w-4 h-4" />
-                  Open Browser for Login
+                  <Power className="w-4 h-4" />
+                  1. Start VNC
                 </>
               )}
             </button>
 
-            {/* Confirm Login button (ALWAYS VISIBLE) */}
+            {/* Button 2: Start Browser */}
+            <button
+              onClick={handleStartBrowser}
+              disabled={startingBrowser || !vncRunning || browserStarted}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+              title="Open browser in VNC session"
+            >
+              {startingBrowser ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <Monitor className="w-4 h-4" />
+                  2. Start Browser
+                </>
+              )}
+            </button>
+
+            {/* Button 3: Confirm Login */}
             <button
               onClick={handleConfirm}
-              disabled={confirming}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+              disabled={confirming || !browserStarted}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+              title="Confirm login completed"
             >
               {confirming ? (
                 <>
@@ -345,18 +318,39 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
               ) : (
                 <>
                   <CheckCircle className="w-4 h-4" />
-                  Confirm Login
+                  3. Confirm Login
                 </>
               )}
             </button>
 
+            {/* Button 4: Kill VNC */}
             <button
-              onClick={onClose}
-              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition text-white"
+              onClick={handleKillVnc}
+              disabled={killingVnc || !vncRunning}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-red-600 hover:bg-red-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+              title="Stop VNC services and cleanup"
             >
-              Cancel
+              {killingVnc ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Stopping...
+                </>
+              ) : (
+                <>
+                  <Power className="w-4 h-4" />
+                  4. Kill VNC
+                </>
+              )}
             </button>
           </div>
+
+          {/* Close button */}
+          <button
+            onClick={onClose}
+            className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition text-white"
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>
