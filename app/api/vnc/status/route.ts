@@ -6,6 +6,9 @@
 
 import { NextResponse } from 'next/server';
 
+// Force dynamic rendering - don't try to check VNC during build
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     // Simple flag to enable/disable VNC (set in Railway environment)
