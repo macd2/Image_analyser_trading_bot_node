@@ -30,6 +30,7 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
       const interval = setInterval(checkVncStatus, 3000)
       return () => clearInterval(interval)
     }
+    return () => {} // Return empty cleanup function for non-open case
   }, [isOpen])
 
   // Reset state when modal closes
