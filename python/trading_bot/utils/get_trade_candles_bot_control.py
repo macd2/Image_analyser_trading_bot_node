@@ -137,16 +137,16 @@ def _get_candles_from_db(symbol: str, timeframe: str, start_ts: int, end_ts: int
         candles = []
         for row in rows:
             candles.append({
-                'symbol': row[0],
-                'timeframe': row[1],
-                'category': row[2],
-                'start_time': row[3],
-                'open_price': row[4],
-                'high_price': row[5],
-                'low_price': row[6],
-                'close_price': row[7],
-                'volume': row[8],
-                'turnover': row[9]
+                'symbol': row['symbol'],
+                'timeframe': row['timeframe'],
+                'category': row['category'],
+                'start_time': row['start_time'],
+                'open_price': row['open_price'],
+                'high_price': row['high_price'],
+                'low_price': row['low_price'],
+                'close_price': row['close_price'],
+                'volume': row['volume'],
+                'turnover': row['turnover']
             })
         return candles
     finally:
