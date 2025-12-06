@@ -1,0 +1,1075 @@
+====================================================================================================
+BACKTEST RUN #3
+Started: 2025-12-01T15:22:04.043053
+====================================================================================================
+
+CONFIGURATION:
+----------------------------------------------------------------------------------------------------
+prompts:
+  [
+  "get_analyzer_prompt_trade_playbook_v1"
+]
+symbols:
+  [
+  "AAVEUSDT"
+]
+num_images: 10
+start_date: None
+end_date: None
+offset: 0
+timeframes:
+  [
+  "1h"
+]
+charts_dir: /home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup
+total_images_selected: 10
+max_workers_prompts: 4
+max_workers_images: 1
+----------------------------------------------------------------------------------------------------
+
+
+====================================================================================================
+ANALYSIS #1
+====================================================================================================
+Prompt: get_analyzer_prompt_trade_playbook_v1
+Image: AAVEUSDT_1h_20251126_160000.png
+Symbol: AAVEUSDT
+Timeframe: 1h
+Timestamp: 2025-11-26T16:00:00
+Analyzed at: 2025-12-01T15:22:27.736776
+----------------------------------------------------------------------------------------------------
+
+RAW MODEL OUTPUT:
+----------------------------------------------------------------------------------------------------
+{
+    "recommendation": "hold",
+    "summary": "Market is ranging between clear support/resistance with no breakout or clean lower-high short. EMAs are flat; risk:reward on any entry is not optimal. Wait for clearer structure.",
+    "key_levels": {
+        "support": 172.5,
+        "resistance": 182.0
+    },
+    "risk_factors": [
+        "Flat 50/200 EMA – no trend confirmation",
+        "Low momentum (MACD neutral, MACD lines close together)",
+        "Price in the middle of established range"
+    ],
+    "market_condition": "RANGING",
+    "market_direction": "SIDEWAYS",
+    "evidence": "Price is ping-ponging between $172.5 (support) and $182 (resistance). EMA50/EMA200 nearly parallel, not sloped. No 1h close above resistance or breakdown below support.",
+    "entry_price": 0.0,
+    "stop_loss": 0.0,
+    "take_profit": 0.0,
+    "direction": "Short",
+    "entry_explanation": "No valid entry. Price is neither at resistance for a short nor showing breakdown. No reclaim long trigger.",
+    "take_profit_explanation": "No trade setup – take profit undefined.",
+    "stop_loss_explanation": "No active trade – stop loss undefined.",
+    "confidence": 0.3,
+    "risk_reward_ratio": 0.0,
+    "rationale": "Neutral momentum, clear range, but no current setup offering >= 1:2 RR. Avoid trading middling ranges; best to wait for rejection at $181–$182 for a short or a breakout/close above resistance for a long."
+}
+Model: GPT-4o
+----------------------------------------------------------------------------------------------------
+
+PARSED RESULT:
+----------------------------------------------------------------------------------------------------
+{
+  "recommendation": "hold",
+  "summary": "Market is ranging between clear support/resistance with no breakout or clean lower-high short. EMAs are flat; risk:reward on any entry is not optimal. Wait for clearer structure.",
+  "key_levels": {
+    "support": 172.5,
+    "resistance": 182.0
+  },
+  "risk_factors": [
+    "Flat 50/200 EMA \u2013 no trend confirmation",
+    "Low momentum (MACD neutral, MACD lines close together)",
+    "Price in the middle of established range"
+  ],
+  "market_condition": "RANGING",
+  "market_direction": "SIDEWAYS",
+  "evidence": "Price is ping-ponging between $172.5 (support) and $182 (resistance). EMA50/EMA200 nearly parallel, not sloped. No 1h close above resistance or breakdown below support.",
+  "entry_price": 0.0,
+  "stop_loss": 0.0,
+  "take_profit": 0.0,
+  "direction": "Short",
+  "entry_explanation": "No valid entry. Price is neither at resistance for a short nor showing breakdown. No reclaim long trigger.",
+  "take_profit_explanation": "No trade setup \u2013 take profit undefined.",
+  "stop_loss_explanation": "No active trade \u2013 stop loss undefined.",
+  "confidence": 0.3,
+  "risk_reward_ratio": 0.0,
+  "rationale": "Neutral momentum, clear range, but no current setup offering >= 1:2 RR. Avoid trading middling ranges; best to wait for rejection at $181\u2013$182 for a short or a breakout/close above resistance for a long.",
+  "timeframe": "short_term",
+  "extracted_timeframe": "1h",
+  "normalized_timeframe": "1h",
+  "symbol": "AAVEUSDT",
+  "last_close_price": null,
+  "trade_confidence": 0.3,
+  "assistant_id": "asst_m11ds7XhdYfN7voO0pRvgbul",
+  "assistant_model": "gpt-4.1",
+  "raw_response": "{\n    \"recommendation\": \"hold\",\n    \"summary\": \"Market is ranging between clear support/resistance with no breakout or clean lower-high short. EMAs are flat; risk:reward on any entry is not optimal. Wait for clearer structure.\",\n    \"key_levels\": {\n        \"support\": 172.5,\n        \"resistance\": 182.0\n    },\n    \"risk_factors\": [\n        \"Flat 50/200 EMA \u2013 no trend confirmation\",\n        \"Low momentum (MACD neutral, MACD lines close together)\",\n        \"Price in the middle of established range\"\n    ],\n    \"market_condition\": \"RANGING\",\n    \"market_direction\": \"SIDEWAYS\",\n    \"evidence\": \"Price is ping-ponging between $172.5 (support) and $182 (resistance). EMA50/EMA200 nearly parallel, not sloped. No 1h close above resistance or breakdown below support.\",\n    \"entry_price\": 0.0,\n    \"stop_loss\": 0.0,\n    \"take_profit\": 0.0,\n    \"direction\": \"Short\",\n    \"entry_explanation\": \"No valid entry. Price is neither at resistance for a short nor showing breakdown. No reclaim long trigger.\",\n    \"take_profit_explanation\": \"No trade setup \u2013 take profit undefined.\",\n    \"stop_loss_explanation\": \"No active trade \u2013 stop loss undefined.\",\n    \"confidence\": 0.3,\n    \"risk_reward_ratio\": 0.0,\n    \"rationale\": \"Neutral momentum, clear range, but no current setup offering >= 1:2 RR. Avoid trading middling ranges; best to wait for rejection at $181\u2013$182 for a short or a breakout/close above resistance for a long.\"\n}\nModel: GPT-4o",
+  "timestamp": "2025-11-26 16:00:00",
+  "original_timeframe": "1h",
+  "analysis_method": "assistant",
+  "analysis_prompt": "Analyze the chart image and market data and return a TRADE PLAYBOOK in the specific JSON format below.\n\n    GOAL\n    - Produce a concise, actionable recommendation similar to a human trader's plan:\n      Bias, preferred setups with entry/invalidation/targets, risk management, and a final summary.\n\n    CURRENT MARKET DATA\n    \n    - Last Price: N/A\n    - 24h Change: N/A\n    - 24h High: N/A\n    - 24h Low: N/A\n    - Funding Rate: N/A\n    - Long/Short Ratio: N/A\n    - Timeframe: \"1h\"\n    - Symbol: \"AAVEUSDT\n\n    ANALYSIS GUIDELINES\n    - Determine short-term bias using price action and moving averages (e.g., EMA50/EMA200 if visible).\n    - Identify the nearest support/resistance and any obvious confluence (Fibonacci clusters, EMA cluster, prior swing levels).\n    - Read the ATR panel value if visible (e.g., ATR 14 RMA); otherwise approximate from recent candles.\n    - Favor trend-following setups; avoid countertrend unless strong reclaim occurs.\n\n    REQUIRED SETUPS TO CONSIDER (CHOOSE THE BEST AS PRIMARY)\n    1) Short the lower-high (trend-following fade into resistance)\n       - Trigger: Rejection/backside test into resistance or EMA cluster\n       - Output: entry_zone [low, high], invalidation (hard stop), targets [t1, t2, t3]\n    2) Breakdown continuation\n       - Trigger: 1h close below key support, or break-retest failure\n       - Output: entry (below/retest), invalidation, targets\n    3) Trend-reclaim long (only if structure shifts)\n       - Trigger: Close and hold back above key resistance/EMA cluster\n       - Output: entry, invalidation, targets\n\n    RISK MANAGEMENT\n    - Use ATR-based buffers: default stop buffer 1.0\u20131.5 \u00d7 ATR beyond invalidation level.\n    - Provide a realistic position risk percent (0.5\u20131.0%).\n    - Ensure risk_reward_ratio \u2265 1:2 for the PRIMARY setup; otherwise recommendation = \"hold\".\n\n    \n    ## OUTPUT RULES\n    Return your analysis in this exact JSON format:\n    {\n        \"recommendation\": \"buy\" | \"hold\" | \"sell\",\n        \"summary\": \"Brief analysis summary (max 50 words)\",\n        \"key_levels\": {\n            \"support\": 0.0,\n            \"resistance\": 0.0\n        },\n        \"risk_factors\": [\"Risk factor 1\", \"Risk factor 2\"],\n        \"market_condition\": \"TRENDING\" | \"RANGING\",\n        \"market_direction\": \"UP\" | \"DOWN\" | \"SIDEWAYS\",\n        \"evidence\": \"Specific evidence supporting recommendation\",\n        \"entry_price\": 0.0,\n        \"stop_loss\": 0.0,\n        \"take_profit\": 0.0,\n        \"direction\": \"Long\" | \"Short\",\n        \"entry_explanation\": \"Why this entry price?\",\n        \"take_profit_explanation\": \"Why this take profit?\",\n        \"stop_loss_explanation\": \"Why this stop loss?\",\n        \"confidence\": 0.0,\n        \"risk_reward_ratio\": 0.0,\n        \"rationale\": \"Brief rationale for recommendation (MUST be always provided)\"\n    }\n    \n\n    VALIDATION\n    - Populate entry_price/stop_loss/take_profit from the PRIMARY setup only.\n    - If RR < 1:2 or structure unclear, set recommendation = \"hold\" and explain in summary.\n    - Keep numbers consistent with the chart; do not invent unrealistic targets.\n    - Prefer clean, conservative entries over aggressive breakouts unless momentum is exceptional.",
+  "passed_image": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251126_160000.png",
+  "prompt_version": "get_analyzer_prompt_trade_playbook_v1",
+  "prompt_id": "get_analyzer_prompt_trade_playbook_v1",
+  "market_data_snapshot": {
+    "last_price": "N/A",
+    "price_change_24h_percent": "N/A",
+    "high_24h": "N/A",
+    "low_24h": "N/A",
+    "funding_rate": "N/A",
+    "long_short_ratio": "N/A",
+    "timeframe": "1h",
+    "symbol": "AAVEUSDT"
+  },
+  "prompt_name": "get_analyzer_prompt_trade_playbook_v1",
+  "image_path": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251126_160000.png",
+  "image_timestamp": "2025-11-26T16:00:00",
+  "image_timestamp_ms": 1764144000000
+}
+----------------------------------------------------------------------------------------------------
+
+
+====================================================================================================
+ANALYSIS #2
+====================================================================================================
+Prompt: get_analyzer_prompt_trade_playbook_v1
+Image: AAVEUSDT_1h_20251015_090000.png
+Symbol: AAVEUSDT
+Timeframe: 1h
+Timestamp: 2025-10-15T09:00:00
+Analyzed at: 2025-12-01T15:22:47.374280
+----------------------------------------------------------------------------------------------------
+
+RAW MODEL OUTPUT:
+----------------------------------------------------------------------------------------------------
+{
+    "recommendation": "hold",
+    "summary": "Price is consolidating in a tight range below resistance after a clear downtrend; no high-probability setup with valid risk/reward.",
+    "key_levels": {
+        "support": 254.0,
+        "resistance": 260.0
+    },
+    "risk_factors": [
+        "Low volatility and tight range, reducing trend-following edge",
+        "Potential for fakeouts due to recent volatility contraction"
+    ],
+    "market_condition": "RANGING",
+    "market_direction": "SIDEWAYS",
+    "evidence": "Price is trading flat between 254–260 with EMA50 and EMA200 nearly flat, ATR (14) ~2, prior significant bearish move but lacking followthrough, and low volume.",
+    "entry_price": 0.0,
+    "stop_loss": 0.0,
+    "take_profit": 0.0,
+    "direction": "Short",
+    "entry_explanation": "No clear entry; price has not retested primary resistance with momentum, nor broken support with volume.",
+    "take_profit_explanation": "No valid setup—no momentum break or structured reclaim above resistance.",
+    "stop_loss_explanation": "Not applicable due to absence of a high-probability play; stop would be too close for a meaningful RR.",
+    "confidence": 0.3,
+    "risk_reward_ratio": 0.0,
+    "rationale": "The market's sideways chop after a downtrend offers poor risk/reward for both breakdown shorts or reclaim longs. Await a momentum breakout or a rejection on a clear lower-high at resistance for actionable setup."
+}
+Model: GPT-4 Turbo
+----------------------------------------------------------------------------------------------------
+
+PARSED RESULT:
+----------------------------------------------------------------------------------------------------
+{
+  "recommendation": "hold",
+  "summary": "Price is consolidating in a tight range below resistance after a clear downtrend; no high-probability setup with valid risk/reward.",
+  "key_levels": {
+    "support": 254.0,
+    "resistance": 260.0
+  },
+  "risk_factors": [
+    "Low volatility and tight range, reducing trend-following edge",
+    "Potential for fakeouts due to recent volatility contraction"
+  ],
+  "market_condition": "RANGING",
+  "market_direction": "SIDEWAYS",
+  "evidence": "Price is trading flat between 254\u2013260 with EMA50 and EMA200 nearly flat, ATR (14) ~2, prior significant bearish move but lacking followthrough, and low volume.",
+  "entry_price": 0.0,
+  "stop_loss": 0.0,
+  "take_profit": 0.0,
+  "direction": "Short",
+  "entry_explanation": "No clear entry; price has not retested primary resistance with momentum, nor broken support with volume.",
+  "take_profit_explanation": "No valid setup\u2014no momentum break or structured reclaim above resistance.",
+  "stop_loss_explanation": "Not applicable due to absence of a high-probability play; stop would be too close for a meaningful RR.",
+  "confidence": 0.3,
+  "risk_reward_ratio": 0.0,
+  "rationale": "The market's sideways chop after a downtrend offers poor risk/reward for both breakdown shorts or reclaim longs. Await a momentum breakout or a rejection on a clear lower-high at resistance for actionable setup.",
+  "timeframe": "short_term",
+  "extracted_timeframe": "1h",
+  "normalized_timeframe": "1h",
+  "symbol": "AAVEUSDT",
+  "last_close_price": null,
+  "trade_confidence": 0.3,
+  "assistant_id": "asst_m11ds7XhdYfN7voO0pRvgbul",
+  "assistant_model": "gpt-4.1",
+  "raw_response": "{\n    \"recommendation\": \"hold\",\n    \"summary\": \"Price is consolidating in a tight range below resistance after a clear downtrend; no high-probability setup with valid risk/reward.\",\n    \"key_levels\": {\n        \"support\": 254.0,\n        \"resistance\": 260.0\n    },\n    \"risk_factors\": [\n        \"Low volatility and tight range, reducing trend-following edge\",\n        \"Potential for fakeouts due to recent volatility contraction\"\n    ],\n    \"market_condition\": \"RANGING\",\n    \"market_direction\": \"SIDEWAYS\",\n    \"evidence\": \"Price is trading flat between 254\u2013260 with EMA50 and EMA200 nearly flat, ATR (14) ~2, prior significant bearish move but lacking followthrough, and low volume.\",\n    \"entry_price\": 0.0,\n    \"stop_loss\": 0.0,\n    \"take_profit\": 0.0,\n    \"direction\": \"Short\",\n    \"entry_explanation\": \"No clear entry; price has not retested primary resistance with momentum, nor broken support with volume.\",\n    \"take_profit_explanation\": \"No valid setup\u2014no momentum break or structured reclaim above resistance.\",\n    \"stop_loss_explanation\": \"Not applicable due to absence of a high-probability play; stop would be too close for a meaningful RR.\",\n    \"confidence\": 0.3,\n    \"risk_reward_ratio\": 0.0,\n    \"rationale\": \"The market's sideways chop after a downtrend offers poor risk/reward for both breakdown shorts or reclaim longs. Await a momentum breakout or a rejection on a clear lower-high at resistance for actionable setup.\"\n}\nModel: GPT-4 Turbo",
+  "timestamp": "2025-10-15 09:00:00",
+  "original_timeframe": "1h",
+  "analysis_method": "assistant",
+  "analysis_prompt": "Analyze the chart image and market data and return a TRADE PLAYBOOK in the specific JSON format below.\n\n    GOAL\n    - Produce a concise, actionable recommendation similar to a human trader's plan:\n      Bias, preferred setups with entry/invalidation/targets, risk management, and a final summary.\n\n    CURRENT MARKET DATA\n    \n    - Last Price: N/A\n    - 24h Change: N/A\n    - 24h High: N/A\n    - 24h Low: N/A\n    - Funding Rate: N/A\n    - Long/Short Ratio: N/A\n    - Timeframe: \"1h\"\n    - Symbol: \"AAVEUSDT\n\n    ANALYSIS GUIDELINES\n    - Determine short-term bias using price action and moving averages (e.g., EMA50/EMA200 if visible).\n    - Identify the nearest support/resistance and any obvious confluence (Fibonacci clusters, EMA cluster, prior swing levels).\n    - Read the ATR panel value if visible (e.g., ATR 14 RMA); otherwise approximate from recent candles.\n    - Favor trend-following setups; avoid countertrend unless strong reclaim occurs.\n\n    REQUIRED SETUPS TO CONSIDER (CHOOSE THE BEST AS PRIMARY)\n    1) Short the lower-high (trend-following fade into resistance)\n       - Trigger: Rejection/backside test into resistance or EMA cluster\n       - Output: entry_zone [low, high], invalidation (hard stop), targets [t1, t2, t3]\n    2) Breakdown continuation\n       - Trigger: 1h close below key support, or break-retest failure\n       - Output: entry (below/retest), invalidation, targets\n    3) Trend-reclaim long (only if structure shifts)\n       - Trigger: Close and hold back above key resistance/EMA cluster\n       - Output: entry, invalidation, targets\n\n    RISK MANAGEMENT\n    - Use ATR-based buffers: default stop buffer 1.0\u20131.5 \u00d7 ATR beyond invalidation level.\n    - Provide a realistic position risk percent (0.5\u20131.0%).\n    - Ensure risk_reward_ratio \u2265 1:2 for the PRIMARY setup; otherwise recommendation = \"hold\".\n\n    \n    ## OUTPUT RULES\n    Return your analysis in this exact JSON format:\n    {\n        \"recommendation\": \"buy\" | \"hold\" | \"sell\",\n        \"summary\": \"Brief analysis summary (max 50 words)\",\n        \"key_levels\": {\n            \"support\": 0.0,\n            \"resistance\": 0.0\n        },\n        \"risk_factors\": [\"Risk factor 1\", \"Risk factor 2\"],\n        \"market_condition\": \"TRENDING\" | \"RANGING\",\n        \"market_direction\": \"UP\" | \"DOWN\" | \"SIDEWAYS\",\n        \"evidence\": \"Specific evidence supporting recommendation\",\n        \"entry_price\": 0.0,\n        \"stop_loss\": 0.0,\n        \"take_profit\": 0.0,\n        \"direction\": \"Long\" | \"Short\",\n        \"entry_explanation\": \"Why this entry price?\",\n        \"take_profit_explanation\": \"Why this take profit?\",\n        \"stop_loss_explanation\": \"Why this stop loss?\",\n        \"confidence\": 0.0,\n        \"risk_reward_ratio\": 0.0,\n        \"rationale\": \"Brief rationale for recommendation (MUST be always provided)\"\n    }\n    \n\n    VALIDATION\n    - Populate entry_price/stop_loss/take_profit from the PRIMARY setup only.\n    - If RR < 1:2 or structure unclear, set recommendation = \"hold\" and explain in summary.\n    - Keep numbers consistent with the chart; do not invent unrealistic targets.\n    - Prefer clean, conservative entries over aggressive breakouts unless momentum is exceptional.",
+  "passed_image": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251015_090000.png",
+  "prompt_version": "get_analyzer_prompt_trade_playbook_v1",
+  "prompt_id": "get_analyzer_prompt_trade_playbook_v1",
+  "market_data_snapshot": {
+    "last_price": "N/A",
+    "price_change_24h_percent": "N/A",
+    "high_24h": "N/A",
+    "low_24h": "N/A",
+    "funding_rate": "N/A",
+    "long_short_ratio": "N/A",
+    "timeframe": "1h",
+    "symbol": "AAVEUSDT"
+  },
+  "prompt_name": "get_analyzer_prompt_trade_playbook_v1",
+  "image_path": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251015_090000.png",
+  "image_timestamp": "2025-10-15T09:00:00",
+  "image_timestamp_ms": 1760490000000
+}
+----------------------------------------------------------------------------------------------------
+
+
+====================================================================================================
+ANALYSIS #3
+====================================================================================================
+Prompt: get_analyzer_prompt_trade_playbook_v1
+Image: AAVEUSDT_1h_20251015_070000.png
+Symbol: AAVEUSDT
+Timeframe: 1h
+Timestamp: 2025-10-15T07:00:00
+Analyzed at: 2025-12-01T15:23:10.162242
+----------------------------------------------------------------------------------------------------
+
+RAW MODEL OUTPUT:
+----------------------------------------------------------------------------------------------------
+{
+    "recommendation": "sell",
+    "summary": "1h structure is weak: price rejected at resistance/EMA cluster, holding lower highs, no strong reclaim. Downtrend resuming below 258 with clear invalidation.",
+    "key_levels": {
+        "support": 250.0,
+        "resistance": 258.5
+    },
+    "risk_factors": [
+        "Recent low volatility; chop risk if breakdown fails",
+        "MACD is flat—momentum could fail"
+    ],
+    "market_condition": "RANGING",
+    "market_direction": "DOWN",
+    "evidence": "Price repeatedly rejected under 1h EMA50/EMA200 at 258.5, forming lower highs. Failed attempts to reclaim resistance, MACD weak, and price consolidating below key moving averages. ATR (1.74) indicates subdued volatility after breakdown.",
+    "entry_price": 257.0,
+    "stop_loss": 259.75,
+    "take_profit": 251.0,
+    "direction": "Short",
+    "entry_explanation": "Entry just below resistance and EMA50/200 cluster, waiting for new local low structure confirmation.",
+    "take_profit_explanation": "Take profit at retest of recent support zone just above prior lows (250-251) where buyers showed interest.",
+    "stop_loss_explanation": "Stop above last swing high/EMA cluster (258.5), plus 1.5 × ATR buffer (~2.7), at 259.75 to avoid wick outs.",
+    "confidence": 0.7,
+    "risk_reward_ratio": 2.3,
+    "rationale": "Downtrend intact below double EMA cluster, failed to reclaim resistance; breakdown continuation likely. Setup offers >2R to the next demand zone with a tight invalidation. Price action and indicator evidence support short/fade bias."
+}
+Model: gpt-4-vision
+----------------------------------------------------------------------------------------------------
+
+PARSED RESULT:
+----------------------------------------------------------------------------------------------------
+{
+  "recommendation": "sell",
+  "summary": "1h structure is weak: price rejected at resistance/EMA cluster, holding lower highs, no strong reclaim. Downtrend resuming below 258 with clear invalidation.",
+  "key_levels": {
+    "support": 250.0,
+    "resistance": 258.5
+  },
+  "risk_factors": [
+    "Recent low volatility; chop risk if breakdown fails",
+    "MACD is flat\u2014momentum could fail"
+  ],
+  "market_condition": "RANGING",
+  "market_direction": "DOWN",
+  "evidence": "Price repeatedly rejected under 1h EMA50/EMA200 at 258.5, forming lower highs. Failed attempts to reclaim resistance, MACD weak, and price consolidating below key moving averages. ATR (1.74) indicates subdued volatility after breakdown.",
+  "entry_price": 257.0,
+  "stop_loss": 259.75,
+  "take_profit": 251.0,
+  "direction": "Short",
+  "entry_explanation": "Entry just below resistance and EMA50/200 cluster, waiting for new local low structure confirmation.",
+  "take_profit_explanation": "Take profit at retest of recent support zone just above prior lows (250-251) where buyers showed interest.",
+  "stop_loss_explanation": "Stop above last swing high/EMA cluster (258.5), plus 1.5 \u00d7 ATR buffer (~2.7), at 259.75 to avoid wick outs.",
+  "confidence": 0.7,
+  "risk_reward_ratio": 2.3,
+  "rationale": "Downtrend intact below double EMA cluster, failed to reclaim resistance; breakdown continuation likely. Setup offers >2R to the next demand zone with a tight invalidation. Price action and indicator evidence support short/fade bias.",
+  "timeframe": "short_term",
+  "extracted_timeframe": "1h",
+  "normalized_timeframe": "1h",
+  "symbol": "AAVEUSDT",
+  "last_close_price": null,
+  "trade_confidence": 0.7,
+  "assistant_id": "asst_m11ds7XhdYfN7voO0pRvgbul",
+  "assistant_model": "gpt-4.1",
+  "raw_response": "{\n    \"recommendation\": \"sell\",\n    \"summary\": \"1h structure is weak: price rejected at resistance/EMA cluster, holding lower highs, no strong reclaim. Downtrend resuming below 258 with clear invalidation.\",\n    \"key_levels\": {\n        \"support\": 250.0,\n        \"resistance\": 258.5\n    },\n    \"risk_factors\": [\n        \"Recent low volatility; chop risk if breakdown fails\",\n        \"MACD is flat\u2014momentum could fail\"\n    ],\n    \"market_condition\": \"RANGING\",\n    \"market_direction\": \"DOWN\",\n    \"evidence\": \"Price repeatedly rejected under 1h EMA50/EMA200 at 258.5, forming lower highs. Failed attempts to reclaim resistance, MACD weak, and price consolidating below key moving averages. ATR (1.74) indicates subdued volatility after breakdown.\",\n    \"entry_price\": 257.0,\n    \"stop_loss\": 259.75,\n    \"take_profit\": 251.0,\n    \"direction\": \"Short\",\n    \"entry_explanation\": \"Entry just below resistance and EMA50/200 cluster, waiting for new local low structure confirmation.\",\n    \"take_profit_explanation\": \"Take profit at retest of recent support zone just above prior lows (250-251) where buyers showed interest.\",\n    \"stop_loss_explanation\": \"Stop above last swing high/EMA cluster (258.5), plus 1.5 \u00d7 ATR buffer (~2.7), at 259.75 to avoid wick outs.\",\n    \"confidence\": 0.7,\n    \"risk_reward_ratio\": 2.3,\n    \"rationale\": \"Downtrend intact below double EMA cluster, failed to reclaim resistance; breakdown continuation likely. Setup offers >2R to the next demand zone with a tight invalidation. Price action and indicator evidence support short/fade bias.\"\n}\nModel: gpt-4-vision",
+  "timestamp": "2025-10-15 07:00:00",
+  "original_timeframe": "1h",
+  "analysis_method": "assistant",
+  "analysis_prompt": "Analyze the chart image and market data and return a TRADE PLAYBOOK in the specific JSON format below.\n\n    GOAL\n    - Produce a concise, actionable recommendation similar to a human trader's plan:\n      Bias, preferred setups with entry/invalidation/targets, risk management, and a final summary.\n\n    CURRENT MARKET DATA\n    \n    - Last Price: N/A\n    - 24h Change: N/A\n    - 24h High: N/A\n    - 24h Low: N/A\n    - Funding Rate: N/A\n    - Long/Short Ratio: N/A\n    - Timeframe: \"1h\"\n    - Symbol: \"AAVEUSDT\n\n    ANALYSIS GUIDELINES\n    - Determine short-term bias using price action and moving averages (e.g., EMA50/EMA200 if visible).\n    - Identify the nearest support/resistance and any obvious confluence (Fibonacci clusters, EMA cluster, prior swing levels).\n    - Read the ATR panel value if visible (e.g., ATR 14 RMA); otherwise approximate from recent candles.\n    - Favor trend-following setups; avoid countertrend unless strong reclaim occurs.\n\n    REQUIRED SETUPS TO CONSIDER (CHOOSE THE BEST AS PRIMARY)\n    1) Short the lower-high (trend-following fade into resistance)\n       - Trigger: Rejection/backside test into resistance or EMA cluster\n       - Output: entry_zone [low, high], invalidation (hard stop), targets [t1, t2, t3]\n    2) Breakdown continuation\n       - Trigger: 1h close below key support, or break-retest failure\n       - Output: entry (below/retest), invalidation, targets\n    3) Trend-reclaim long (only if structure shifts)\n       - Trigger: Close and hold back above key resistance/EMA cluster\n       - Output: entry, invalidation, targets\n\n    RISK MANAGEMENT\n    - Use ATR-based buffers: default stop buffer 1.0\u20131.5 \u00d7 ATR beyond invalidation level.\n    - Provide a realistic position risk percent (0.5\u20131.0%).\n    - Ensure risk_reward_ratio \u2265 1:2 for the PRIMARY setup; otherwise recommendation = \"hold\".\n\n    \n    ## OUTPUT RULES\n    Return your analysis in this exact JSON format:\n    {\n        \"recommendation\": \"buy\" | \"hold\" | \"sell\",\n        \"summary\": \"Brief analysis summary (max 50 words)\",\n        \"key_levels\": {\n            \"support\": 0.0,\n            \"resistance\": 0.0\n        },\n        \"risk_factors\": [\"Risk factor 1\", \"Risk factor 2\"],\n        \"market_condition\": \"TRENDING\" | \"RANGING\",\n        \"market_direction\": \"UP\" | \"DOWN\" | \"SIDEWAYS\",\n        \"evidence\": \"Specific evidence supporting recommendation\",\n        \"entry_price\": 0.0,\n        \"stop_loss\": 0.0,\n        \"take_profit\": 0.0,\n        \"direction\": \"Long\" | \"Short\",\n        \"entry_explanation\": \"Why this entry price?\",\n        \"take_profit_explanation\": \"Why this take profit?\",\n        \"stop_loss_explanation\": \"Why this stop loss?\",\n        \"confidence\": 0.0,\n        \"risk_reward_ratio\": 0.0,\n        \"rationale\": \"Brief rationale for recommendation (MUST be always provided)\"\n    }\n    \n\n    VALIDATION\n    - Populate entry_price/stop_loss/take_profit from the PRIMARY setup only.\n    - If RR < 1:2 or structure unclear, set recommendation = \"hold\" and explain in summary.\n    - Keep numbers consistent with the chart; do not invent unrealistic targets.\n    - Prefer clean, conservative entries over aggressive breakouts unless momentum is exceptional.",
+  "passed_image": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251015_070000.png",
+  "prompt_version": "get_analyzer_prompt_trade_playbook_v1",
+  "prompt_id": "get_analyzer_prompt_trade_playbook_v1",
+  "market_data_snapshot": {
+    "last_price": "N/A",
+    "price_change_24h_percent": "N/A",
+    "high_24h": "N/A",
+    "low_24h": "N/A",
+    "funding_rate": "N/A",
+    "long_short_ratio": "N/A",
+    "timeframe": "1h",
+    "symbol": "AAVEUSDT"
+  },
+  "prompt_name": "get_analyzer_prompt_trade_playbook_v1",
+  "image_path": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251015_070000.png",
+  "image_timestamp": "2025-10-15T07:00:00",
+  "image_timestamp_ms": 1760482800000
+}
+----------------------------------------------------------------------------------------------------
+
+
+====================================================================================================
+ANALYSIS #4
+====================================================================================================
+Prompt: get_analyzer_prompt_trade_playbook_v1
+Image: AAVEUSDT_1h_20251015_030000.png
+Symbol: AAVEUSDT
+Timeframe: 1h
+Timestamp: 2025-10-15T03:00:00
+Analyzed at: 2025-12-01T15:23:34.011819
+----------------------------------------------------------------------------------------------------
+
+RAW MODEL OUTPUT:
+----------------------------------------------------------------------------------------------------
+{
+    "recommendation": "hold",
+    "summary": "Market in tight range after breakdown; no clean setup. EMA cluster overhead, local support uncertain, and ATR low. Both break-down and reclaim require confirmation.",
+    "key_levels": {
+        "support": 251.0,
+        "resistance": 257.0
+    },
+    "risk_factors": [
+        "Low ATR and volatility; tight range, unclear momentum",
+        "EMA50/EMA200 overhead may cap upside"
+    ],
+    "market_condition": "RANGING",
+    "market_direction": "SIDEWAYS",
+    "evidence": "Price consolidates below EMA50/EMA200 after prior drop; no 1h close reclaiming resistance or breaking support. MACD and RSI flat, volume light.",
+    "entry_price": 0.0,
+    "stop_loss": 0.0,
+    "take_profit": 0.0,
+    "direction": "",
+    "entry_explanation": "No valid entry: clean trend-following trigger (lower high short or breakdown) not present; ranging price action.",
+    "take_profit_explanation": "No position taken, so no target.",
+    "stop_loss_explanation": "No position taken, so no stop.",
+    "confidence": 0.3,
+    "risk_reward_ratio": 0.0,
+    "rationale": "Best setups require either breakdown below 251 (not present) or confirmed reclaim above 257 (not present); ATR is low, so reward is limited. Wait for clear trigger above/below range."
+}
+Model: gpt-4-vision-2024-06-13
+----------------------------------------------------------------------------------------------------
+
+PARSED RESULT:
+----------------------------------------------------------------------------------------------------
+{
+  "recommendation": "hold",
+  "summary": "Market in tight range after breakdown; no clean setup. EMA cluster overhead, local support uncertain, and ATR low. Both break-down and reclaim require confirmation.",
+  "key_levels": {
+    "support": 251.0,
+    "resistance": 257.0
+  },
+  "risk_factors": [
+    "Low ATR and volatility; tight range, unclear momentum",
+    "EMA50/EMA200 overhead may cap upside"
+  ],
+  "market_condition": "RANGING",
+  "market_direction": "SIDEWAYS",
+  "evidence": "Price consolidates below EMA50/EMA200 after prior drop; no 1h close reclaiming resistance or breaking support. MACD and RSI flat, volume light.",
+  "entry_price": 0.0,
+  "stop_loss": 0.0,
+  "take_profit": 0.0,
+  "direction": "",
+  "entry_explanation": "No valid entry: clean trend-following trigger (lower high short or breakdown) not present; ranging price action.",
+  "take_profit_explanation": "No position taken, so no target.",
+  "stop_loss_explanation": "No position taken, so no stop.",
+  "confidence": 0.3,
+  "risk_reward_ratio": 0.0,
+  "rationale": "Best setups require either breakdown below 251 (not present) or confirmed reclaim above 257 (not present); ATR is low, so reward is limited. Wait for clear trigger above/below range.",
+  "timeframe": "short_term",
+  "extracted_timeframe": "1h",
+  "normalized_timeframe": "1h",
+  "symbol": "AAVEUSDT",
+  "last_close_price": null,
+  "trade_confidence": 0.3,
+  "assistant_id": "asst_m11ds7XhdYfN7voO0pRvgbul",
+  "assistant_model": "gpt-4.1",
+  "raw_response": "{\n    \"recommendation\": \"hold\",\n    \"summary\": \"Market in tight range after breakdown; no clean setup. EMA cluster overhead, local support uncertain, and ATR low. Both break-down and reclaim require confirmation.\",\n    \"key_levels\": {\n        \"support\": 251.0,\n        \"resistance\": 257.0\n    },\n    \"risk_factors\": [\n        \"Low ATR and volatility; tight range, unclear momentum\",\n        \"EMA50/EMA200 overhead may cap upside\"\n    ],\n    \"market_condition\": \"RANGING\",\n    \"market_direction\": \"SIDEWAYS\",\n    \"evidence\": \"Price consolidates below EMA50/EMA200 after prior drop; no 1h close reclaiming resistance or breaking support. MACD and RSI flat, volume light.\",\n    \"entry_price\": 0.0,\n    \"stop_loss\": 0.0,\n    \"take_profit\": 0.0,\n    \"direction\": \"\",\n    \"entry_explanation\": \"No valid entry: clean trend-following trigger (lower high short or breakdown) not present; ranging price action.\",\n    \"take_profit_explanation\": \"No position taken, so no target.\",\n    \"stop_loss_explanation\": \"No position taken, so no stop.\",\n    \"confidence\": 0.3,\n    \"risk_reward_ratio\": 0.0,\n    \"rationale\": \"Best setups require either breakdown below 251 (not present) or confirmed reclaim above 257 (not present); ATR is low, so reward is limited. Wait for clear trigger above/below range.\"\n}\nModel: gpt-4-vision-2024-06-13",
+  "timestamp": "2025-10-15 03:00:00",
+  "original_timeframe": "1h",
+  "analysis_method": "assistant",
+  "analysis_prompt": "Analyze the chart image and market data and return a TRADE PLAYBOOK in the specific JSON format below.\n\n    GOAL\n    - Produce a concise, actionable recommendation similar to a human trader's plan:\n      Bias, preferred setups with entry/invalidation/targets, risk management, and a final summary.\n\n    CURRENT MARKET DATA\n    \n    - Last Price: N/A\n    - 24h Change: N/A\n    - 24h High: N/A\n    - 24h Low: N/A\n    - Funding Rate: N/A\n    - Long/Short Ratio: N/A\n    - Timeframe: \"1h\"\n    - Symbol: \"AAVEUSDT\n\n    ANALYSIS GUIDELINES\n    - Determine short-term bias using price action and moving averages (e.g., EMA50/EMA200 if visible).\n    - Identify the nearest support/resistance and any obvious confluence (Fibonacci clusters, EMA cluster, prior swing levels).\n    - Read the ATR panel value if visible (e.g., ATR 14 RMA); otherwise approximate from recent candles.\n    - Favor trend-following setups; avoid countertrend unless strong reclaim occurs.\n\n    REQUIRED SETUPS TO CONSIDER (CHOOSE THE BEST AS PRIMARY)\n    1) Short the lower-high (trend-following fade into resistance)\n       - Trigger: Rejection/backside test into resistance or EMA cluster\n       - Output: entry_zone [low, high], invalidation (hard stop), targets [t1, t2, t3]\n    2) Breakdown continuation\n       - Trigger: 1h close below key support, or break-retest failure\n       - Output: entry (below/retest), invalidation, targets\n    3) Trend-reclaim long (only if structure shifts)\n       - Trigger: Close and hold back above key resistance/EMA cluster\n       - Output: entry, invalidation, targets\n\n    RISK MANAGEMENT\n    - Use ATR-based buffers: default stop buffer 1.0\u20131.5 \u00d7 ATR beyond invalidation level.\n    - Provide a realistic position risk percent (0.5\u20131.0%).\n    - Ensure risk_reward_ratio \u2265 1:2 for the PRIMARY setup; otherwise recommendation = \"hold\".\n\n    \n    ## OUTPUT RULES\n    Return your analysis in this exact JSON format:\n    {\n        \"recommendation\": \"buy\" | \"hold\" | \"sell\",\n        \"summary\": \"Brief analysis summary (max 50 words)\",\n        \"key_levels\": {\n            \"support\": 0.0,\n            \"resistance\": 0.0\n        },\n        \"risk_factors\": [\"Risk factor 1\", \"Risk factor 2\"],\n        \"market_condition\": \"TRENDING\" | \"RANGING\",\n        \"market_direction\": \"UP\" | \"DOWN\" | \"SIDEWAYS\",\n        \"evidence\": \"Specific evidence supporting recommendation\",\n        \"entry_price\": 0.0,\n        \"stop_loss\": 0.0,\n        \"take_profit\": 0.0,\n        \"direction\": \"Long\" | \"Short\",\n        \"entry_explanation\": \"Why this entry price?\",\n        \"take_profit_explanation\": \"Why this take profit?\",\n        \"stop_loss_explanation\": \"Why this stop loss?\",\n        \"confidence\": 0.0,\n        \"risk_reward_ratio\": 0.0,\n        \"rationale\": \"Brief rationale for recommendation (MUST be always provided)\"\n    }\n    \n\n    VALIDATION\n    - Populate entry_price/stop_loss/take_profit from the PRIMARY setup only.\n    - If RR < 1:2 or structure unclear, set recommendation = \"hold\" and explain in summary.\n    - Keep numbers consistent with the chart; do not invent unrealistic targets.\n    - Prefer clean, conservative entries over aggressive breakouts unless momentum is exceptional.",
+  "passed_image": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251015_030000.png",
+  "prompt_version": "get_analyzer_prompt_trade_playbook_v1",
+  "prompt_id": "get_analyzer_prompt_trade_playbook_v1",
+  "market_data_snapshot": {
+    "last_price": "N/A",
+    "price_change_24h_percent": "N/A",
+    "high_24h": "N/A",
+    "low_24h": "N/A",
+    "funding_rate": "N/A",
+    "long_short_ratio": "N/A",
+    "timeframe": "1h",
+    "symbol": "AAVEUSDT"
+  },
+  "prompt_name": "get_analyzer_prompt_trade_playbook_v1",
+  "image_path": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251015_030000.png",
+  "image_timestamp": "2025-10-15T03:00:00",
+  "image_timestamp_ms": 1760468400000
+}
+----------------------------------------------------------------------------------------------------
+
+
+====================================================================================================
+ANALYSIS #5
+====================================================================================================
+Prompt: get_analyzer_prompt_trade_playbook_v1
+Image: AAVEUSDT_1h_20251014_210000.png
+Symbol: AAVEUSDT
+Timeframe: 1h
+Timestamp: 2025-10-14T21:00:00
+Analyzed at: 2025-12-01T15:23:55.929062
+----------------------------------------------------------------------------------------------------
+
+RAW MODEL OUTPUT:
+----------------------------------------------------------------------------------------------------
+{
+    "recommendation": "sell",
+    "summary": "AAVEUSDT rejected from resistance/EMA cluster and is below key levels. Breakdown favored with clean levels and sufficient RR.",
+    "key_levels": {
+        "support": 251.8,
+        "resistance": 258.5
+    },
+    "risk_factors": [
+        "Oversold signals on short-term oscillators may produce short squeezes",
+        "Support at 251.8 could hold and trigger a bounce"
+    ],
+    "market_condition": "TRENDING",
+    "market_direction": "DOWN",
+    "evidence": "Price below EMA50/200, repeated rejection at resistance/EMA/previous swing lows, MACD/RSI bearish, and OBV not improving.",
+    "entry_price": 251.0,
+    "stop_loss": 254.0,
+    "take_profit": 241.0,
+    "direction": "Short",
+    "entry_explanation": "Entry just below hourly support following breakdown confirmation to capture trend-following move.",
+    "take_profit_explanation": "First major swing low and round number at 241.0 aligns with prior congestion and ATR extension.",
+    "stop_loss_explanation": "Stop set above last minor high and 1×ATR buffer above reclaimed support (approx. 254.0).",
+    "confidence": 0.7,
+    "risk_reward_ratio": 3.3,
+    "rationale": "Bearish structure, clear rejection at resistance/EMAs, and lack of bullish absorption. Clean breakdown below 251.8 support favors continuation lower."
+}
+Model: gpt-4-vision-2024-06-13
+----------------------------------------------------------------------------------------------------
+
+PARSED RESULT:
+----------------------------------------------------------------------------------------------------
+{
+  "recommendation": "sell",
+  "summary": "AAVEUSDT rejected from resistance/EMA cluster and is below key levels. Breakdown favored with clean levels and sufficient RR.",
+  "key_levels": {
+    "support": 251.8,
+    "resistance": 258.5
+  },
+  "risk_factors": [
+    "Oversold signals on short-term oscillators may produce short squeezes",
+    "Support at 251.8 could hold and trigger a bounce"
+  ],
+  "market_condition": "TRENDING",
+  "market_direction": "DOWN",
+  "evidence": "Price below EMA50/200, repeated rejection at resistance/EMA/previous swing lows, MACD/RSI bearish, and OBV not improving.",
+  "entry_price": 251.0,
+  "stop_loss": 254.0,
+  "take_profit": 241.0,
+  "direction": "Short",
+  "entry_explanation": "Entry just below hourly support following breakdown confirmation to capture trend-following move.",
+  "take_profit_explanation": "First major swing low and round number at 241.0 aligns with prior congestion and ATR extension.",
+  "stop_loss_explanation": "Stop set above last minor high and 1\u00d7ATR buffer above reclaimed support (approx. 254.0).",
+  "confidence": 0.7,
+  "risk_reward_ratio": 3.3,
+  "rationale": "Bearish structure, clear rejection at resistance/EMAs, and lack of bullish absorption. Clean breakdown below 251.8 support favors continuation lower.",
+  "timeframe": "short_term",
+  "extracted_timeframe": "1h",
+  "normalized_timeframe": "1h",
+  "symbol": "AAVEUSDT",
+  "last_close_price": null,
+  "trade_confidence": 0.7,
+  "assistant_id": "asst_m11ds7XhdYfN7voO0pRvgbul",
+  "assistant_model": "gpt-4.1",
+  "raw_response": "{\n    \"recommendation\": \"sell\",\n    \"summary\": \"AAVEUSDT rejected from resistance/EMA cluster and is below key levels. Breakdown favored with clean levels and sufficient RR.\",\n    \"key_levels\": {\n        \"support\": 251.8,\n        \"resistance\": 258.5\n    },\n    \"risk_factors\": [\n        \"Oversold signals on short-term oscillators may produce short squeezes\",\n        \"Support at 251.8 could hold and trigger a bounce\"\n    ],\n    \"market_condition\": \"TRENDING\",\n    \"market_direction\": \"DOWN\",\n    \"evidence\": \"Price below EMA50/200, repeated rejection at resistance/EMA/previous swing lows, MACD/RSI bearish, and OBV not improving.\",\n    \"entry_price\": 251.0,\n    \"stop_loss\": 254.0,\n    \"take_profit\": 241.0,\n    \"direction\": \"Short\",\n    \"entry_explanation\": \"Entry just below hourly support following breakdown confirmation to capture trend-following move.\",\n    \"take_profit_explanation\": \"First major swing low and round number at 241.0 aligns with prior congestion and ATR extension.\",\n    \"stop_loss_explanation\": \"Stop set above last minor high and 1\u00d7ATR buffer above reclaimed support (approx. 254.0).\",\n    \"confidence\": 0.7,\n    \"risk_reward_ratio\": 3.3,\n    \"rationale\": \"Bearish structure, clear rejection at resistance/EMAs, and lack of bullish absorption. Clean breakdown below 251.8 support favors continuation lower.\"\n}\nModel: gpt-4-vision-2024-06-13",
+  "timestamp": "2025-10-14 21:00:00",
+  "original_timeframe": "1h",
+  "analysis_method": "assistant",
+  "analysis_prompt": "Analyze the chart image and market data and return a TRADE PLAYBOOK in the specific JSON format below.\n\n    GOAL\n    - Produce a concise, actionable recommendation similar to a human trader's plan:\n      Bias, preferred setups with entry/invalidation/targets, risk management, and a final summary.\n\n    CURRENT MARKET DATA\n    \n    - Last Price: N/A\n    - 24h Change: N/A\n    - 24h High: N/A\n    - 24h Low: N/A\n    - Funding Rate: N/A\n    - Long/Short Ratio: N/A\n    - Timeframe: \"1h\"\n    - Symbol: \"AAVEUSDT\n\n    ANALYSIS GUIDELINES\n    - Determine short-term bias using price action and moving averages (e.g., EMA50/EMA200 if visible).\n    - Identify the nearest support/resistance and any obvious confluence (Fibonacci clusters, EMA cluster, prior swing levels).\n    - Read the ATR panel value if visible (e.g., ATR 14 RMA); otherwise approximate from recent candles.\n    - Favor trend-following setups; avoid countertrend unless strong reclaim occurs.\n\n    REQUIRED SETUPS TO CONSIDER (CHOOSE THE BEST AS PRIMARY)\n    1) Short the lower-high (trend-following fade into resistance)\n       - Trigger: Rejection/backside test into resistance or EMA cluster\n       - Output: entry_zone [low, high], invalidation (hard stop), targets [t1, t2, t3]\n    2) Breakdown continuation\n       - Trigger: 1h close below key support, or break-retest failure\n       - Output: entry (below/retest), invalidation, targets\n    3) Trend-reclaim long (only if structure shifts)\n       - Trigger: Close and hold back above key resistance/EMA cluster\n       - Output: entry, invalidation, targets\n\n    RISK MANAGEMENT\n    - Use ATR-based buffers: default stop buffer 1.0\u20131.5 \u00d7 ATR beyond invalidation level.\n    - Provide a realistic position risk percent (0.5\u20131.0%).\n    - Ensure risk_reward_ratio \u2265 1:2 for the PRIMARY setup; otherwise recommendation = \"hold\".\n\n    \n    ## OUTPUT RULES\n    Return your analysis in this exact JSON format:\n    {\n        \"recommendation\": \"buy\" | \"hold\" | \"sell\",\n        \"summary\": \"Brief analysis summary (max 50 words)\",\n        \"key_levels\": {\n            \"support\": 0.0,\n            \"resistance\": 0.0\n        },\n        \"risk_factors\": [\"Risk factor 1\", \"Risk factor 2\"],\n        \"market_condition\": \"TRENDING\" | \"RANGING\",\n        \"market_direction\": \"UP\" | \"DOWN\" | \"SIDEWAYS\",\n        \"evidence\": \"Specific evidence supporting recommendation\",\n        \"entry_price\": 0.0,\n        \"stop_loss\": 0.0,\n        \"take_profit\": 0.0,\n        \"direction\": \"Long\" | \"Short\",\n        \"entry_explanation\": \"Why this entry price?\",\n        \"take_profit_explanation\": \"Why this take profit?\",\n        \"stop_loss_explanation\": \"Why this stop loss?\",\n        \"confidence\": 0.0,\n        \"risk_reward_ratio\": 0.0,\n        \"rationale\": \"Brief rationale for recommendation (MUST be always provided)\"\n    }\n    \n\n    VALIDATION\n    - Populate entry_price/stop_loss/take_profit from the PRIMARY setup only.\n    - If RR < 1:2 or structure unclear, set recommendation = \"hold\" and explain in summary.\n    - Keep numbers consistent with the chart; do not invent unrealistic targets.\n    - Prefer clean, conservative entries over aggressive breakouts unless momentum is exceptional.",
+  "passed_image": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251014_210000.png",
+  "prompt_version": "get_analyzer_prompt_trade_playbook_v1",
+  "prompt_id": "get_analyzer_prompt_trade_playbook_v1",
+  "market_data_snapshot": {
+    "last_price": "N/A",
+    "price_change_24h_percent": "N/A",
+    "high_24h": "N/A",
+    "low_24h": "N/A",
+    "funding_rate": "N/A",
+    "long_short_ratio": "N/A",
+    "timeframe": "1h",
+    "symbol": "AAVEUSDT"
+  },
+  "prompt_name": "get_analyzer_prompt_trade_playbook_v1",
+  "image_path": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251014_210000.png",
+  "image_timestamp": "2025-10-14T21:00:00",
+  "image_timestamp_ms": 1760446800000
+}
+----------------------------------------------------------------------------------------------------
+
+
+====================================================================================================
+ANALYSIS #6
+====================================================================================================
+Prompt: get_analyzer_prompt_trade_playbook_v1
+Image: AAVEUSDT_1h_20251014_200000.png
+Symbol: AAVEUSDT
+Timeframe: 1h
+Timestamp: 2025-10-14T20:00:00
+Analyzed at: 2025-12-01T15:24:20.896007
+----------------------------------------------------------------------------------------------------
+
+RAW MODEL OUTPUT:
+----------------------------------------------------------------------------------------------------
+{
+    "recommendation": "sell",
+    "summary": "AAVEUSDT shows clear rejection at resistance and is trending down. Lower-high forms under EMA cluster with breakdown risk.",
+    "key_levels": {
+        "support": 249.0,
+        "resistance": 262.0
+    },
+    "risk_factors": [
+        "Oversold conditions on intraday may prompt bounces",
+        "Support at 249 could trigger short covering"
+    ],
+    "market_condition": "TRENDING",
+    "market_direction": "DOWN",
+    "evidence": "Price is below EMA50/EMA200, bears control with failed attempt over resistance. MACD momentum favors sellers; RSI below midline.",
+    "entry_price": 258.0,
+    "stop_loss": 263.5,
+    "take_profit": 250.0,
+    "direction": "Short",
+    "entry_explanation": "Entry on rally to EMA50/EMA200 cluster and prior failed breakdown at 258, which has repeatedly acted as resistance.",
+    "take_profit_explanation": "TP at 250, just above visible support and prior price reaction lows, providing a conservative exit before front-running demand.",
+    "stop_loss_explanation": "SL at 263.5, above the resistance area/EMA cluster with ~1 ATR buffer, invalidating the short if reclaimed.",
+    "confidence": 0.77,
+    "risk_reward_ratio": 1.33,
+    "rationale": "Structurally weak after failed reclaim; trend-following short position is justified if price rejects EMA cluster, targeting move to nearby support."
+}
+Model: gpt-4-vision
+----------------------------------------------------------------------------------------------------
+
+PARSED RESULT:
+----------------------------------------------------------------------------------------------------
+{
+  "recommendation": "sell",
+  "summary": "AAVEUSDT shows clear rejection at resistance and is trending down. Lower-high forms under EMA cluster with breakdown risk.",
+  "key_levels": {
+    "support": 249.0,
+    "resistance": 262.0
+  },
+  "risk_factors": [
+    "Oversold conditions on intraday may prompt bounces",
+    "Support at 249 could trigger short covering"
+  ],
+  "market_condition": "TRENDING",
+  "market_direction": "DOWN",
+  "evidence": "Price is below EMA50/EMA200, bears control with failed attempt over resistance. MACD momentum favors sellers; RSI below midline.",
+  "entry_price": 258.0,
+  "stop_loss": 263.5,
+  "take_profit": 250.0,
+  "direction": "Short",
+  "entry_explanation": "Entry on rally to EMA50/EMA200 cluster and prior failed breakdown at 258, which has repeatedly acted as resistance.",
+  "take_profit_explanation": "TP at 250, just above visible support and prior price reaction lows, providing a conservative exit before front-running demand.",
+  "stop_loss_explanation": "SL at 263.5, above the resistance area/EMA cluster with ~1 ATR buffer, invalidating the short if reclaimed.",
+  "confidence": 0.77,
+  "risk_reward_ratio": 1.33,
+  "rationale": "Structurally weak after failed reclaim; trend-following short position is justified if price rejects EMA cluster, targeting move to nearby support.",
+  "timeframe": "short_term",
+  "extracted_timeframe": "1h",
+  "normalized_timeframe": "1h",
+  "symbol": "AAVEUSDT",
+  "last_close_price": null,
+  "trade_confidence": 0.77,
+  "assistant_id": "asst_m11ds7XhdYfN7voO0pRvgbul",
+  "assistant_model": "gpt-4.1",
+  "raw_response": "{\n    \"recommendation\": \"sell\",\n    \"summary\": \"AAVEUSDT shows clear rejection at resistance and is trending down. Lower-high forms under EMA cluster with breakdown risk.\",\n    \"key_levels\": {\n        \"support\": 249.0,\n        \"resistance\": 262.0\n    },\n    \"risk_factors\": [\n        \"Oversold conditions on intraday may prompt bounces\",\n        \"Support at 249 could trigger short covering\"\n    ],\n    \"market_condition\": \"TRENDING\",\n    \"market_direction\": \"DOWN\",\n    \"evidence\": \"Price is below EMA50/EMA200, bears control with failed attempt over resistance. MACD momentum favors sellers; RSI below midline.\",\n    \"entry_price\": 258.0,\n    \"stop_loss\": 263.5,\n    \"take_profit\": 250.0,\n    \"direction\": \"Short\",\n    \"entry_explanation\": \"Entry on rally to EMA50/EMA200 cluster and prior failed breakdown at 258, which has repeatedly acted as resistance.\",\n    \"take_profit_explanation\": \"TP at 250, just above visible support and prior price reaction lows, providing a conservative exit before front-running demand.\",\n    \"stop_loss_explanation\": \"SL at 263.5, above the resistance area/EMA cluster with ~1 ATR buffer, invalidating the short if reclaimed.\",\n    \"confidence\": 0.77,\n    \"risk_reward_ratio\": 1.33,\n    \"rationale\": \"Structurally weak after failed reclaim; trend-following short position is justified if price rejects EMA cluster, targeting move to nearby support.\"\n}\nModel: gpt-4-vision",
+  "timestamp": "2025-10-14 20:00:00",
+  "original_timeframe": "1h",
+  "analysis_method": "assistant",
+  "analysis_prompt": "Analyze the chart image and market data and return a TRADE PLAYBOOK in the specific JSON format below.\n\n    GOAL\n    - Produce a concise, actionable recommendation similar to a human trader's plan:\n      Bias, preferred setups with entry/invalidation/targets, risk management, and a final summary.\n\n    CURRENT MARKET DATA\n    \n    - Last Price: N/A\n    - 24h Change: N/A\n    - 24h High: N/A\n    - 24h Low: N/A\n    - Funding Rate: N/A\n    - Long/Short Ratio: N/A\n    - Timeframe: \"1h\"\n    - Symbol: \"AAVEUSDT\n\n    ANALYSIS GUIDELINES\n    - Determine short-term bias using price action and moving averages (e.g., EMA50/EMA200 if visible).\n    - Identify the nearest support/resistance and any obvious confluence (Fibonacci clusters, EMA cluster, prior swing levels).\n    - Read the ATR panel value if visible (e.g., ATR 14 RMA); otherwise approximate from recent candles.\n    - Favor trend-following setups; avoid countertrend unless strong reclaim occurs.\n\n    REQUIRED SETUPS TO CONSIDER (CHOOSE THE BEST AS PRIMARY)\n    1) Short the lower-high (trend-following fade into resistance)\n       - Trigger: Rejection/backside test into resistance or EMA cluster\n       - Output: entry_zone [low, high], invalidation (hard stop), targets [t1, t2, t3]\n    2) Breakdown continuation\n       - Trigger: 1h close below key support, or break-retest failure\n       - Output: entry (below/retest), invalidation, targets\n    3) Trend-reclaim long (only if structure shifts)\n       - Trigger: Close and hold back above key resistance/EMA cluster\n       - Output: entry, invalidation, targets\n\n    RISK MANAGEMENT\n    - Use ATR-based buffers: default stop buffer 1.0\u20131.5 \u00d7 ATR beyond invalidation level.\n    - Provide a realistic position risk percent (0.5\u20131.0%).\n    - Ensure risk_reward_ratio \u2265 1:2 for the PRIMARY setup; otherwise recommendation = \"hold\".\n\n    \n    ## OUTPUT RULES\n    Return your analysis in this exact JSON format:\n    {\n        \"recommendation\": \"buy\" | \"hold\" | \"sell\",\n        \"summary\": \"Brief analysis summary (max 50 words)\",\n        \"key_levels\": {\n            \"support\": 0.0,\n            \"resistance\": 0.0\n        },\n        \"risk_factors\": [\"Risk factor 1\", \"Risk factor 2\"],\n        \"market_condition\": \"TRENDING\" | \"RANGING\",\n        \"market_direction\": \"UP\" | \"DOWN\" | \"SIDEWAYS\",\n        \"evidence\": \"Specific evidence supporting recommendation\",\n        \"entry_price\": 0.0,\n        \"stop_loss\": 0.0,\n        \"take_profit\": 0.0,\n        \"direction\": \"Long\" | \"Short\",\n        \"entry_explanation\": \"Why this entry price?\",\n        \"take_profit_explanation\": \"Why this take profit?\",\n        \"stop_loss_explanation\": \"Why this stop loss?\",\n        \"confidence\": 0.0,\n        \"risk_reward_ratio\": 0.0,\n        \"rationale\": \"Brief rationale for recommendation (MUST be always provided)\"\n    }\n    \n\n    VALIDATION\n    - Populate entry_price/stop_loss/take_profit from the PRIMARY setup only.\n    - If RR < 1:2 or structure unclear, set recommendation = \"hold\" and explain in summary.\n    - Keep numbers consistent with the chart; do not invent unrealistic targets.\n    - Prefer clean, conservative entries over aggressive breakouts unless momentum is exceptional.",
+  "passed_image": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251014_200000.png",
+  "prompt_version": "get_analyzer_prompt_trade_playbook_v1",
+  "prompt_id": "get_analyzer_prompt_trade_playbook_v1",
+  "market_data_snapshot": {
+    "last_price": "N/A",
+    "price_change_24h_percent": "N/A",
+    "high_24h": "N/A",
+    "low_24h": "N/A",
+    "funding_rate": "N/A",
+    "long_short_ratio": "N/A",
+    "timeframe": "1h",
+    "symbol": "AAVEUSDT"
+  },
+  "prompt_name": "get_analyzer_prompt_trade_playbook_v1",
+  "image_path": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251014_200000.png",
+  "image_timestamp": "2025-10-14T20:00:00",
+  "image_timestamp_ms": 1760443200000
+}
+----------------------------------------------------------------------------------------------------
+
+
+====================================================================================================
+ANALYSIS #7
+====================================================================================================
+Prompt: get_analyzer_prompt_trade_playbook_v1
+Image: AAVEUSDT_1h_20251014_190000.png
+Symbol: AAVEUSDT
+Timeframe: 1h
+Timestamp: 2025-10-14T19:00:00
+Analyzed at: 2025-12-01T15:24:43.717283
+----------------------------------------------------------------------------------------------------
+
+RAW MODEL OUTPUT:
+----------------------------------------------------------------------------------------------------
+{
+    "recommendation": "sell",
+    "summary": "AAVEUSDT is in a firm downtrend under major EMAs with resistance confluence and bearish momentum. A lower-high short setup offers a 1:2+ RR into weak support.",
+    "key_levels": {
+        "support": 185.7,
+        "resistance": 194.5
+    },
+    "risk_factors": [
+        "Oversold short-term indicators may cause sharp bounces.",
+        "Major breakdown has already occurred, chasing continuation could whipsaw."
+    ],
+    "market_condition": "TRENDING",
+    "market_direction": "DOWN",
+    "evidence": "Price is below EMA50/EMA200, recent failed bounce rejected at resistance, MACD and OBV remain bearish, and recent closes struggle around previous support now resistance.",
+    "entry_price": 192.0,
+    "stop_loss": 195.5,
+    "take_profit": 185.7,
+    "direction": "Short",
+    "entry_explanation": "Enter on retest and rejection near the 1h EMA cluster and prior support-turned-resistance at $192–$194.5, now acting as a pivot zone.",
+    "take_profit_explanation": "Take profit at the most recent swing support at $185.7, just above local lows and likely first bounce zone.",
+    "stop_loss_explanation": "Stop above local resistance highs and EMA cluster at $195.5, with buffer ~1.5× ATR (ATR 1h ≈ $2).",
+    "confidence": 0.8,
+    "risk_reward_ratio": 2.0,
+    "rationale": "Bear trend is clear, and EMA cluster plus price action provides a defined resistance. Reward-to-risk is favorable. Low probability of squeeze as breakdown structure persists and buyers have not reclaimed key levels."
+}
+Model: GPT-4o
+----------------------------------------------------------------------------------------------------
+
+PARSED RESULT:
+----------------------------------------------------------------------------------------------------
+{
+  "recommendation": "sell",
+  "summary": "AAVEUSDT is in a firm downtrend under major EMAs with resistance confluence and bearish momentum. A lower-high short setup offers a 1:2+ RR into weak support.",
+  "key_levels": {
+    "support": 185.7,
+    "resistance": 194.5
+  },
+  "risk_factors": [
+    "Oversold short-term indicators may cause sharp bounces.",
+    "Major breakdown has already occurred, chasing continuation could whipsaw."
+  ],
+  "market_condition": "TRENDING",
+  "market_direction": "DOWN",
+  "evidence": "Price is below EMA50/EMA200, recent failed bounce rejected at resistance, MACD and OBV remain bearish, and recent closes struggle around previous support now resistance.",
+  "entry_price": 192.0,
+  "stop_loss": 195.5,
+  "take_profit": 185.7,
+  "direction": "Short",
+  "entry_explanation": "Enter on retest and rejection near the 1h EMA cluster and prior support-turned-resistance at $192\u2013$194.5, now acting as a pivot zone.",
+  "take_profit_explanation": "Take profit at the most recent swing support at $185.7, just above local lows and likely first bounce zone.",
+  "stop_loss_explanation": "Stop above local resistance highs and EMA cluster at $195.5, with buffer ~1.5\u00d7 ATR (ATR 1h \u2248 $2).",
+  "confidence": 0.8,
+  "risk_reward_ratio": 2.0,
+  "rationale": "Bear trend is clear, and EMA cluster plus price action provides a defined resistance. Reward-to-risk is favorable. Low probability of squeeze as breakdown structure persists and buyers have not reclaimed key levels.",
+  "timeframe": "short_term",
+  "extracted_timeframe": "1h",
+  "normalized_timeframe": "1h",
+  "symbol": "AAVEUSDT",
+  "last_close_price": null,
+  "trade_confidence": 0.8,
+  "assistant_id": "asst_m11ds7XhdYfN7voO0pRvgbul",
+  "assistant_model": "gpt-4.1",
+  "raw_response": "{\n    \"recommendation\": \"sell\",\n    \"summary\": \"AAVEUSDT is in a firm downtrend under major EMAs with resistance confluence and bearish momentum. A lower-high short setup offers a 1:2+ RR into weak support.\",\n    \"key_levels\": {\n        \"support\": 185.7,\n        \"resistance\": 194.5\n    },\n    \"risk_factors\": [\n        \"Oversold short-term indicators may cause sharp bounces.\",\n        \"Major breakdown has already occurred, chasing continuation could whipsaw.\"\n    ],\n    \"market_condition\": \"TRENDING\",\n    \"market_direction\": \"DOWN\",\n    \"evidence\": \"Price is below EMA50/EMA200, recent failed bounce rejected at resistance, MACD and OBV remain bearish, and recent closes struggle around previous support now resistance.\",\n    \"entry_price\": 192.0,\n    \"stop_loss\": 195.5,\n    \"take_profit\": 185.7,\n    \"direction\": \"Short\",\n    \"entry_explanation\": \"Enter on retest and rejection near the 1h EMA cluster and prior support-turned-resistance at $192\u2013$194.5, now acting as a pivot zone.\",\n    \"take_profit_explanation\": \"Take profit at the most recent swing support at $185.7, just above local lows and likely first bounce zone.\",\n    \"stop_loss_explanation\": \"Stop above local resistance highs and EMA cluster at $195.5, with buffer ~1.5\u00d7 ATR (ATR 1h \u2248 $2).\",\n    \"confidence\": 0.8,\n    \"risk_reward_ratio\": 2.0,\n    \"rationale\": \"Bear trend is clear, and EMA cluster plus price action provides a defined resistance. Reward-to-risk is favorable. Low probability of squeeze as breakdown structure persists and buyers have not reclaimed key levels.\"\n}\nModel: GPT-4o",
+  "timestamp": "2025-10-14 19:00:00",
+  "original_timeframe": "1h",
+  "analysis_method": "assistant",
+  "analysis_prompt": "Analyze the chart image and market data and return a TRADE PLAYBOOK in the specific JSON format below.\n\n    GOAL\n    - Produce a concise, actionable recommendation similar to a human trader's plan:\n      Bias, preferred setups with entry/invalidation/targets, risk management, and a final summary.\n\n    CURRENT MARKET DATA\n    \n    - Last Price: N/A\n    - 24h Change: N/A\n    - 24h High: N/A\n    - 24h Low: N/A\n    - Funding Rate: N/A\n    - Long/Short Ratio: N/A\n    - Timeframe: \"1h\"\n    - Symbol: \"AAVEUSDT\n\n    ANALYSIS GUIDELINES\n    - Determine short-term bias using price action and moving averages (e.g., EMA50/EMA200 if visible).\n    - Identify the nearest support/resistance and any obvious confluence (Fibonacci clusters, EMA cluster, prior swing levels).\n    - Read the ATR panel value if visible (e.g., ATR 14 RMA); otherwise approximate from recent candles.\n    - Favor trend-following setups; avoid countertrend unless strong reclaim occurs.\n\n    REQUIRED SETUPS TO CONSIDER (CHOOSE THE BEST AS PRIMARY)\n    1) Short the lower-high (trend-following fade into resistance)\n       - Trigger: Rejection/backside test into resistance or EMA cluster\n       - Output: entry_zone [low, high], invalidation (hard stop), targets [t1, t2, t3]\n    2) Breakdown continuation\n       - Trigger: 1h close below key support, or break-retest failure\n       - Output: entry (below/retest), invalidation, targets\n    3) Trend-reclaim long (only if structure shifts)\n       - Trigger: Close and hold back above key resistance/EMA cluster\n       - Output: entry, invalidation, targets\n\n    RISK MANAGEMENT\n    - Use ATR-based buffers: default stop buffer 1.0\u20131.5 \u00d7 ATR beyond invalidation level.\n    - Provide a realistic position risk percent (0.5\u20131.0%).\n    - Ensure risk_reward_ratio \u2265 1:2 for the PRIMARY setup; otherwise recommendation = \"hold\".\n\n    \n    ## OUTPUT RULES\n    Return your analysis in this exact JSON format:\n    {\n        \"recommendation\": \"buy\" | \"hold\" | \"sell\",\n        \"summary\": \"Brief analysis summary (max 50 words)\",\n        \"key_levels\": {\n            \"support\": 0.0,\n            \"resistance\": 0.0\n        },\n        \"risk_factors\": [\"Risk factor 1\", \"Risk factor 2\"],\n        \"market_condition\": \"TRENDING\" | \"RANGING\",\n        \"market_direction\": \"UP\" | \"DOWN\" | \"SIDEWAYS\",\n        \"evidence\": \"Specific evidence supporting recommendation\",\n        \"entry_price\": 0.0,\n        \"stop_loss\": 0.0,\n        \"take_profit\": 0.0,\n        \"direction\": \"Long\" | \"Short\",\n        \"entry_explanation\": \"Why this entry price?\",\n        \"take_profit_explanation\": \"Why this take profit?\",\n        \"stop_loss_explanation\": \"Why this stop loss?\",\n        \"confidence\": 0.0,\n        \"risk_reward_ratio\": 0.0,\n        \"rationale\": \"Brief rationale for recommendation (MUST be always provided)\"\n    }\n    \n\n    VALIDATION\n    - Populate entry_price/stop_loss/take_profit from the PRIMARY setup only.\n    - If RR < 1:2 or structure unclear, set recommendation = \"hold\" and explain in summary.\n    - Keep numbers consistent with the chart; do not invent unrealistic targets.\n    - Prefer clean, conservative entries over aggressive breakouts unless momentum is exceptional.",
+  "passed_image": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251014_190000.png",
+  "prompt_version": "get_analyzer_prompt_trade_playbook_v1",
+  "prompt_id": "get_analyzer_prompt_trade_playbook_v1",
+  "market_data_snapshot": {
+    "last_price": "N/A",
+    "price_change_24h_percent": "N/A",
+    "high_24h": "N/A",
+    "low_24h": "N/A",
+    "funding_rate": "N/A",
+    "long_short_ratio": "N/A",
+    "timeframe": "1h",
+    "symbol": "AAVEUSDT"
+  },
+  "prompt_name": "get_analyzer_prompt_trade_playbook_v1",
+  "image_path": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251014_190000.png",
+  "image_timestamp": "2025-10-14T19:00:00",
+  "image_timestamp_ms": 1760439600000
+}
+----------------------------------------------------------------------------------------------------
+
+
+====================================================================================================
+ANALYSIS #8
+====================================================================================================
+Prompt: get_analyzer_prompt_trade_playbook_v1
+Image: AAVEUSDT_1h_20251014_180000.png
+Symbol: AAVEUSDT
+Timeframe: 1h
+Timestamp: 2025-10-14T18:00:00
+Analyzed at: 2025-12-01T15:25:06.682980
+----------------------------------------------------------------------------------------------------
+
+RAW MODEL OUTPUT:
+----------------------------------------------------------------------------------------------------
+{
+    "recommendation": "hold",
+    "summary": "Market is consolidating after breakdown, support/resistance tightly stacked, no clear trend-following setup with RR ≥ 2:1. Wait for clearer momentum or structure shift.",
+    "key_levels": {
+        "support": 251.0,
+        "resistance": 258.5
+    },
+    "risk_factors": [
+        "Low volatility and ranging conditions",
+        "Moving averages converging, no decisive momentum"
+    ],
+    "market_condition": "RANGING",
+    "market_direction": "SIDEWAYS",
+    "evidence": "Price is below EMA200 and EMA50, consolidating in a narrow band between recent support at 251 and resistance/EMA cluster at 258.5. ATR is low (approx 3-4), indicating lack of volatility. MACD flat, stoch RSI neutral.",
+    "entry_price": 0.0,
+    "stop_loss": 0.0,
+    "take_profit": 0.0,
+    "direction": "Short",
+    "entry_explanation": "No actionable short or long entry as price is in mid-range and tight structure. Short at resistance or long at reclaim, but those triggers have not occurred.",
+    "take_profit_explanation": "No clear directional play; nearest levels too close for a high RR setup.",
+    "stop_loss_explanation": "Protective stops would be too tight for meaningful RR, or too wide for acceptable risk.",
+    "confidence": 0.3,
+    "risk_reward_ratio": 0.0,
+    "rationale": "Setup lacks clean trigger for trend-following or reversal. Price is rangebound and volatility is low, so best to wait for a break of structure or clear rejection/reclaim at key levels."
+}
+
+Model: GPT-4 Turbo (gpt-4-1106-preview)
+----------------------------------------------------------------------------------------------------
+
+PARSED RESULT:
+----------------------------------------------------------------------------------------------------
+{
+  "recommendation": "hold",
+  "summary": "Market is consolidating after breakdown, support/resistance tightly stacked, no clear trend-following setup with RR \u2265 2:1. Wait for clearer momentum or structure shift.",
+  "key_levels": {
+    "support": 251.0,
+    "resistance": 258.5
+  },
+  "risk_factors": [
+    "Low volatility and ranging conditions",
+    "Moving averages converging, no decisive momentum"
+  ],
+  "market_condition": "RANGING",
+  "market_direction": "SIDEWAYS",
+  "evidence": "Price is below EMA200 and EMA50, consolidating in a narrow band between recent support at 251 and resistance/EMA cluster at 258.5. ATR is low (approx 3-4), indicating lack of volatility. MACD flat, stoch RSI neutral.",
+  "entry_price": 0.0,
+  "stop_loss": 0.0,
+  "take_profit": 0.0,
+  "direction": "Short",
+  "entry_explanation": "No actionable short or long entry as price is in mid-range and tight structure. Short at resistance or long at reclaim, but those triggers have not occurred.",
+  "take_profit_explanation": "No clear directional play; nearest levels too close for a high RR setup.",
+  "stop_loss_explanation": "Protective stops would be too tight for meaningful RR, or too wide for acceptable risk.",
+  "confidence": 0.3,
+  "risk_reward_ratio": 0.0,
+  "rationale": "Setup lacks clean trigger for trend-following or reversal. Price is rangebound and volatility is low, so best to wait for a break of structure or clear rejection/reclaim at key levels.",
+  "timeframe": "short_term",
+  "extracted_timeframe": "1h",
+  "normalized_timeframe": "1h",
+  "symbol": "AAVEUSDT",
+  "last_close_price": null,
+  "trade_confidence": 0.3,
+  "assistant_id": "asst_m11ds7XhdYfN7voO0pRvgbul",
+  "assistant_model": "gpt-4.1",
+  "raw_response": "{\n    \"recommendation\": \"hold\",\n    \"summary\": \"Market is consolidating after breakdown, support/resistance tightly stacked, no clear trend-following setup with RR \u2265 2:1. Wait for clearer momentum or structure shift.\",\n    \"key_levels\": {\n        \"support\": 251.0,\n        \"resistance\": 258.5\n    },\n    \"risk_factors\": [\n        \"Low volatility and ranging conditions\",\n        \"Moving averages converging, no decisive momentum\"\n    ],\n    \"market_condition\": \"RANGING\",\n    \"market_direction\": \"SIDEWAYS\",\n    \"evidence\": \"Price is below EMA200 and EMA50, consolidating in a narrow band between recent support at 251 and resistance/EMA cluster at 258.5. ATR is low (approx 3-4), indicating lack of volatility. MACD flat, stoch RSI neutral.\",\n    \"entry_price\": 0.0,\n    \"stop_loss\": 0.0,\n    \"take_profit\": 0.0,\n    \"direction\": \"Short\",\n    \"entry_explanation\": \"No actionable short or long entry as price is in mid-range and tight structure. Short at resistance or long at reclaim, but those triggers have not occurred.\",\n    \"take_profit_explanation\": \"No clear directional play; nearest levels too close for a high RR setup.\",\n    \"stop_loss_explanation\": \"Protective stops would be too tight for meaningful RR, or too wide for acceptable risk.\",\n    \"confidence\": 0.3,\n    \"risk_reward_ratio\": 0.0,\n    \"rationale\": \"Setup lacks clean trigger for trend-following or reversal. Price is rangebound and volatility is low, so best to wait for a break of structure or clear rejection/reclaim at key levels.\"\n}\n\nModel: GPT-4 Turbo (gpt-4-1106-preview)",
+  "timestamp": "2025-10-14 18:00:00",
+  "original_timeframe": "1h",
+  "analysis_method": "assistant",
+  "analysis_prompt": "Analyze the chart image and market data and return a TRADE PLAYBOOK in the specific JSON format below.\n\n    GOAL\n    - Produce a concise, actionable recommendation similar to a human trader's plan:\n      Bias, preferred setups with entry/invalidation/targets, risk management, and a final summary.\n\n    CURRENT MARKET DATA\n    \n    - Last Price: N/A\n    - 24h Change: N/A\n    - 24h High: N/A\n    - 24h Low: N/A\n    - Funding Rate: N/A\n    - Long/Short Ratio: N/A\n    - Timeframe: \"1h\"\n    - Symbol: \"AAVEUSDT\n\n    ANALYSIS GUIDELINES\n    - Determine short-term bias using price action and moving averages (e.g., EMA50/EMA200 if visible).\n    - Identify the nearest support/resistance and any obvious confluence (Fibonacci clusters, EMA cluster, prior swing levels).\n    - Read the ATR panel value if visible (e.g., ATR 14 RMA); otherwise approximate from recent candles.\n    - Favor trend-following setups; avoid countertrend unless strong reclaim occurs.\n\n    REQUIRED SETUPS TO CONSIDER (CHOOSE THE BEST AS PRIMARY)\n    1) Short the lower-high (trend-following fade into resistance)\n       - Trigger: Rejection/backside test into resistance or EMA cluster\n       - Output: entry_zone [low, high], invalidation (hard stop), targets [t1, t2, t3]\n    2) Breakdown continuation\n       - Trigger: 1h close below key support, or break-retest failure\n       - Output: entry (below/retest), invalidation, targets\n    3) Trend-reclaim long (only if structure shifts)\n       - Trigger: Close and hold back above key resistance/EMA cluster\n       - Output: entry, invalidation, targets\n\n    RISK MANAGEMENT\n    - Use ATR-based buffers: default stop buffer 1.0\u20131.5 \u00d7 ATR beyond invalidation level.\n    - Provide a realistic position risk percent (0.5\u20131.0%).\n    - Ensure risk_reward_ratio \u2265 1:2 for the PRIMARY setup; otherwise recommendation = \"hold\".\n\n    \n    ## OUTPUT RULES\n    Return your analysis in this exact JSON format:\n    {\n        \"recommendation\": \"buy\" | \"hold\" | \"sell\",\n        \"summary\": \"Brief analysis summary (max 50 words)\",\n        \"key_levels\": {\n            \"support\": 0.0,\n            \"resistance\": 0.0\n        },\n        \"risk_factors\": [\"Risk factor 1\", \"Risk factor 2\"],\n        \"market_condition\": \"TRENDING\" | \"RANGING\",\n        \"market_direction\": \"UP\" | \"DOWN\" | \"SIDEWAYS\",\n        \"evidence\": \"Specific evidence supporting recommendation\",\n        \"entry_price\": 0.0,\n        \"stop_loss\": 0.0,\n        \"take_profit\": 0.0,\n        \"direction\": \"Long\" | \"Short\",\n        \"entry_explanation\": \"Why this entry price?\",\n        \"take_profit_explanation\": \"Why this take profit?\",\n        \"stop_loss_explanation\": \"Why this stop loss?\",\n        \"confidence\": 0.0,\n        \"risk_reward_ratio\": 0.0,\n        \"rationale\": \"Brief rationale for recommendation (MUST be always provided)\"\n    }\n    \n\n    VALIDATION\n    - Populate entry_price/stop_loss/take_profit from the PRIMARY setup only.\n    - If RR < 1:2 or structure unclear, set recommendation = \"hold\" and explain in summary.\n    - Keep numbers consistent with the chart; do not invent unrealistic targets.\n    - Prefer clean, conservative entries over aggressive breakouts unless momentum is exceptional.",
+  "passed_image": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251014_180000.png",
+  "prompt_version": "get_analyzer_prompt_trade_playbook_v1",
+  "prompt_id": "get_analyzer_prompt_trade_playbook_v1",
+  "market_data_snapshot": {
+    "last_price": "N/A",
+    "price_change_24h_percent": "N/A",
+    "high_24h": "N/A",
+    "low_24h": "N/A",
+    "funding_rate": "N/A",
+    "long_short_ratio": "N/A",
+    "timeframe": "1h",
+    "symbol": "AAVEUSDT"
+  },
+  "prompt_name": "get_analyzer_prompt_trade_playbook_v1",
+  "image_path": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251014_180000.png",
+  "image_timestamp": "2025-10-14T18:00:00",
+  "image_timestamp_ms": 1760436000000
+}
+----------------------------------------------------------------------------------------------------
+
+
+====================================================================================================
+ANALYSIS #9
+====================================================================================================
+Prompt: get_analyzer_prompt_trade_playbook_v1
+Image: AAVEUSDT_1h_20251014_170000.png
+Symbol: AAVEUSDT
+Timeframe: 1h
+Timestamp: 2025-10-14T17:00:00
+Analyzed at: 2025-12-01T15:25:26.124524
+----------------------------------------------------------------------------------------------------
+
+RAW MODEL OUTPUT:
+----------------------------------------------------------------------------------------------------
+{
+    "recommendation": "sell",
+    "summary": "AAVEUSDT is trending down; price rejected at resistance/EMA200, unable to reclaim. Clean lower-high short with decent RR as breakdown risk remains.",
+    "key_levels": {
+        "support": 247.0,
+        "resistance": 262.0
+    },
+    "risk_factors": [
+        "Support zone at 247 could cause chop/bounce.",
+        "Oversold short-term oscillators could spark a squeeze."
+    ],
+    "market_condition": "TRENDING",
+    "market_direction": "DOWN",
+    "evidence": "Price consistently rejected under EMA200 (259), failing at prior support turned resistance (262). MACD and RSI both remain bearish. No strong reclaim signals. ATR(14 RMA) ~5.2.",
+    "entry_price": 259.0,
+    "stop_loss": 265.0,
+    "take_profit": 247.0,
+    "direction": "Short",
+    "entry_explanation": "Entry on rejection/confirmation near EMA200 and resistance zone (258–262); momentum remains to downside.",
+    "take_profit_explanation": "First major support and prior local low at 247; ATR aligns with realistic move.",
+    "stop_loss_explanation": "Stop 1x ATR above resistance (265), gives buffer for failed spikes without excessive risk.",
+    "confidence": 0.75,
+    "risk_reward_ratio": 2.0,
+    "rationale": "Strong downtrend with momentum and resistance respected; clean lower-high short play offers risk-controlled setup with clear invalidation and defined support target."
+}
+Model: gpt-4-vision
+----------------------------------------------------------------------------------------------------
+
+PARSED RESULT:
+----------------------------------------------------------------------------------------------------
+{
+  "recommendation": "sell",
+  "summary": "AAVEUSDT is trending down; price rejected at resistance/EMA200, unable to reclaim. Clean lower-high short with decent RR as breakdown risk remains.",
+  "key_levels": {
+    "support": 247.0,
+    "resistance": 262.0
+  },
+  "risk_factors": [
+    "Support zone at 247 could cause chop/bounce.",
+    "Oversold short-term oscillators could spark a squeeze."
+  ],
+  "market_condition": "TRENDING",
+  "market_direction": "DOWN",
+  "evidence": "Price consistently rejected under EMA200 (259), failing at prior support turned resistance (262). MACD and RSI both remain bearish. No strong reclaim signals. ATR(14 RMA) ~5.2.",
+  "entry_price": 259.0,
+  "stop_loss": 265.0,
+  "take_profit": 247.0,
+  "direction": "Short",
+  "entry_explanation": "Entry on rejection/confirmation near EMA200 and resistance zone (258\u2013262); momentum remains to downside.",
+  "take_profit_explanation": "First major support and prior local low at 247; ATR aligns with realistic move.",
+  "stop_loss_explanation": "Stop 1x ATR above resistance (265), gives buffer for failed spikes without excessive risk.",
+  "confidence": 0.75,
+  "risk_reward_ratio": 2.0,
+  "rationale": "Strong downtrend with momentum and resistance respected; clean lower-high short play offers risk-controlled setup with clear invalidation and defined support target.",
+  "timeframe": "short_term",
+  "extracted_timeframe": "1h",
+  "normalized_timeframe": "1h",
+  "symbol": "AAVEUSDT",
+  "last_close_price": null,
+  "trade_confidence": 0.75,
+  "assistant_id": "asst_m11ds7XhdYfN7voO0pRvgbul",
+  "assistant_model": "gpt-4.1",
+  "raw_response": "{\n    \"recommendation\": \"sell\",\n    \"summary\": \"AAVEUSDT is trending down; price rejected at resistance/EMA200, unable to reclaim. Clean lower-high short with decent RR as breakdown risk remains.\",\n    \"key_levels\": {\n        \"support\": 247.0,\n        \"resistance\": 262.0\n    },\n    \"risk_factors\": [\n        \"Support zone at 247 could cause chop/bounce.\",\n        \"Oversold short-term oscillators could spark a squeeze.\"\n    ],\n    \"market_condition\": \"TRENDING\",\n    \"market_direction\": \"DOWN\",\n    \"evidence\": \"Price consistently rejected under EMA200 (259), failing at prior support turned resistance (262). MACD and RSI both remain bearish. No strong reclaim signals. ATR(14 RMA) ~5.2.\",\n    \"entry_price\": 259.0,\n    \"stop_loss\": 265.0,\n    \"take_profit\": 247.0,\n    \"direction\": \"Short\",\n    \"entry_explanation\": \"Entry on rejection/confirmation near EMA200 and resistance zone (258\u2013262); momentum remains to downside.\",\n    \"take_profit_explanation\": \"First major support and prior local low at 247; ATR aligns with realistic move.\",\n    \"stop_loss_explanation\": \"Stop 1x ATR above resistance (265), gives buffer for failed spikes without excessive risk.\",\n    \"confidence\": 0.75,\n    \"risk_reward_ratio\": 2.0,\n    \"rationale\": \"Strong downtrend with momentum and resistance respected; clean lower-high short play offers risk-controlled setup with clear invalidation and defined support target.\"\n}\nModel: gpt-4-vision",
+  "timestamp": "2025-10-14 17:00:00",
+  "original_timeframe": "1h",
+  "analysis_method": "assistant",
+  "analysis_prompt": "Analyze the chart image and market data and return a TRADE PLAYBOOK in the specific JSON format below.\n\n    GOAL\n    - Produce a concise, actionable recommendation similar to a human trader's plan:\n      Bias, preferred setups with entry/invalidation/targets, risk management, and a final summary.\n\n    CURRENT MARKET DATA\n    \n    - Last Price: N/A\n    - 24h Change: N/A\n    - 24h High: N/A\n    - 24h Low: N/A\n    - Funding Rate: N/A\n    - Long/Short Ratio: N/A\n    - Timeframe: \"1h\"\n    - Symbol: \"AAVEUSDT\n\n    ANALYSIS GUIDELINES\n    - Determine short-term bias using price action and moving averages (e.g., EMA50/EMA200 if visible).\n    - Identify the nearest support/resistance and any obvious confluence (Fibonacci clusters, EMA cluster, prior swing levels).\n    - Read the ATR panel value if visible (e.g., ATR 14 RMA); otherwise approximate from recent candles.\n    - Favor trend-following setups; avoid countertrend unless strong reclaim occurs.\n\n    REQUIRED SETUPS TO CONSIDER (CHOOSE THE BEST AS PRIMARY)\n    1) Short the lower-high (trend-following fade into resistance)\n       - Trigger: Rejection/backside test into resistance or EMA cluster\n       - Output: entry_zone [low, high], invalidation (hard stop), targets [t1, t2, t3]\n    2) Breakdown continuation\n       - Trigger: 1h close below key support, or break-retest failure\n       - Output: entry (below/retest), invalidation, targets\n    3) Trend-reclaim long (only if structure shifts)\n       - Trigger: Close and hold back above key resistance/EMA cluster\n       - Output: entry, invalidation, targets\n\n    RISK MANAGEMENT\n    - Use ATR-based buffers: default stop buffer 1.0\u20131.5 \u00d7 ATR beyond invalidation level.\n    - Provide a realistic position risk percent (0.5\u20131.0%).\n    - Ensure risk_reward_ratio \u2265 1:2 for the PRIMARY setup; otherwise recommendation = \"hold\".\n\n    \n    ## OUTPUT RULES\n    Return your analysis in this exact JSON format:\n    {\n        \"recommendation\": \"buy\" | \"hold\" | \"sell\",\n        \"summary\": \"Brief analysis summary (max 50 words)\",\n        \"key_levels\": {\n            \"support\": 0.0,\n            \"resistance\": 0.0\n        },\n        \"risk_factors\": [\"Risk factor 1\", \"Risk factor 2\"],\n        \"market_condition\": \"TRENDING\" | \"RANGING\",\n        \"market_direction\": \"UP\" | \"DOWN\" | \"SIDEWAYS\",\n        \"evidence\": \"Specific evidence supporting recommendation\",\n        \"entry_price\": 0.0,\n        \"stop_loss\": 0.0,\n        \"take_profit\": 0.0,\n        \"direction\": \"Long\" | \"Short\",\n        \"entry_explanation\": \"Why this entry price?\",\n        \"take_profit_explanation\": \"Why this take profit?\",\n        \"stop_loss_explanation\": \"Why this stop loss?\",\n        \"confidence\": 0.0,\n        \"risk_reward_ratio\": 0.0,\n        \"rationale\": \"Brief rationale for recommendation (MUST be always provided)\"\n    }\n    \n\n    VALIDATION\n    - Populate entry_price/stop_loss/take_profit from the PRIMARY setup only.\n    - If RR < 1:2 or structure unclear, set recommendation = \"hold\" and explain in summary.\n    - Keep numbers consistent with the chart; do not invent unrealistic targets.\n    - Prefer clean, conservative entries over aggressive breakouts unless momentum is exceptional.",
+  "passed_image": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251014_170000.png",
+  "prompt_version": "get_analyzer_prompt_trade_playbook_v1",
+  "prompt_id": "get_analyzer_prompt_trade_playbook_v1",
+  "market_data_snapshot": {
+    "last_price": "N/A",
+    "price_change_24h_percent": "N/A",
+    "high_24h": "N/A",
+    "low_24h": "N/A",
+    "funding_rate": "N/A",
+    "long_short_ratio": "N/A",
+    "timeframe": "1h",
+    "symbol": "AAVEUSDT"
+  },
+  "prompt_name": "get_analyzer_prompt_trade_playbook_v1",
+  "image_path": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251014_170000.png",
+  "image_timestamp": "2025-10-14T17:00:00",
+  "image_timestamp_ms": 1760432400000
+}
+----------------------------------------------------------------------------------------------------
+
+
+====================================================================================================
+ANALYSIS #10
+====================================================================================================
+Prompt: get_analyzer_prompt_trade_playbook_v1
+Image: AAVEUSDT_1h_20251014_160000.png
+Symbol: AAVEUSDT
+Timeframe: 1h
+Timestamp: 2025-10-14T16:00:00
+Analyzed at: 2025-12-01T15:25:47.898017
+----------------------------------------------------------------------------------------------------
+
+RAW MODEL OUTPUT:
+----------------------------------------------------------------------------------------------------
+{
+    "recommendation": "sell",
+    "summary": "Price is in a clear downtrend, with lower highs and strong resistance near 256–258. Breakdown of 250 support looks likely; fade into resistance offers best RR.",
+    "key_levels": {
+        "support": 250.0,
+        "resistance": 256.8
+    },
+    "risk_factors": [
+        "Potential for oversold bounce at support zone",
+        "Low volatility could lead to choppy price action"
+    ],
+    "market_condition": "TRENDING",
+    "market_direction": "DOWN",
+    "evidence": "Price trades below EMA50/EMA200, failing to reclaim resistance. Visible multiple rejection wicks from 256–258. MACD and RSI both weak, ATR low indicating controlled move.",
+    "entry_price": 256.0,
+    "stop_loss": 259.5,
+    "take_profit": 249.5,
+    "direction": "Short",
+    "entry_explanation": "256.0 is top of recent rejection zone and EMA cluster—a retest/backside entry that aligns with resistances and prior lower-highs.",
+    "take_profit_explanation": "249.5 is just above clear horizontal support and prior breakdown low, capturing expected move while front-running buyers.",
+    "stop_loss_explanation": "259.5 is 1.5x ATR above resistance to avoid wicks; also above the most recent LH pivot.",
+    "confidence": 0.8,
+    "risk_reward_ratio": 2.16,
+    "rationale": "Structure is cleanly bearish with repeated supply at resistance. A fade into the 256–257 cluster carries good RR toward the 250 support, with defined invalidation above."
+}
+- Model: GPT-4o
+----------------------------------------------------------------------------------------------------
+
+PARSED RESULT:
+----------------------------------------------------------------------------------------------------
+{
+  "recommendation": "sell",
+  "summary": "Price is in a clear downtrend, with lower highs and strong resistance near 256\u2013258. Breakdown of 250 support looks likely; fade into resistance offers best RR.",
+  "key_levels": {
+    "support": 250.0,
+    "resistance": 256.8
+  },
+  "risk_factors": [
+    "Potential for oversold bounce at support zone",
+    "Low volatility could lead to choppy price action"
+  ],
+  "market_condition": "TRENDING",
+  "market_direction": "DOWN",
+  "evidence": "Price trades below EMA50/EMA200, failing to reclaim resistance. Visible multiple rejection wicks from 256\u2013258. MACD and RSI both weak, ATR low indicating controlled move.",
+  "entry_price": 256.0,
+  "stop_loss": 259.5,
+  "take_profit": 249.5,
+  "direction": "Short",
+  "entry_explanation": "256.0 is top of recent rejection zone and EMA cluster\u2014a retest/backside entry that aligns with resistances and prior lower-highs.",
+  "take_profit_explanation": "249.5 is just above clear horizontal support and prior breakdown low, capturing expected move while front-running buyers.",
+  "stop_loss_explanation": "259.5 is 1.5x ATR above resistance to avoid wicks; also above the most recent LH pivot.",
+  "confidence": 0.8,
+  "risk_reward_ratio": 2.16,
+  "rationale": "Structure is cleanly bearish with repeated supply at resistance. A fade into the 256\u2013257 cluster carries good RR toward the 250 support, with defined invalidation above.",
+  "timeframe": "short_term",
+  "extracted_timeframe": "1h",
+  "normalized_timeframe": "1h",
+  "symbol": "AAVEUSDT",
+  "last_close_price": null,
+  "trade_confidence": 0.8,
+  "assistant_id": "asst_m11ds7XhdYfN7voO0pRvgbul",
+  "assistant_model": "gpt-4.1",
+  "raw_response": "{\n    \"recommendation\": \"sell\",\n    \"summary\": \"Price is in a clear downtrend, with lower highs and strong resistance near 256\u2013258. Breakdown of 250 support looks likely; fade into resistance offers best RR.\",\n    \"key_levels\": {\n        \"support\": 250.0,\n        \"resistance\": 256.8\n    },\n    \"risk_factors\": [\n        \"Potential for oversold bounce at support zone\",\n        \"Low volatility could lead to choppy price action\"\n    ],\n    \"market_condition\": \"TRENDING\",\n    \"market_direction\": \"DOWN\",\n    \"evidence\": \"Price trades below EMA50/EMA200, failing to reclaim resistance. Visible multiple rejection wicks from 256\u2013258. MACD and RSI both weak, ATR low indicating controlled move.\",\n    \"entry_price\": 256.0,\n    \"stop_loss\": 259.5,\n    \"take_profit\": 249.5,\n    \"direction\": \"Short\",\n    \"entry_explanation\": \"256.0 is top of recent rejection zone and EMA cluster\u2014a retest/backside entry that aligns with resistances and prior lower-highs.\",\n    \"take_profit_explanation\": \"249.5 is just above clear horizontal support and prior breakdown low, capturing expected move while front-running buyers.\",\n    \"stop_loss_explanation\": \"259.5 is 1.5x ATR above resistance to avoid wicks; also above the most recent LH pivot.\",\n    \"confidence\": 0.8,\n    \"risk_reward_ratio\": 2.16,\n    \"rationale\": \"Structure is cleanly bearish with repeated supply at resistance. A fade into the 256\u2013257 cluster carries good RR toward the 250 support, with defined invalidation above.\"\n}\n- Model: GPT-4o",
+  "timestamp": "2025-10-14 16:00:00",
+  "original_timeframe": "1h",
+  "analysis_method": "assistant",
+  "analysis_prompt": "Analyze the chart image and market data and return a TRADE PLAYBOOK in the specific JSON format below.\n\n    GOAL\n    - Produce a concise, actionable recommendation similar to a human trader's plan:\n      Bias, preferred setups with entry/invalidation/targets, risk management, and a final summary.\n\n    CURRENT MARKET DATA\n    \n    - Last Price: N/A\n    - 24h Change: N/A\n    - 24h High: N/A\n    - 24h Low: N/A\n    - Funding Rate: N/A\n    - Long/Short Ratio: N/A\n    - Timeframe: \"1h\"\n    - Symbol: \"AAVEUSDT\n\n    ANALYSIS GUIDELINES\n    - Determine short-term bias using price action and moving averages (e.g., EMA50/EMA200 if visible).\n    - Identify the nearest support/resistance and any obvious confluence (Fibonacci clusters, EMA cluster, prior swing levels).\n    - Read the ATR panel value if visible (e.g., ATR 14 RMA); otherwise approximate from recent candles.\n    - Favor trend-following setups; avoid countertrend unless strong reclaim occurs.\n\n    REQUIRED SETUPS TO CONSIDER (CHOOSE THE BEST AS PRIMARY)\n    1) Short the lower-high (trend-following fade into resistance)\n       - Trigger: Rejection/backside test into resistance or EMA cluster\n       - Output: entry_zone [low, high], invalidation (hard stop), targets [t1, t2, t3]\n    2) Breakdown continuation\n       - Trigger: 1h close below key support, or break-retest failure\n       - Output: entry (below/retest), invalidation, targets\n    3) Trend-reclaim long (only if structure shifts)\n       - Trigger: Close and hold back above key resistance/EMA cluster\n       - Output: entry, invalidation, targets\n\n    RISK MANAGEMENT\n    - Use ATR-based buffers: default stop buffer 1.0\u20131.5 \u00d7 ATR beyond invalidation level.\n    - Provide a realistic position risk percent (0.5\u20131.0%).\n    - Ensure risk_reward_ratio \u2265 1:2 for the PRIMARY setup; otherwise recommendation = \"hold\".\n\n    \n    ## OUTPUT RULES\n    Return your analysis in this exact JSON format:\n    {\n        \"recommendation\": \"buy\" | \"hold\" | \"sell\",\n        \"summary\": \"Brief analysis summary (max 50 words)\",\n        \"key_levels\": {\n            \"support\": 0.0,\n            \"resistance\": 0.0\n        },\n        \"risk_factors\": [\"Risk factor 1\", \"Risk factor 2\"],\n        \"market_condition\": \"TRENDING\" | \"RANGING\",\n        \"market_direction\": \"UP\" | \"DOWN\" | \"SIDEWAYS\",\n        \"evidence\": \"Specific evidence supporting recommendation\",\n        \"entry_price\": 0.0,\n        \"stop_loss\": 0.0,\n        \"take_profit\": 0.0,\n        \"direction\": \"Long\" | \"Short\",\n        \"entry_explanation\": \"Why this entry price?\",\n        \"take_profit_explanation\": \"Why this take profit?\",\n        \"stop_loss_explanation\": \"Why this stop loss?\",\n        \"confidence\": 0.0,\n        \"risk_reward_ratio\": 0.0,\n        \"rationale\": \"Brief rationale for recommendation (MUST be always provided)\"\n    }\n    \n\n    VALIDATION\n    - Populate entry_price/stop_loss/take_profit from the PRIMARY setup only.\n    - If RR < 1:2 or structure unclear, set recommendation = \"hold\" and explain in summary.\n    - Keep numbers consistent with the chart; do not invent unrealistic targets.\n    - Prefer clean, conservative entries over aggressive breakouts unless momentum is exceptional.",
+  "passed_image": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251014_160000.png",
+  "prompt_version": "get_analyzer_prompt_trade_playbook_v1",
+  "prompt_id": "get_analyzer_prompt_trade_playbook_v1",
+  "market_data_snapshot": {
+    "last_price": "N/A",
+    "price_change_24h_percent": "N/A",
+    "high_24h": "N/A",
+    "low_24h": "N/A",
+    "funding_rate": "N/A",
+    "long_short_ratio": "N/A",
+    "timeframe": "1h",
+    "symbol": "AAVEUSDT"
+  },
+  "prompt_name": "get_analyzer_prompt_trade_playbook_v1",
+  "image_path": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251014_160000.png",
+  "image_timestamp": "2025-10-14T16:00:00",
+  "image_timestamp_ms": 1760428800000
+}
+----------------------------------------------------------------------------------------------------
+
+
+====================================================================================================
+RUN COMPLETED
+====================================================================================================
+Finished: 2025-12-01T15:25:48.830462
+Total analyses: 10
+
+SUMMARY:
+----------------------------------------------------------------------------------------------------
+{
+  "total_images": 10,
+  "total_trades": 6,
+  "total_analyses": 10,
+  "duration_seconds": 224.844126,
+  "metrics": {
+    "total_trades": 6,
+    "wins": 3,
+    "losses": 3,
+    "win_rate": 0.5,
+    "total_pnl": 7.382784292991276
+  },
+  "verification": {
+    "verification_ok": false,
+    "expected_trades": 6,
+    "expected_analyses": 10,
+    "db_trades": 0,
+    "db_analyses": 0,
+    "repaired_trades": 0,
+    "repaired_analyses": 0
+  }
+}
+----------------------------------------------------------------------------------------------------
+

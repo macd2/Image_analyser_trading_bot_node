@@ -1,0 +1,62 @@
+# Trading Bot V2 - Python Dependencies
+# For Railway deployment
+
+# ============================================
+# AI/LLM Providers
+# ============================================
+openai>=1.95.0
+anthropic>=0.68.0
+groq>=0.32.0
+
+# ============================================
+# Bybit Trading API
+# ============================================
+pybit>=5.13.0
+pycryptodome>=3.20.0
+
+# ============================================
+# Browser Automation (Chart Capture)
+# ============================================
+playwright>=1.53.0
+playwright-stealth>=2.0.0
+
+# ============================================
+# Image Processing
+# ============================================
+pillow>=11.0.0
+
+# ============================================
+# Data Processing
+# ============================================
+pandas>=2.0.0
+numpy>=1.24.0
+
+# ============================================
+# HTTP/Networking
+# ============================================
+requests>=2.31.0
+httpx>=0.27.0
+websocket-client>=1.7.0
+aiofiles>=24.1.0
+
+# ============================================
+# Configuration & Environment
+# ============================================
+python-dotenv>=1.0.0
+pyyaml>=6.0.0
+
+# ============================================
+# Standard library extensions (explicit)
+# ============================================
+# asyncio, threading, sqlite3, json, etc. are built-in
+
+# ============================================
+# Railway-specific notes:
+# ============================================
+# 1. Set PYTHON_VERSION=3.12 in Railway environment
+# 2. Add nixpacks.toml for Playwright browser install:
+#    [phases.setup]
+#    nixPkgs = ["...", "chromium"]
+#    cmds = ["playwright install chromium"]
+# 3. Or use Dockerfile for full control
+

@@ -1,0 +1,318 @@
+====================================================================================================
+BACKTEST RUN #2
+Started: 2025-12-01T13:09:50.013740
+====================================================================================================
+
+CONFIGURATION:
+----------------------------------------------------------------------------------------------------
+prompts:
+  [
+  "advanced_scoring_systhem"
+]
+symbols:
+  [
+  "AAVEUSDT"
+]
+num_images: 1
+start_date: None
+end_date: None
+offset: 0
+timeframes:
+  [
+  "1h"
+]
+charts_dir: /home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup
+total_images_selected: 1
+max_workers_prompts: 4
+max_workers_images: 1
+----------------------------------------------------------------------------------------------------
+
+
+====================================================================================================
+ANALYSIS #1
+====================================================================================================
+Prompt: advanced_scoring_systhem
+Image: AAVEUSDT_1h_20251126_160000.png
+Symbol: AAVEUSDT
+Timeframe: 1h
+Timestamp: 2025-11-26T16:00:00
+Analyzed at: 2025-12-01T13:10:25.123291
+----------------------------------------------------------------------------------------------------
+
+RAW MODEL OUTPUT:
+----------------------------------------------------------------------------------------------------
+{
+  "confidence_score_breakdown": {
+    "trend_clarity": {
+      "score": 20,
+      "max_score": 25,
+      "justification": "The chart shows a moderate uptrend with recent higher lows and higher highs, but there is some consolidation after the most recent push. Price is above both the EMA 50 and EMA 200, which are sloping upward."
+    },
+    "volume_confirmation": {
+      "score": 15,
+      "max_score": 20,
+      "justification": "Volume is steady, not exceeding peak levels but not dropping below critical thresholds. OBV is trending sideways to upward, confirming accumulation rather than distribution."
+    },
+    "support_resistance_quality": {
+      "score": 15,
+      "max_score": 20,
+      "justification": "Price sits just above a recently tested support near 176, with at least two touches; resistance is visible at approximately 184-185 from recent highs."
+    },
+    "risk_reward_setup": {
+      "score": 15,
+      "max_score": 20,
+      "justification": "With entry around 178.4, stop loss at 175.7 (below swing low/EMA cluster), and target at 184.5, RR is approximately 2.3:1, offering a clear stop and profit structure."
+    },
+    "confluence_factors": {
+      "score": 9,
+      "max_score": 15,
+      "confirmations": [
+        "Price above both EMA 50 and EMA 200",
+        "Bounce from recent swing low (support)",
+        "MACD curl upwards after cross",
+        "RSI above 50, trending upward"
+      ]
+    }
+  },
+  "disqualifiers": {
+    "status": "None",
+    "warnings": ["Local resistance may slow move", "RSI nearing overbought if price spikes quickly"]
+  },
+  "scoring_summary": {
+    "raw_score": 74,
+    "raw_score_max": 100,
+    "final_confidence_score": 74,
+    "final_score_max": 100,
+    "rating": "MODERATE",
+    "recommended_action": "BUY",
+    "position_size": "50-75%"
+  },
+  "recommended_trade_setup": {
+    "trade_direction": "LONG",
+    "setup_type": "CONTINUATION",
+    "market_context": "AAVEUSDT is in a moderate uptrend, with price retracing to support above major EMAs and reversal signals present on oscillators.",
+    "entry": {
+      "price": 178.4,
+      "condition": "Enter on confirmation of price holding above the 177-178 support zone on hourly close."
+    },
+    "stop_loss": {
+      "price": 175.7,
+      "reason": "Set just below recent swing low and below both EMAs for clear invalidation.",
+      "risk_amount": 2.7,
+      "risk_percentage": 1.51
+    },
+    "targets": [
+      {
+        "target_number": 1,
+        "price": 181.6,
+        "reward_amount": 3.2,
+        "risk_reward_ratio": 1.18,
+        "reason": "First resistance from recent local high and upper Bollinger Band."
+      },
+      {
+        "target_number": 2,
+        "price": 184.5,
+        "reward_amount": 6.1,
+        "risk_reward_ratio": 2.26,
+        "reason": "Major intraday swing high and psychological resistance zone."
+      }
+    ],
+    "key_risks": [
+      "Failure to hold above 177 support may invalidate trend",
+      "Strong resistance at 184 zone could cause reversal"
+    ],
+    "invalidation": "Hourly close below 175.7 or breakdown of EMA 200 will void the setup.",
+    "notes": "Monitor for any sudden volume spikes indicating potential reversal or stop-run."
+  },
+  "market_condition": "TRENDING",
+  "market_direction": "UP",
+  "evidence": "EMA 50/200 support, recent higher low, volume steady, oscillators curling up.",
+  "entry_price": 178.4,
+  "stop_loss": 175.7,
+  "take_profit": 184.5,
+  "direction": "Long",
+  "entry_explanation": "Entry at 178.4 is above the tested support zone, aligned with EMA cluster and bullish signals.",
+  "take_profit_explanation": "Primary take profit at 184.5 targets previous high and resistance, providing strong RR.",
+  "stop_loss_explanation": "Stop loss at 175.7 is just below recent swing low and EMA 200, representing trend invalidation.",
+  "confidence": 0.74,
+  "risk_reward_ratio": 2.26,
+  "rationale": "Moderate uptrend above EMA support, with confluence of bullish signals and a clear risk/reward structure favors a continuation long setup."
+}
+----------------------------------------------------------------------------------------------------
+
+PARSED RESULT:
+----------------------------------------------------------------------------------------------------
+{
+  "confidence_score_breakdown": {
+    "trend_clarity": {
+      "score": 20,
+      "max_score": 25,
+      "justification": "The chart shows a moderate uptrend with recent higher lows and higher highs, but there is some consolidation after the most recent push. Price is above both the EMA 50 and EMA 200, which are sloping upward."
+    },
+    "volume_confirmation": {
+      "score": 15,
+      "max_score": 20,
+      "justification": "Volume is steady, not exceeding peak levels but not dropping below critical thresholds. OBV is trending sideways to upward, confirming accumulation rather than distribution."
+    },
+    "support_resistance_quality": {
+      "score": 15,
+      "max_score": 20,
+      "justification": "Price sits just above a recently tested support near 176, with at least two touches; resistance is visible at approximately 184-185 from recent highs."
+    },
+    "risk_reward_setup": {
+      "score": 15,
+      "max_score": 20,
+      "justification": "With entry around 178.4, stop loss at 175.7 (below swing low/EMA cluster), and target at 184.5, RR is approximately 2.3:1, offering a clear stop and profit structure."
+    },
+    "confluence_factors": {
+      "score": 9,
+      "max_score": 15,
+      "confirmations": [
+        "Price above both EMA 50 and EMA 200",
+        "Bounce from recent swing low (support)",
+        "MACD curl upwards after cross",
+        "RSI above 50, trending upward"
+      ]
+    }
+  },
+  "disqualifiers": {
+    "status": "None",
+    "warnings": [
+      "Local resistance may slow move",
+      "RSI nearing overbought if price spikes quickly"
+    ]
+  },
+  "scoring_summary": {
+    "raw_score": 74,
+    "raw_score_max": 100,
+    "final_confidence_score": 74,
+    "final_score_max": 100,
+    "rating": "MODERATE",
+    "recommended_action": "BUY",
+    "position_size": "50-75%"
+  },
+  "recommended_trade_setup": {
+    "trade_direction": "LONG",
+    "setup_type": "CONTINUATION",
+    "market_context": "AAVEUSDT is in a moderate uptrend, with price retracing to support above major EMAs and reversal signals present on oscillators.",
+    "entry": {
+      "price": 178.4,
+      "condition": "Enter on confirmation of price holding above the 177-178 support zone on hourly close."
+    },
+    "stop_loss": {
+      "price": 175.7,
+      "reason": "Set just below recent swing low and below both EMAs for clear invalidation.",
+      "risk_amount": 2.7,
+      "risk_percentage": 1.51
+    },
+    "targets": [
+      {
+        "target_number": 1,
+        "price": 181.6,
+        "reward_amount": 3.2,
+        "risk_reward_ratio": 1.18,
+        "reason": "First resistance from recent local high and upper Bollinger Band."
+      },
+      {
+        "target_number": 2,
+        "price": 184.5,
+        "reward_amount": 6.1,
+        "risk_reward_ratio": 2.26,
+        "reason": "Major intraday swing high and psychological resistance zone."
+      }
+    ],
+    "key_risks": [
+      "Failure to hold above 177 support may invalidate trend",
+      "Strong resistance at 184 zone could cause reversal"
+    ],
+    "invalidation": "Hourly close below 175.7 or breakdown of EMA 200 will void the setup.",
+    "notes": "Monitor for any sudden volume spikes indicating potential reversal or stop-run."
+  },
+  "market_condition": "TRENDING",
+  "market_direction": "UP",
+  "evidence": "EMA 50/200 support, recent higher low, volume steady, oscillators curling up.",
+  "entry_price": 178.4,
+  "stop_loss": 175.7,
+  "take_profit": 184.5,
+  "direction": "Long",
+  "entry_explanation": "Entry at 178.4 is above the tested support zone, aligned with EMA cluster and bullish signals.",
+  "take_profit_explanation": "Primary take profit at 184.5 targets previous high and resistance, providing strong RR.",
+  "stop_loss_explanation": "Stop loss at 175.7 is just below recent swing low and EMA 200, representing trend invalidation.",
+  "confidence": 0.74,
+  "risk_reward_ratio": 2.26,
+  "rationale": "Moderate uptrend above EMA support, with confluence of bullish signals and a clear risk/reward structure favors a continuation long setup.",
+  "recommendation": "hold",
+  "summary": "{\n  \"confidence_score_breakdown\": {\n    \"trend_clarity\": {\n      \"score\": 20,\n      \"max_score\": 25,\n      \"justification\": \"The chart shows a moderate uptrend with recent higher lows and higher highs, but there is some consolidation after the most recent push. Price is above both the EMA 50 and EMA 200, which are sloping upward.\"\n    },\n    \"volume_confirmation\": {\n      \"score\": 15,\n      \"max_score\": 20,\n      \"justification\": \"Volume is steady, not exceeding peak levels but not dropping below critical thresholds. OBV is trending sideways to upward, confirming accumulation rather than distribution.\"\n    },\n    \"support_resistance_quality\": {\n      \"score\": 15,\n      \"max_score\": 20,\n      \"justification\": \"Price sits just above a recently tested support near 176, with at least two touches; resistance is visible at approximately 184-185 from recent highs.\"\n    },\n    \"risk_reward_setup\": {\n      \"score\": 15,\n      \"max_score\": 20,\n      \"justification\": \"With entry around 178.4, stop loss at 175.7 (below swing low/EMA cluster), and target at 184.5, RR is approximately 2.3:1, offering a clear stop and profit structure.\"\n    },\n    \"confluence_factors\": {\n      \"score\": 9,\n      \"max_score\": 15,\n      \"confirmations\": [\n        \"Price above both EMA 50 and EMA 200\",\n        \"Bounce from recent swing low (support)\",\n        \"MACD curl upwards after cross\",\n        \"RSI above 50, trending upward\"\n      ]\n    }\n  },\n  \"disqualifiers\": {\n    \"status\": \"None\",\n    \"warnings\": [\"Local resistance may slow move\", \"RSI nearing overbought if price spikes quickly\"]\n  },\n  \"scoring_summary\": {\n    \"raw_score\": 74,\n    \"raw_score_max\": 100,\n    \"final_confidence_score\": 74,\n    \"final_score_max\": 100,\n    \"rating\": \"MODERATE\",\n    \"recommended_action\": \"BUY\",\n    \"position_size\": \"50-75%\"\n  },\n  \"recommended_trade_setup\": {\n    \"trade_direction\": \"LONG\",\n    \"setup_type\": \"CONTINUATION\",\n    \"market_context\": \"AAVEUSDT is in a moderate uptrend, with price retracing to support above major EMAs and reversal signals present on oscillators.\",\n    \"entry\": {\n      \"price\": 178.4,\n      \"condition\": \"Enter on confirmation of price holding above the 177-178 support zone on hourly close.\"\n    },\n    \"stop_loss\": {\n      \"price\": 175.7,\n      \"reason\": \"Set just below recent swing low and below both EMAs for clear invalidation.\",\n      \"risk_amount\": 2.7,\n      \"risk_percentage\": 1.51\n    },\n    \"targets\": [\n      {\n        \"target_number\": 1,\n        \"price\": 181.6,\n        \"reward_amount\": 3.2,\n        \"risk_reward_ratio\": 1.18,\n        \"reason\": \"First resistance from recent local high and upper Bollinger Band.\"\n      },\n      {\n        \"target_number\": 2,\n        \"price\": 184.5,\n        \"reward_amount\": 6.1,\n        \"risk_reward_ratio\": 2.26,\n        \"reason\": \"Major intraday swing high and psychological resistance zone.\"\n      }\n    ],\n    \"key_risks\": [\n      \"Failure to hold above 177 support may invalidate trend\",\n      \"Strong resistance at 184 zone could cause reversal\"\n    ],\n    \"invalidation\": \"Hourly close below 175.7 or breakdown of EMA 200 will void the setup.\",\n    \"notes\": \"Monitor for any sudden volume spikes indicating potential reversal or stop-run.\"\n  },\n  \"market_condition\": \"TRENDING\",\n  \"market_direction\": \"UP\",\n  \"evidence\": \"EMA 50/200 support, recent higher low, volume steady, oscillators curling up.\",\n  \"entry_price\": 178.4,\n  \"stop_loss\": 175.7,\n  \"take_profit\": 184.5,\n  \"direction\": \"Long\",\n  \"entry_explanation\": \"Entry at 178.4 is above the tested support zone, aligned with EMA cluster and bullish signals.\",\n  \"take_profit_explanation\": \"Primary take profit at 184.5 targets previous high and resistance, providing strong RR.\",\n  \"stop_loss_explanation\": \"Stop loss at 175.7 is just below recent swing low and EMA 200, representing trend invalidation.\",\n  \"confidence\": 0.74,\n  \"risk_reward_ratio\": 2.26,\n  \"rationale\": \"Moderate uptrend above EMA support, with confluence of bullish signals and a clear risk/reward structure favors a continuation long setup.\"\n}",
+  "key_levels": {
+    "support": 0.0,
+    "resistance": 0.0
+  },
+  "risk_factors": [
+    "Analysis unavailable"
+  ],
+  "timeframe": "short_term",
+  "extracted_timeframe": "1h",
+  "normalized_timeframe": "1h",
+  "symbol": "AAVEUSDT",
+  "last_close_price": null,
+  "trade_confidence": 0.74,
+  "assistant_id": "asst_m11ds7XhdYfN7voO0pRvgbul",
+  "assistant_model": "gpt-4.1",
+  "raw_response": "{\n  \"confidence_score_breakdown\": {\n    \"trend_clarity\": {\n      \"score\": 20,\n      \"max_score\": 25,\n      \"justification\": \"The chart shows a moderate uptrend with recent higher lows and higher highs, but there is some consolidation after the most recent push. Price is above both the EMA 50 and EMA 200, which are sloping upward.\"\n    },\n    \"volume_confirmation\": {\n      \"score\": 15,\n      \"max_score\": 20,\n      \"justification\": \"Volume is steady, not exceeding peak levels but not dropping below critical thresholds. OBV is trending sideways to upward, confirming accumulation rather than distribution.\"\n    },\n    \"support_resistance_quality\": {\n      \"score\": 15,\n      \"max_score\": 20,\n      \"justification\": \"Price sits just above a recently tested support near 176, with at least two touches; resistance is visible at approximately 184-185 from recent highs.\"\n    },\n    \"risk_reward_setup\": {\n      \"score\": 15,\n      \"max_score\": 20,\n      \"justification\": \"With entry around 178.4, stop loss at 175.7 (below swing low/EMA cluster), and target at 184.5, RR is approximately 2.3:1, offering a clear stop and profit structure.\"\n    },\n    \"confluence_factors\": {\n      \"score\": 9,\n      \"max_score\": 15,\n      \"confirmations\": [\n        \"Price above both EMA 50 and EMA 200\",\n        \"Bounce from recent swing low (support)\",\n        \"MACD curl upwards after cross\",\n        \"RSI above 50, trending upward\"\n      ]\n    }\n  },\n  \"disqualifiers\": {\n    \"status\": \"None\",\n    \"warnings\": [\"Local resistance may slow move\", \"RSI nearing overbought if price spikes quickly\"]\n  },\n  \"scoring_summary\": {\n    \"raw_score\": 74,\n    \"raw_score_max\": 100,\n    \"final_confidence_score\": 74,\n    \"final_score_max\": 100,\n    \"rating\": \"MODERATE\",\n    \"recommended_action\": \"BUY\",\n    \"position_size\": \"50-75%\"\n  },\n  \"recommended_trade_setup\": {\n    \"trade_direction\": \"LONG\",\n    \"setup_type\": \"CONTINUATION\",\n    \"market_context\": \"AAVEUSDT is in a moderate uptrend, with price retracing to support above major EMAs and reversal signals present on oscillators.\",\n    \"entry\": {\n      \"price\": 178.4,\n      \"condition\": \"Enter on confirmation of price holding above the 177-178 support zone on hourly close.\"\n    },\n    \"stop_loss\": {\n      \"price\": 175.7,\n      \"reason\": \"Set just below recent swing low and below both EMAs for clear invalidation.\",\n      \"risk_amount\": 2.7,\n      \"risk_percentage\": 1.51\n    },\n    \"targets\": [\n      {\n        \"target_number\": 1,\n        \"price\": 181.6,\n        \"reward_amount\": 3.2,\n        \"risk_reward_ratio\": 1.18,\n        \"reason\": \"First resistance from recent local high and upper Bollinger Band.\"\n      },\n      {\n        \"target_number\": 2,\n        \"price\": 184.5,\n        \"reward_amount\": 6.1,\n        \"risk_reward_ratio\": 2.26,\n        \"reason\": \"Major intraday swing high and psychological resistance zone.\"\n      }\n    ],\n    \"key_risks\": [\n      \"Failure to hold above 177 support may invalidate trend\",\n      \"Strong resistance at 184 zone could cause reversal\"\n    ],\n    \"invalidation\": \"Hourly close below 175.7 or breakdown of EMA 200 will void the setup.\",\n    \"notes\": \"Monitor for any sudden volume spikes indicating potential reversal or stop-run.\"\n  },\n  \"market_condition\": \"TRENDING\",\n  \"market_direction\": \"UP\",\n  \"evidence\": \"EMA 50/200 support, recent higher low, volume steady, oscillators curling up.\",\n  \"entry_price\": 178.4,\n  \"stop_loss\": 175.7,\n  \"take_profit\": 184.5,\n  \"direction\": \"Long\",\n  \"entry_explanation\": \"Entry at 178.4 is above the tested support zone, aligned with EMA cluster and bullish signals.\",\n  \"take_profit_explanation\": \"Primary take profit at 184.5 targets previous high and resistance, providing strong RR.\",\n  \"stop_loss_explanation\": \"Stop loss at 175.7 is just below recent swing low and EMA 200, representing trend invalidation.\",\n  \"confidence\": 0.74,\n  \"risk_reward_ratio\": 2.26,\n  \"rationale\": \"Moderate uptrend above EMA support, with confluence of bullish signals and a clear risk/reward structure favors a continuation long setup.\"\n}",
+  "timestamp": "2025-11-26 16:00:00",
+  "original_timeframe": "1h",
+  "analysis_method": "assistant",
+  "analysis_prompt": "# ANALYSIS INSTRUCTIONS\n    ## YOUR ROLE\n    You are an expert technical analyst. When given a trading chart image, you must analyze it systematically and output a complete JSON recommendation following the Unified Trade Confidence Scoring System.\n\n\n    # Unified Trade Confidence Scoring System\n    ## Overview\n    This scoring system provides a consistent 0-100 confidence score across all trading analysis prompts. Each component is evaluated independently, then combined using weighted averages.\n    ---\n\n    ## SCORING COMPONENTS\n    ### 1. TREND CLARITY (Weight: 25%)\n    **Score 0-25 points based on:**\n\n    | Score | Criteria |\n    | :---- | :---- |\n    | 25 | Strong directional trend: 3+ consecutive HH/HL (uptrend) or LH/LL (downtrend), clear momentum |\n    | 20 | Moderate trend: 2 consecutive HH/HL or LH/LL, some consolidation present |\n    | 15 | Weak trend: Emerging trend structure, mixed signals |\n    | 10 | Sideways: Equal highs/lows, no clear direction |\n    | 5 | Choppy: Conflicting signals, no discernible pattern |\n    | 0 | Chaotic: No identifiable structure |\n\n    **Calculation Method:**\n\n    IF strong uptrend/downtrend exists: 25  \n    ELSE IF moderate trend: 20  \n    ELSE IF weak trend: 15  \n    ELSE IF sideways but clean: 10  \n    ELSE IF choppy: 5  \n    ELSE: 0\n    ---\n\n    ### 2. SUPPORT/RESISTANCE QUALITY (Weight: 20%)\n    **Score 0-20 points based on:**\n\n    | Score | Criteria |\n    | :---- | :---- |\n    | 20 | Price at major tested level (3+ touches), high volume node, clear reaction history |\n    | 15 | Price at validated level (2 touches), moderate volume node |\n    | 10 | Price at swing point, some reaction history |\n    | 5 | Price near potential level, limited history |\n    | 0 | No clear support/resistance nearby |\n\n    **Calculation Method:**\n\n    IF at major tested level (3+ touches) AND high volume: 20  \n    ELSE IF at validated level (2 touches): 15  \n    ELSE IF at swing high/low: 10  \n    ELSE IF near potential level: 5  \n    ELSE: 0\n    ---\n\n    ### 3. RISK-REWARD SETUP (Weight: 20%)\n    **Score 0-20 points based on:**\n\n    | Score | Criteria |\n    | :---- | :---- |\n    | 20 | RR \u2265 3:1, clear invalidation level, logical take-profit at structure |\n    | 15 | RR = 2:1 to 2.9:1, clear stop loss and target |\n    | 10 | RR = 1.5:1 to 1.9:1, acceptable levels |\n    | 5 | RR = 1:1 to 1.4:1, marginal setup |\n    | 0 | RR < 1:1 or unclear levels |\n\n    **Calculation Method:**\n\n    IF RR >= 3.0: 20  \n    ELSE IF RR >= 2.0: 15  \n    ELSE IF RR >= 1.5: 10  \n    ELSE IF RR >= 1.0: 5  \n    ELSE: 0\n    ---\n\n    ### 4. CONFLUENCE FACTORS (Weight: 15%)\n    **Score 0-15 points (3 points per confirmation, max 5 confirmations):**\n\n    Count confirmations from:\n\n    - \u2713 Trend alignment (higher timeframe confirms)  \n    - \u2713 Moving average support/resistance  \n    - \u2713 Previous breakout/breakdown level  \n    - \u2713 Round number support/resistance  \n    - \u2713 Gap fill zone  \n    - \u2713 Chart pattern (triangle, wedge, etc.)  \n    - \u2713 Candlestick pattern (engulfing, hammer, etc.)  \n    - \u2713 Momentum indicators aligned (RSI, MACD, etc.)\n\n    **Calculation Method:**\n\n    Confluence_Score = MIN(number_of_confirmations, 5) \u00d7 3  \n    Maximum: 15 points\n    ---\n\n    ## MANDATORY DISQUALIFIERS\n    If ANY of these conditions exist, **MAXIMUM SCORE = 50** (regardless of other factors):\n\n    - \u274c Sideways/choppy price action (no clear trend)  \n    - \u274c Extremely low volume (below 50% of 20-period average)  \n    - \u274c No clear invalidation level within 2% of entry  \n    - \u274c Target level blocked by major resistance/support\n    ---\n\n    ## FINAL CONFIDENCE SCORE CALCULATION\n    ### Formula:\n    Raw_Score = (Trend_Score \u00d7 0.25) +   \n                (Volume_Score \u00d7 0.20) +   \n                (SR_Score \u00d7 0.20) +   \n                (RR_Score \u00d7 0.20) +   \n                (Confluence_Score \u00d7 0.15)\n\n    IF any disqualifier exists:\n\n        Final_Score = MIN(Raw_Score, 50)  \n    ELSE:  \n        Final_Score = Raw_Score\n\n    ### Score Ranges:\n    90-100: STRONG CONVICTION - High probability setup  \n    80-89:  HIGH CONFIDENCE - Good setup, favorable conditions  \n    70-79:  MODERATE CONFIDENCE - Acceptable setup with some uncertainty  \n    60-69:  LOW CONFIDENCE - Marginal setup, proceed with caution  \n    50-59:  VERY LOW - Major concerns present (usually disqualified)  \n    0-49:   NO TRADE - Does not meet minimum criteria\n    ---\n\n    ## TRADING DECISION MATRIX\n    | Confidence Score | Action | Position Size |\n    | :---- | :---- | :---- |\n    | 90-100 | STRONG ENTRY | 100% of standard size |\n    | 80-89 | ENTRY | 75-100% of standard size |\n    | 70-79 | CAUTIOUS ENTRY | 50-75% of standard size |\n    | 60-69 | SMALL ENTRY | 25-50% of standard size |\n    | Below 60 | HOLD/NO TRADE | 0% - HOLD for better setup |\n\n    \u2014------------------------------------\n\n    Trade Analysis Output Instructions - Complete JSON Format Code\n\n    # TRADE ANALYSIS OUTPUT INSTRUCTIONS\n    ## CRITICAL: You MUST output EXACTLY ONE complete JSON structure with ALL fields filled.\n    ---\n    \n    ## FIELD REQUIREMENTS\n    ### confidence_score_breakdown\n\n    - **REQUIRED**: All 5 components must be scored  \n    - Each justification must be 1-3 sentences explaining the score\n\n    ### disqualifiers\n    - **status**: \"None\" if no mandatory disqualifiers present, otherwise list them  \n    - **warnings**: Optional array of caution flags (overbought, divergence, etc.)\n\n    ### recommended_trade_setup\n    **If final_confidence_score >= 60:**\n\n    - Provide complete trade setup with all fields filled  \n    - Choose the BEST/HIGHEST PROBABILITY scenario only (not multiple options)  \n    - All numeric fields must have actual numbers, not placeholders\n\n    **If final_confidence_score < 60:**\n\n    - Set `trade_direction` to \"HOLD\"  \n    - Set `setup_type` to \"NO_TRADE\"  \n    - Set `market_context` explaining why no trade  \n    - Set `entry.condition` to what needs to change for a trade  \n    - Set all price/numeric fields to `null`  \n    - Set `key_risks` to conditions preventing entry  \n    - Set `invalidation` to what would create a tradeable setup\n\n    ## SELECTION LOGIC FOR RECOMMENDED SETUP\n    When multiple trade scenarios are possible, choose ONE based on:\n\n    **Priority Order:**\n\n    1. **Highest probability** (trend-following > countertrend)  \n    2. **Best risk-reward ratio** (prefer RR \u2265 2:1)  \n    3. **Clearest entry/exit levels**  \n    4. **Fewest warnings/risks**\n\n    **Examples:**\n\n    - At resistance in uptrend \u2192 Recommend \"HOLD for pullback\" (PULLBACK setup)  \n    - At support in downtrend \u2192 Recommend \"SHORT on bounce\" (CONTINUATION setup)  \n    - Breaking out with volume \u2192 Recommend \"LONG breakout\" (BREAKOUT setup)  \n    - Sideways/choppy \u2192 Set to \"HOLD\" with conditions\n    ---\n\n    ## OUTPUT RULES\n    1. \u2713 Output ONLY the complete JSON structure above  \n    2. \u2713 Fill ALL required fields - no empty strings or placeholders  \n    3. \u2713 Provide only ONE recommended trade setup (the best one)  \n    4. \u2717 DO NOT add text before or after the JSON  \n    5. \u2717 DO NOT add commentary outside the JSON structure  \n    6. \u2717 DO NOT provide multiple trade scenarios or alternatives  \n    7. \u2717 DO NOT add extra sections like \"Analysis Summary\" or \"Key Indicators\"\n    ---\n\n    ## COMPLETE JSON OUTPUT FORMAT return this exact JSON format filled out:\n    {\n\n    \"confidence_score_breakdown\": {  \n        \"trend_clarity\": {  \n        \"score\": [Integer 0-25],  \n        \"max_score\": 25,  \n        \"justification\": \"[Explain trend direction, structure, HH/HL or LH/LL, EMA position]\"  \n        },\n\n        \"volume_confirmation\": {  \n        \"score\": [Integer 0-20],  \n        \"max_score\": 20,  \n        \"justification\": \"[Explain volume levels, OBV direction, volume patterns, ATR]\"  \n        },\n\n        \"support_resistance_quality\": {  \n        \"score\": [Integer 0-20],  \n        \"max_score\": 20,  \n        \"justification\": \"[Identify S/R levels, number of touches, Fibonacci levels, quality]\"  \n        },\n\n        \"risk_reward_setup\": {  \n        \"score\": [Integer 0-20],  \n        \"max_score\": 20,  \n        \"justification\": \"[State entry, stop loss, targets, RR ratio]\"  \n        },\n\n        \"confluence_factors\": {  \n        \"score\": [Integer 0-15],  \n        \"max_score\": 15,  \n        \"confirmations\": [  \n            \"[List 0-5 specific confirmations found]\"  \n        ]  \n        }  \n    },  \n    \"disqualifiers\": {  \n        \"status\": \"[None OR list specific disqualifiers]\",  \n        \"warnings\": [\"[Optional: List any warning flags]\"]  \n    },  \n    \"scoring_summary\": {  \n        \"raw_score\": [Integer 0-100],  \n        \"raw_score_max\": 100,  \n        \"final_confidence_score\": [Integer 0-100],  \n        \"final_score_max\": 100,  \n        \"rating\": \"[STRONG|HIGH|MODERATE|LOW|NO_TRADE]\",  \n        \"recommended_action\": \"[BUY|SELL|HOLD]\",  \n        \"position_size\": \"[Percentage based on rating]\"  \n    },  \n    \"recommended_trade_setup\": {  \n        \"trade_direction\": \"[LONG|SHORT]\",  \n        \"setup_type\": \"[BREAKOUT|PULLBACK|REVERSAL|CONTINUATION|NO_TRADE]\",  \n        \"market_context\": \"[1-2 sentences: Current trend, key level, and why this setup exists]\",  \n        \"entry\": {  \n        \"price\": [Number or range],  \n        \"condition\": \"[What confirmation is needed before entry]\"  \n        },\n\n        \"stop_loss\": {  \n        \"price\": [Number],  \n        \"reason\": \"[Why this level - e.g., below structure, below EMA]\",  \n        \"risk_amount\": [Number],  \n        \"risk_percentage\": [Number]  \n        },  \n        \"targets\": [  \n        {  \n            \"target_number\": 1,  \n            \"price\": [Number],  \n            \"reward_amount\": [Number],  \n            \"risk_reward_ratio\": [Number],  \n            \"reason\": \"[Why this level]\"  \n        },  \n        {  \n            \"target_number\": 2,  \n            \"price\": [Number],  \n            \"reward_amount\": [Number],  \n            \"risk_reward_ratio\": [Number],  \n            \"reason\": \"[Why this level]\"  \n        }  \n        ],  \n        \"key_risks\": [  \n        \"[Risk 1]\",  \n        \"[Risk 2]\"  \n        ],  \n        \"invalidation\": \"[What would make this setup invalid]\",  \n        \"notes\": \"[Optional: Any additional important context]\"  \n    }, \n        \"market_condition\": \"[TRENDING|RANGING]\",\n        \"market_direction\": \"[UP|DOWN|SIDEWAYS]\",\n        \"evidence\": \"['short exlanation']\",\n        \"entry_price\": [Number - single entry price],\n        \"stop_loss\": [Number - single stop loss price],\n        \"take_profit\": [Number - primary target price],\n        \"direction\": \"[Long|Short]\",\n        \"entry_explanation\": \"['short exlanation']\",\n        \"take_profit_explanation\": \"['short exlanation']\",\n        \"stop_loss_explanation\": \"['short exlanation']\",\n        \"confidence\": [Decimal 0.0-1.0 - same as final_confidence_score/100],\n        \"risk_reward_ratio\": [Decimal - calculated as (take_profit - entry_price) / (entry_price - stop_loss)],\n        \"rationale\": \"[REQUIRED: Brief 1 sentence rationale for recommendation combining trend, key level, and setup quality]\"\n    }",
+  "passed_image": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251126_160000.png",
+  "prompt_version": "advanced_scoring_systhem",
+  "prompt_id": "advanced_scoring_systhem",
+  "market_data_snapshot": {
+    "last_price": "N/A",
+    "price_change_24h_percent": "N/A",
+    "high_24h": "N/A",
+    "low_24h": "N/A",
+    "funding_rate": "N/A",
+    "long_short_ratio": "N/A",
+    "timeframe": "1h",
+    "symbol": "AAVEUSDT"
+  },
+  "prompt_name": "advanced_scoring_systhem",
+  "image_path": "/home/slicks/projects/^^Python/Analyse_Chart_Screenshot/trading_bot/data/charts/.backup/AAVEUSDT_1h_20251126_160000.png",
+  "image_timestamp": "2025-11-26T16:00:00",
+  "image_timestamp_ms": 1764144000000
+}
+----------------------------------------------------------------------------------------------------
+
+
+====================================================================================================
+RUN COMPLETED
+====================================================================================================
+Finished: 2025-12-01T13:10:25.131093
+Total analyses: 1
+
+SUMMARY:
+----------------------------------------------------------------------------------------------------
+{
+  "total_images": 1,
+  "total_trades": 0,
+  "total_analyses": 1,
+  "duration_seconds": 35.175627,
+  "metrics": {
+    "total_trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "win_rate": 0.0,
+    "total_pnl": 0.0
+  },
+  "verification": {
+    "verification_ok": false,
+    "expected_trades": 0,
+    "expected_analyses": 1,
+    "db_trades": 0,
+    "db_analyses": 0,
+    "repaired_trades": 0,
+    "repaired_analyses": 0
+  }
+}
+----------------------------------------------------------------------------------------------------
+

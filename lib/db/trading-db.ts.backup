@@ -1,0 +1,1691 @@
+/**
+ * Trading Database Client - Supports SQLite and PostgreSQL
+ *
+ * Uses DB_TYPE env var to switch between:
+ * - 'sqlite': Local SQLite file (development)
+ * - 'postgres': Supabase PostgreSQL (production)
+ */
+
+import Database from 'better-sqlite3';
+import { Pool } from 'pg';
+import path from 'path';
+
+type DbType = 'sqlite' | 'postgres';
+
+const DB_TYPE: DbType = (process.env.DB_TYPE as DbType) || 'sqlite';
+const TRADING_DB_PATH = process.env.TRADING_DB_PATH || path.join(process.cwd(), 'data', 'trading.db');
+const DATABASE_URL = process.env.DATABASE_URL || '';
+
+// Database instances
+let sqliteDb: Database.Database | null = null;
+let pgPool: Pool | null = null;
+
+/**
+ * Get SQLite connection
+ */
+function getSqliteDb(): Database.Database {
+  if (!sqliteDb) {
+    sqliteDb = new Database(TRADING_DB_PATH, { readonly: false });
+    sqliteDb.pragma('journal_mode = WAL');
+  }
+  return sqliteDb;
+}
+
+/**
+ * Get PostgreSQL pool
+ */
+function getPgPool(): Pool {
+  if (!pgPool) {
+    pgPool = new Pool({ connectionString: DATABASE_URL });
+  }
+  return pgPool;
+}
+
+/**
+ * Convert ? placeholders to $1, $2, etc for PostgreSQL
+ */
+function convertPlaceholders(sql: string): string {
+  let idx = 0;
+  return sql.replace(/\?/g, () => `$${++idx}`);
+}
+
+/**
+ * Unified query execution - works with both SQLite and PostgreSQL
+ */
+async function dbQuery<T>(sql: string, params: unknown[] = []): Promise<T[]> {
+  if (DB_TYPE === 'sqlite') {
+    const db = getSqliteDb();
+    return db.prepare(sql).all(...params) as T[];
+  } else {
+    const pool = getPgPool();
+    const pgSql = convertPlaceholders(sql);
+    const result = await pool.query(pgSql, params);
+    return result.rows as T[];
+  }
+}
+
+/**
+ * Unified single-row query
+ */
+async function dbQueryOne<T>(sql: string, params: unknown[] = []): Promise<T | null> {
+  const results = await dbQuery<T>(sql, params);
+  return results[0] || null;
+}
+
+/**
+ * Unified execute (INSERT/UPDATE/DELETE)
+ */
+async function dbExecute(sql: string, params: unknown[] = []): Promise<{ changes: number }> {
+  if (DB_TYPE === 'sqlite') {
+    const db = getSqliteDb();
+    const result = db.prepare(sql).run(...params);
+    return { changes: result.changes };
+  } else {
+    const pool = getPgPool();
+    const pgSql = convertPlaceholders(sql);
+    const result = await pool.query(pgSql, params);
+    return { changes: result.rowCount || 0 };
+  }
+}
+
+/**
+ * Legacy sync wrapper - for gradual migration
+ * Returns SQLite db for sync operations (only works in sqlite mode)
+ */
+export function getTradingDb(): Database.Database {
+  if (DB_TYPE !== 'sqlite') {
+    throw new Error('getTradingDb() only works in SQLite mode. Use async db functions instead.');
+  }
+  return getSqliteDb();
+}
+
+/**
+ * Check if trading database is available
+ */
+export async function isTradingDbAvailable(): Promise<boolean> {
+  try {
+    await dbQuery('SELECT 1');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get current database type
+ */
+export function getDbType(): DbType {
+  return DB_TYPE;
+}
+
+// ============================================================
+// INSTANCES OPERATIONS (Bot configurations)
+// ============================================================
+
+export interface InstanceRow {
+  id: string;
+  name: string;
+  prompt_name: string | null;
+  prompt_version: string | null;
+  min_confidence: number | null;
+  max_leverage: number | null;
+  symbols: string | null;  // JSON array
+  timeframe: string | null;
+  settings: string | null;  // JSON blob
+  is_active: number;
+  created_at: string;
+  updated_at: string | null;
+}
+
+/**
+ * Get all instances
+ */
+export async function getInstances(activeOnly: boolean = false): Promise<InstanceRow[]> {
+  const sql = activeOnly
+    ? 'SELECT * FROM instances WHERE is_active = 1 ORDER BY name'
+    : 'SELECT * FROM instances ORDER BY name';
+  return dbQuery<InstanceRow>(sql);
+}
+
+export interface InstanceWithStatus extends InstanceRow {
+  is_running: boolean;
+  current_run_id: string | null;
+}
+
+/**
+ * Get all instances with their running status
+ */
+export function getInstancesWithStatus(activeOnly: boolean = false): InstanceWithStatus[] {
+  const db = getTradingDb();
+  const query = activeOnly
+    ? `SELECT i.*,
+         (SELECT COUNT(*) > 0 FROM runs r WHERE r.instance_id = i.id AND r.status = 'running') as is_running,
+         (SELECT r.id FROM runs r WHERE r.instance_id = i.id AND r.status = 'running' LIMIT 1) as current_run_id
+       FROM instances i WHERE i.is_active = 1 ORDER BY i.name`
+    : `SELECT i.*,
+         (SELECT COUNT(*) > 0 FROM runs r WHERE r.instance_id = i.id AND r.status = 'running') as is_running,
+         (SELECT r.id FROM runs r WHERE r.instance_id = i.id AND r.status = 'running' LIMIT 1) as current_run_id
+       FROM instances i ORDER BY i.name`;
+  return db.prepare(query).all() as InstanceWithStatus[];
+}
+
+/**
+ * Instance summary for card display - includes stats and config
+ */
+export interface InstanceSummary extends InstanceWithStatus {
+  total_trades: number;
+  live_trades: number;
+  dry_run_trades: number;
+  total_pnl: number;
+  win_count: number;
+  loss_count: number;
+  win_rate: number;
+  config: {
+    use_testnet: boolean;
+    paper_trading: boolean;
+  };
+}
+
+/**
+ * Get all instances with summary data (stats + config) for card display
+ */
+export function getInstancesWithSummary(): InstanceSummary[] {
+  const db = getTradingDb();
+
+  // Get instances with status
+  const instances = getInstancesWithStatus();
+
+  return instances.map(instance => {
+    // Get stats from actual trades table (not aggregate counters)
+    // Separate dry run and live trades
+    const stats = db.prepare(`
+      SELECT
+        COUNT(CASE WHEN t.dry_run = 0 THEN 1 END) as live_trades,
+        COUNT(CASE WHEN t.dry_run = 1 THEN 1 END) as dry_run_trades,
+        COALESCE(SUM(CASE WHEN t.dry_run = 0 AND t.pnl IS NOT NULL THEN t.pnl ELSE 0 END), 0) as live_pnl,
+        COUNT(CASE WHEN t.dry_run = 0 AND t.pnl > 0 THEN 1 END) as live_wins,
+        COUNT(CASE WHEN t.dry_run = 0 AND t.pnl < 0 THEN 1 END) as live_losses
+      FROM trades t
+      JOIN cycles c ON t.cycle_id = c.id
+      JOIN runs r ON c.run_id = r.id
+      WHERE r.instance_id = ?
+        AND t.status NOT IN ('rejected', 'cancelled', 'error')
+    `).get(instance.id) as {
+      live_trades: number;
+      dry_run_trades: number;
+      live_pnl: number;
+      live_wins: number;
+      live_losses: number;
+    };
+
+    // Parse instance settings (all config now comes from instance settings)
+    let instanceSettings: Record<string, unknown> = {};
+    if (instance.settings) {
+      try {
+        instanceSettings = JSON.parse(instance.settings);
+      } catch {
+        // Ignore parse errors
+      }
+    }
+
+    // Win rate based on live trades only
+    const winRate = (stats.live_wins + stats.live_losses) > 0
+      ? (stats.live_wins / (stats.live_wins + stats.live_losses)) * 100
+      : 0;
+
+    // Get config from instance settings
+    const useTestnet = instanceSettings['bybit.use_testnet'] === 'true' || instanceSettings['bybit.use_testnet'] === true;
+    const paperTrading = instanceSettings['trading.paper_trading'] === 'true' || instanceSettings['trading.paper_trading'] === true;
+
+    return {
+      ...instance,
+      total_trades: stats.live_trades + stats.dry_run_trades,
+      live_trades: stats.live_trades,
+      dry_run_trades: stats.dry_run_trades,
+      total_pnl: stats.live_pnl,
+      win_count: stats.live_wins,
+      loss_count: stats.live_losses,
+      win_rate: winRate,
+      config: {
+        use_testnet: useTestnet,
+        paper_trading: paperTrading,
+      },
+    };
+  });
+}
+
+/**
+ * Get instance by ID
+ */
+export function getInstanceById(id: string): InstanceRow | null {
+  const db = getTradingDb();
+  return db.prepare('SELECT * FROM instances WHERE id = ?').get(id) as InstanceRow | null;
+}
+
+/**
+ * Create a new instance
+ */
+export function createInstance(instance: Omit<InstanceRow, 'created_at' | 'updated_at'>): string {
+  const db = getTradingDb();
+  db.prepare(`
+    INSERT INTO instances (id, name, prompt_name, prompt_version, min_confidence, max_leverage, symbols, timeframe, settings, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    instance.id,
+    instance.name,
+    instance.prompt_name,
+    instance.prompt_version,
+    instance.min_confidence,
+    instance.max_leverage,
+    instance.symbols,
+    instance.timeframe,
+    instance.settings,
+    instance.is_active
+  );
+  return instance.id;
+}
+
+/**
+ * Update an instance
+ */
+export function updateInstance(id: string, updates: Partial<InstanceRow>): boolean {
+  const db = getTradingDb();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+  if (updates.prompt_name !== undefined) { fields.push('prompt_name = ?'); values.push(updates.prompt_name); }
+  if (updates.prompt_version !== undefined) { fields.push('prompt_version = ?'); values.push(updates.prompt_version); }
+  if (updates.min_confidence !== undefined) { fields.push('min_confidence = ?'); values.push(updates.min_confidence); }
+  if (updates.max_leverage !== undefined) { fields.push('max_leverage = ?'); values.push(updates.max_leverage); }
+  if (updates.symbols !== undefined) { fields.push('symbols = ?'); values.push(updates.symbols); }
+  if (updates.timeframe !== undefined) { fields.push('timeframe = ?'); values.push(updates.timeframe); }
+  if (updates.settings !== undefined) { fields.push('settings = ?'); values.push(updates.settings); }
+  if (updates.is_active !== undefined) { fields.push('is_active = ?'); values.push(updates.is_active); }
+
+  if (fields.length === 0) return false;
+
+  fields.push("updated_at = datetime('now')");
+  values.push(id);
+
+  const result = db.prepare(`UPDATE instances SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  return result.changes > 0;
+}
+
+/**
+ * Get instance settings as parsed config object
+ */
+export function getInstanceSettings(instanceId: string): Record<string, unknown> | null {
+  const instance = getInstanceById(instanceId);
+  if (!instance) return null;
+
+  try {
+    const settings = instance.settings ? JSON.parse(instance.settings) : {};
+    // Also include top-level instance fields as config
+    return {
+      ...settings,
+      'trading.timeframe': instance.timeframe,
+      'trading.min_confidence_threshold': instance.min_confidence,
+      'trading.leverage': instance.max_leverage,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Update instance settings (merge with existing)
+ */
+export function updateInstanceSettings(instanceId: string, updates: Array<{ key: string; value: string }>): boolean {
+  const db = getTradingDb();
+  const instance = getInstanceById(instanceId);
+  if (!instance) return false;
+
+  // Parse existing settings
+  let settings: Record<string, string> = {};
+  try {
+    settings = instance.settings ? JSON.parse(instance.settings) : {};
+  } catch {
+    settings = {};
+  }
+
+  // Track top-level field updates
+  let timeframe = instance.timeframe;
+  let min_confidence = instance.min_confidence;
+  let max_leverage = instance.max_leverage;
+
+  // Apply updates
+  for (const { key, value } of updates) {
+    // Some keys map to top-level instance fields
+    if (key === 'trading.timeframe') {
+      timeframe = value;
+    } else if (key === 'trading.min_confidence_threshold') {
+      min_confidence = parseFloat(value);
+    } else if (key === 'trading.leverage') {
+      max_leverage = parseInt(value, 10);
+    }
+    // Always store in settings JSON too
+    settings[key] = value;
+  }
+
+  // Update instance
+  const result = db.prepare(`
+    UPDATE instances
+    SET settings = ?, timeframe = ?, min_confidence = ?, max_leverage = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(JSON.stringify(settings), timeframe, min_confidence, max_leverage, instanceId);
+
+  return result.changes > 0;
+}
+
+// Static config metadata (type, category, description, tooltip) for known settings
+const CONFIG_METADATA: Record<string, { type: 'string' | 'number' | 'boolean' | 'json'; category: string; description: string; tooltip?: string }> = {
+  'openai.assistant_id': { type: 'string', category: 'ai', description: 'OpenAI Assistant ID', tooltip: 'The unique identifier for your OpenAI Assistant' },
+  'openai.model': { type: 'string', category: 'ai', description: 'OpenAI Model', tooltip: 'AI model to use for analysis (e.g., gpt-4, gpt-3.5-turbo)' },
+  'bybit.max_retries': { type: 'number', category: 'exchange', description: 'Max retries for API calls', tooltip: 'Number of times to retry failed API requests' },
+  'bybit.recv_window': { type: 'number', category: 'exchange', description: 'Receive window in ms', tooltip: 'Time window for API request validity (milliseconds)' },
+  'bybit.use_testnet': { type: 'boolean', category: 'exchange', description: 'Use Bybit testnet', tooltip: 'Connect to Bybit testnet instead of mainnet' },
+  'trading.enable_intelligent_replacement': { type: 'boolean', category: 'replacement', description: 'Enable intelligent order replacement', tooltip: 'Replace existing orders with better opportunities based on AI score improvement' },
+  'trading.min_score_improvement_threshold': { type: 'number', category: 'replacement', description: 'Min score improvement for replacement', tooltip: 'Minimum AI confidence score improvement required to replace an existing order (0.0-1.0)' },
+  'trading.min_position_value_usd': { type: 'number', category: 'sizing', description: 'Minimum position value in USD', tooltip: 'Minimum USD value for any position to prevent dust trades' },
+  'trading.use_enhanced_position_sizing': { type: 'boolean', category: 'sizing', description: 'Use enhanced position sizing', tooltip: 'Use confidence-weighted position sizing instead of fixed risk percentage' },
+
+  // Trade Monitor - Master Control
+  'trading.enable_position_tightening': {
+    type: 'boolean',
+    category: 'trade monitor',
+    description: 'Master tightening switch',
+    tooltip: '🔴 MASTER SWITCH: Disables ALL tightening mechanisms when OFF (RR, TP proximity, age-based, ADX)'
+  },
+
+  // Trade Monitor - RR-based Tightening
+  'trading.enable_sl_tightening': {
+    type: 'boolean',
+    category: 'trade monitor',
+    description: 'RR-based tightening',
+    tooltip: 'Tighten stop loss as profit increases based on Risk:Reward ratio thresholds (e.g., at 2R move SL to 1.2R)'
+  },
+  'trading.rr_tightening_steps': {
+    type: 'json',
+    category: 'trade monitor',
+    description: 'RR tightening steps',
+    tooltip: 'Define profit thresholds and new SL positions. Example: {"2R": {"threshold": 2.0, "sl_position": 1.2}}'
+  },
+
+  // Trade Monitor - TP Proximity Trailing
+  'trading.enable_tp_proximity_trailing': {
+    type: 'boolean',
+    category: 'trade monitor',
+    description: 'TP proximity trailing',
+    tooltip: 'Convert SL to trailing stop when price gets close to take profit target'
+  },
+  'trading.tp_proximity_threshold_pct': {
+    type: 'number',
+    category: 'trade monitor',
+    description: 'TP proximity threshold %',
+    tooltip: 'Activate trailing stop when within X% of take profit (e.g., 1.0 = activate when 1% away from TP)'
+  },
+  'trading.tp_proximity_trailing_pct': {
+    type: 'number',
+    category: 'trade monitor',
+    description: 'TP proximity trailing %',
+    tooltip: 'Trail stop loss X% behind current price once activated (e.g., 1.0 = trail 1% behind price)'
+  },
+
+  // Trade Monitor - Age-based Tightening
+  'trading.age_tightening_enabled': {
+    type: 'boolean',
+    category: 'trade monitor',
+    description: 'Age-based tightening',
+    tooltip: 'Tighten stop loss for unprofitable positions that have been open too long (time-based risk reduction)'
+  },
+  'trading.age_tightening_max_pct': {
+    type: 'number',
+    category: 'trade monitor',
+    description: 'Max age tightening %',
+    tooltip: 'Maximum percentage to tighten SL (e.g., 30 = tighten up to 30% of original risk distance)'
+  },
+  'trading.age_tightening_min_profit_threshold': {
+    type: 'number',
+    category: 'trade monitor',
+    description: 'Min profit threshold (R)',
+    tooltip: 'Only apply age-based tightening if profit is below this level in R (e.g., 1.0 = only tighten if below 1R profit)'
+  },
+  'trading.age_tightening_bars': {
+    type: 'json',
+    category: 'trade monitor',
+    description: 'Age tightening bars',
+    tooltip: 'Number of bars before tightening per timeframe. Example: {"1h": 48, "4h": 18, "1d": 4}'
+  },
+
+  // Trade Monitor - Age-based Cancellation
+  'trading.age_cancellation_enabled': {
+    type: 'boolean',
+    category: 'trade monitor',
+    description: 'Age-based cancellation',
+    tooltip: 'Cancel unfilled orders that have been pending too long (prevents stale orders)'
+  },
+  'trading.age_cancellation_max_bars': {
+    type: 'json',
+    category: 'trade monitor',
+    description: 'Max age bars for cancellation',
+    tooltip: 'Maximum bars before cancelling unfilled orders per timeframe. Example: {"1h": 48, "4h": 18}'
+  },
+
+  // Trade Monitor - ADX Tightening (Not yet implemented)
+  'trading.enable_adx_tightening': {
+    type: 'boolean',
+    category: 'trade monitor',
+    description: 'ADX-based tightening',
+    tooltip: '⚠️ NOT YET IMPLEMENTED - Will tighten stops based on ADX trend strength and ATR volatility'
+  },
+  'trading.auto_approve_trades': {
+    type: 'boolean',
+    category: 'trading',
+    description: 'Auto-approve trades',
+    tooltip: 'Automatically execute trades without manual approval (use with caution in live trading)'
+  },
+  'trading.leverage': {
+    type: 'number',
+    category: 'trading',
+    description: 'Trading leverage',
+    tooltip: 'Leverage multiplier for positions (e.g., 2 = 2x leverage). Higher leverage = higher risk'
+  },
+  'trading.max_concurrent_trades': {
+    type: 'number',
+    category: 'trading',
+    description: 'Max concurrent trades',
+    tooltip: 'Maximum number of positions/orders that can be open at the same time'
+  },
+  'trading.max_loss_usd': {
+    type: 'number',
+    category: 'trading',
+    description: 'Max loss per trade in USD',
+    tooltip: 'Maximum dollar amount to risk on a single trade (hard cap on position size)'
+  },
+  'trading.min_confidence_threshold': {
+    type: 'number',
+    category: 'trading',
+    description: 'Min confidence threshold',
+    tooltip: 'Minimum AI confidence score required to take a trade (0.0-1.0, e.g., 0.75 = 75% confidence)'
+  },
+  'trading.min_rr': {
+    type: 'number',
+    category: 'trading',
+    description: 'Minimum risk:reward ratio',
+    tooltip: 'Minimum Risk:Reward ratio required for a trade (e.g., 1.7 = must have at least 1.7R potential profit)'
+  },
+  'trading.paper_trading': {
+    type: 'boolean',
+    category: 'trading',
+    description: 'Paper trading mode',
+    tooltip: 'Simulate trades without real money (dry run mode for testing strategies)'
+  },
+  'trading.risk_percentage': {
+    type: 'number',
+    category: 'trading',
+    description: 'Risk percentage per trade',
+    tooltip: 'Percentage of account balance to risk per trade (e.g., 0.01 = 1% of balance)'
+  },
+  'trading.timeframe': {
+    type: 'string',
+    category: 'trading',
+    description: 'Trading timeframe',
+    tooltip: 'Chart timeframe for analysis (e.g., 1h, 4h, 1d). Affects candle data and age-based calculations'
+  },
+};
+
+/**
+ * Get instance config as ConfigRow array (for API compatibility)
+ * Uses static metadata for type and category
+ */
+export function getInstanceConfigAsRows(instanceId: string): ConfigRow[] {
+  const instance = getInstanceById(instanceId);
+  if (!instance) return [];
+
+  try {
+    const settings: Record<string, string> = instance.settings ? JSON.parse(instance.settings) : {};
+    const rows: ConfigRow[] = [];
+
+    for (const [key, value] of Object.entries(settings)) {
+      const meta = CONFIG_METADATA[key];
+      rows.push({
+        key,
+        value: typeof value === 'string' ? value : JSON.stringify(value),
+        type: meta?.type || inferType(typeof value === 'string' ? value : JSON.stringify(value)),
+        category: meta?.category || key.split('.')[0] || 'trading',
+        description: meta?.description || null,
+        tooltip: meta?.tooltip || null,
+        updated_at: instance.updated_at || new Date().toISOString(),
+      });
+    }
+
+    return rows.sort((a, b) => a.category.localeCompare(b.category) || a.key.localeCompare(b.key));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Infer config type from value
+ */
+function inferType(value: string): 'string' | 'number' | 'boolean' | 'json' {
+  if (value === 'true' || value === 'false') return 'boolean';
+  if (value.startsWith('{') || value.startsWith('[')) return 'json';
+  if (!isNaN(parseFloat(value)) && isFinite(Number(value))) return 'number';
+  return 'string';
+}
+
+// ============================================================
+// RUNS OPERATIONS (Bot session tracking)
+// ============================================================
+
+export interface RunRow {
+  id: string;
+  instance_id: string | null;  // Links to parent instance
+  started_at: string;
+  ended_at: string | null;
+  status: 'running' | 'stopped' | 'crashed' | 'completed';
+  stop_reason: string | null;
+  timeframe: string | null;
+  paper_trading: number;
+  min_confidence: number | null;
+  max_leverage: number | null;
+  symbols_watched: string | null;
+  config_snapshot: string | null;
+  total_cycles: number;
+  total_recommendations: number;
+  total_trades: number;
+  total_pnl: number;
+  win_count: number;
+  loss_count: number;
+  created_at: string;
+}
+
+/**
+ * Get runs by instance ID
+ */
+export function getRunsByInstanceId(instanceId: string, limit: number = 20): RunRow[] {
+  const db = getTradingDb();
+  return db.prepare(`
+    SELECT * FROM runs
+    WHERE instance_id = ?
+    ORDER BY started_at DESC
+    LIMIT ?
+  `).all(instanceId, limit) as RunRow[];
+}
+
+/**
+ * Get all runs
+ */
+export function getRuns(limit: number = 20): RunRow[] {
+  const db = getTradingDb();
+  return db.prepare(`
+    SELECT * FROM runs
+    ORDER BY started_at DESC
+    LIMIT ?
+  `).all(limit) as RunRow[];
+}
+
+/**
+ * Get run by ID
+ */
+export function getRunById(id: string): RunRow | null {
+  const db = getTradingDb();
+  return db.prepare('SELECT * FROM runs WHERE id = ?').get(id) as RunRow | null;
+}
+
+/**
+ * Update run status and optionally set end time
+ */
+export function updateRunStatus(
+  runId: string,
+  status: 'running' | 'stopped' | 'crashed' | 'completed',
+  stopReason?: string
+): void {
+  const db = getTradingDb();
+  const endedAt = status !== 'running' ? new Date().toISOString() : null;
+
+  db.prepare(`
+    UPDATE runs
+    SET status = ?, ended_at = COALESCE(?, ended_at), stop_reason = COALESCE(?, stop_reason)
+    WHERE id = ?
+  `).run(status, endedAt, stopReason, runId);
+}
+
+/**
+ * Get currently running runs (to sync with actual processes)
+ */
+export function getRunningRuns(): RunRow[] {
+  const db = getTradingDb();
+  return db.prepare(`
+    SELECT * FROM runs WHERE status = 'running'
+  `).all() as RunRow[];
+}
+
+/**
+ * Get the running run for a specific instance (if any)
+ */
+export function getRunningRunByInstanceId(instanceId: string): RunRow | null {
+  const db = getTradingDb();
+  return db.prepare(`
+    SELECT * FROM runs WHERE instance_id = ? AND status = 'running' LIMIT 1
+  `).get(instanceId) as RunRow | null;
+}
+
+/**
+ * Update all running runs for an instance to a new status
+ */
+export function updateRunStatusByInstanceId(
+  instanceId: string,
+  status: 'running' | 'stopped' | 'crashed' | 'completed',
+  stopReason?: string
+): number {
+  const db = getTradingDb();
+  const endedAt = status !== 'running' ? new Date().toISOString() : null;
+
+  const result = db.prepare(`
+    UPDATE runs
+    SET status = ?, ended_at = COALESCE(?, ended_at), stop_reason = COALESCE(?, stop_reason)
+    WHERE instance_id = ? AND status = 'running'
+  `).run(status, endedAt, stopReason, instanceId);
+
+  return result.changes;
+}
+
+/**
+ * Get cycles for a specific run
+ */
+export function getCyclesByRunId(runId: string): CycleRow[] {
+  const db = getTradingDb();
+  return db.prepare(`
+    SELECT * FROM cycles
+    WHERE run_id = ?
+    ORDER BY started_at DESC
+  `).all(runId) as CycleRow[];
+}
+
+// ============================================================
+// CONFIG OPERATIONS
+// ============================================================
+
+export interface ConfigRow {
+  key: string;
+  value: string;
+  type: 'string' | 'number' | 'boolean' | 'json';
+  category: string;
+  description: string | null;
+  tooltip?: string | null;
+  updated_at: string;
+}
+
+// ============================================================
+// TRADES OPERATIONS
+// ============================================================
+
+export interface TradeRow {
+  id: string;
+  recommendation_id: string | null;
+  run_id: string | null;      // Direct link to run for fast queries
+  cycle_id: string | null;    // Direct link to cycle for fast queries
+  symbol: string;
+  side: string;
+  entry_price: number;
+  quantity: number;
+  stop_loss: number;
+  take_profit: number;
+  leverage: number;
+  order_id: string | null;
+  order_link_id: string | null;
+  status: string;
+  fill_price: number | null;
+  fill_quantity: number | null;
+  fill_time: string | null;
+  exit_price: number | null;
+  exit_reason: string | null;
+  pnl: number | null;
+  pnl_percent: number | null;
+  timeframe: string | null;
+  prompt_name: string | null;
+  confidence: number | null;
+  rr_ratio: number | null;
+  dry_run: number;
+  rejection_reason: string | null;  // Why trade was rejected (if status='rejected')
+  submitted_at: string | null;
+  filled_at: string | null;
+  closed_at: string | null;
+  created_at: string;
+}
+
+/**
+ * Get recent trades with timeframe from recommendations if not set on trade
+ */
+export function getRecentTrades(limit: number = 50): TradeRow[] {
+  const db = getTradingDb();
+  return db.prepare(`
+    SELECT
+      t.*,
+      COALESCE(t.timeframe, r.timeframe) as timeframe,
+      COALESCE(t.entry_price, r.entry_price) as entry_price,
+      COALESCE(t.stop_loss, r.stop_loss) as stop_loss,
+      COALESCE(t.take_profit, r.take_profit) as take_profit
+    FROM trades t
+    LEFT JOIN recommendations r ON t.recommendation_id = r.id
+    ORDER BY t.created_at DESC
+    LIMIT ?
+  `).all(limit) as TradeRow[];
+}
+
+/**
+ * Get trades by status with timeframe from recommendations if not set on trade
+ */
+export function getTradesByStatus(status: string): TradeRow[] {
+  const db = getTradingDb();
+  return db.prepare(`
+    SELECT
+      t.*,
+      COALESCE(t.timeframe, r.timeframe) as timeframe,
+      COALESCE(t.entry_price, r.entry_price) as entry_price,
+      COALESCE(t.stop_loss, r.stop_loss) as stop_loss,
+      COALESCE(t.take_profit, r.take_profit) as take_profit
+    FROM trades t
+    LEFT JOIN recommendations r ON t.recommendation_id = r.id
+    WHERE t.status = ?
+    ORDER BY t.created_at DESC
+  `).all(status) as TradeRow[];
+}
+
+/**
+ * Get trades by run ID
+ */
+export function getTradesByRunId(runId: string): TradeRow[] {
+  const db = getTradingDb();
+  return db.prepare(`
+    SELECT
+      t.*,
+      COALESCE(t.timeframe, r.timeframe) as timeframe,
+      COALESCE(t.entry_price, r.entry_price) as entry_price,
+      COALESCE(t.stop_loss, r.stop_loss) as stop_loss,
+      COALESCE(t.take_profit, r.take_profit) as take_profit
+    FROM trades t
+    LEFT JOIN recommendations r ON t.recommendation_id = r.id
+    WHERE t.run_id = ?
+    ORDER BY t.created_at DESC
+  `).all(runId) as TradeRow[];
+}
+
+/**
+ * Get trades by cycle ID
+ */
+export function getTradesByCycleId(cycleId: string): TradeRow[] {
+  const db = getTradingDb();
+  return db.prepare(`
+    SELECT
+      t.*,
+      COALESCE(t.timeframe, r.timeframe) as timeframe,
+      COALESCE(t.entry_price, r.entry_price) as entry_price,
+      COALESCE(t.stop_loss, r.stop_loss) as stop_loss,
+      COALESCE(t.take_profit, r.take_profit) as take_profit
+    FROM trades t
+    LEFT JOIN recommendations r ON t.recommendation_id = r.id
+    WHERE t.cycle_id = ?
+    ORDER BY t.created_at DESC
+  `).all(cycleId) as TradeRow[];
+}
+
+interface CycleWithTrades {
+  cycle_id: string;
+  started_at: string | null;
+  ended_at: string | null;
+  symbols_count: number;
+  analyzed_count: number;
+  trade_count: number;
+  trades: TradeRow[];
+}
+
+interface RunWithCycles {
+  run_id: string;
+  started_at: string | null;
+  ended_at: string | null;
+  cycle_count: number;
+  trade_count: number;
+  cycles: CycleWithTrades[];
+}
+
+/**
+ * Get trades grouped by run and cycle
+ */
+export function getTradesGroupedByRun(instanceId?: string, limit: number = 10): RunWithCycles[] {
+  const db = getTradingDb();
+
+  // Get runs with trade counts
+  const runsQuery = instanceId
+    ? `
+      SELECT
+        r.id as run_id,
+        r.started_at,
+        r.ended_at,
+        COUNT(DISTINCT t.cycle_id) as cycle_count,
+        COUNT(t.id) as trade_count
+      FROM runs r
+      LEFT JOIN trades t ON t.run_id = r.id
+      WHERE r.instance_id = ?
+      GROUP BY r.id
+      HAVING trade_count > 0
+      ORDER BY r.started_at DESC
+      LIMIT ?
+    `
+    : `
+      SELECT
+        r.id as run_id,
+        r.started_at,
+        r.ended_at,
+        COUNT(DISTINCT t.cycle_id) as cycle_count,
+        COUNT(t.id) as trade_count
+      FROM runs r
+      LEFT JOIN trades t ON t.run_id = r.id
+      GROUP BY r.id
+      HAVING trade_count > 0
+      ORDER BY r.started_at DESC
+      LIMIT ?
+    `;
+
+  const runs = instanceId
+    ? db.prepare(runsQuery).all(instanceId, limit) as { run_id: string; started_at: string | null; ended_at: string | null; cycle_count: number; trade_count: number }[]
+    : db.prepare(runsQuery).all(limit) as { run_id: string; started_at: string | null; ended_at: string | null; cycle_count: number; trade_count: number }[];
+
+  const result: RunWithCycles[] = [];
+
+  for (const run of runs) {
+    // Get cycles for this run
+    const cycles = db.prepare(`
+      SELECT
+        c.id as cycle_id,
+        c.started_at,
+        c.completed_at as ended_at,
+        c.charts_captured as symbols_count,
+        c.analyses_completed as analyzed_count,
+        COUNT(t.id) as trade_count
+      FROM cycles c
+      LEFT JOIN trades t ON t.cycle_id = c.id
+      WHERE c.run_id = ?
+      GROUP BY c.id
+      HAVING trade_count > 0
+      ORDER BY c.started_at DESC
+    `).all(run.run_id) as { cycle_id: string; started_at: string | null; ended_at: string | null; symbols_count: number; analyzed_count: number; trade_count: number }[];
+
+    const cyclesWithTrades: CycleWithTrades[] = cycles.map(cycle => ({
+      ...cycle,
+      trades: db.prepare(`
+        SELECT
+          t.*,
+          COALESCE(t.timeframe, r.timeframe) as timeframe,
+          COALESCE(t.entry_price, r.entry_price) as entry_price,
+          COALESCE(t.stop_loss, r.stop_loss) as stop_loss,
+          COALESCE(t.take_profit, r.take_profit) as take_profit
+        FROM trades t
+        LEFT JOIN recommendations r ON t.recommendation_id = r.id
+        WHERE t.cycle_id = ?
+        ORDER BY t.created_at DESC
+      `).all(cycle.cycle_id) as TradeRow[]
+    }));
+
+    result.push({
+      run_id: run.run_id,
+      started_at: run.started_at,
+      ended_at: run.ended_at,
+      cycle_count: run.cycle_count,
+      trade_count: run.trade_count,
+      cycles: cyclesWithTrades
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Get trades by instance ID (via run)
+ */
+export function getTradesByInstanceId(instanceId: string, limit: number = 100): TradeRow[] {
+  const db = getTradingDb();
+  return db.prepare(`
+    SELECT
+      t.*,
+      COALESCE(t.timeframe, r.timeframe) as timeframe,
+      COALESCE(t.entry_price, r.entry_price) as entry_price,
+      COALESCE(t.stop_loss, r.stop_loss) as stop_loss,
+      COALESCE(t.take_profit, r.take_profit) as take_profit
+    FROM trades t
+    LEFT JOIN recommendations r ON t.recommendation_id = r.id
+    LEFT JOIN runs ru ON t.run_id = ru.id
+    WHERE ru.instance_id = ?
+    ORDER BY t.created_at DESC
+    LIMIT ?
+  `).all(instanceId, limit) as TradeRow[];
+}
+
+// ============================================================
+// CYCLES OPERATIONS
+// ============================================================
+
+export interface CycleRow {
+  id: string;
+  run_id: string | null;  // Links to parent run
+  timeframe: string;
+  cycle_number: number;
+  boundary_time: string;
+  status: string;
+  skip_reason: string | null;
+  charts_captured: number;
+  analyses_completed: number;
+  recommendations_generated: number;
+  trades_executed: number;
+  available_slots: number | null;
+  open_positions: number | null;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+}
+
+/**
+ * Get recent cycles
+ */
+export function getRecentCycles(limit: number = 20): CycleRow[] {
+  const db = getTradingDb();
+  return db.prepare(`
+    SELECT * FROM cycles
+    ORDER BY started_at DESC
+    LIMIT ?
+  `).all(limit) as CycleRow[];
+}
+
+// ============================================================
+// RECOMMENDATIONS OPERATIONS
+// ============================================================
+
+export interface RecommendationRow {
+  id: string;
+  symbol: string;
+  timeframe: string;
+  recommendation: string;
+  confidence: number;
+  entry_price: number | null;
+  stop_loss: number | null;
+  take_profit: number | null;
+  risk_reward: number | null;
+  reasoning: string | null;
+  chart_path: string | null;
+  prompt_name: string;
+  prompt_version: string | null;
+  model_name: string;
+  raw_response: string | null;
+  analyzed_at: string;
+  cycle_boundary: string | null;
+  created_at: string;
+}
+
+/**
+ * Get recent recommendations
+ */
+export function getRecentRecommendations(limit: number = 50): RecommendationRow[] {
+  const db = getTradingDb();
+  return db.prepare(`
+    SELECT * FROM recommendations
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(limit) as RecommendationRow[];
+}
+
+// ============================================================
+// EXECUTIONS OPERATIONS
+// ============================================================
+
+export interface ExecutionRow {
+  id: string;
+  trade_id: string;
+  order_id: string;
+  exec_id: string;
+  symbol: string;
+  side: string | null;
+  exec_price: number;
+  exec_qty: number;
+  exec_value: number | null;
+  exec_fee: number | null;
+  exec_pnl: number | null;
+  exec_type: string | null;
+  is_maker: number | null;
+  exec_time: string;
+  created_at: string;
+}
+
+/**
+ * Get recent executions
+ */
+export function getRecentExecutions(limit: number = 100): ExecutionRow[] {
+  const db = getTradingDb();
+  return db.prepare(`
+    SELECT * FROM executions
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(limit) as ExecutionRow[];
+}
+
+// ============================================================
+// LOG TRAIL - COMBINED VIEW
+// ============================================================
+
+export interface LogEntry {
+  id: string;
+  type: 'cycle' | 'recommendation' | 'trade' | 'execution';
+  timestamp: string;
+  symbol?: string;
+  data: Record<string, unknown>;
+}
+
+/**
+ * Get unified log trail (all events sorted by time)
+ */
+export function getLogTrail(limit: number = 100): LogEntry[] {
+  const db = getTradingDb();
+
+  const logs: LogEntry[] = [];
+
+  // Get cycles
+  const cycles = db.prepare(`SELECT * FROM cycles ORDER BY started_at DESC LIMIT ?`).all(limit / 4) as CycleRow[];
+  for (const c of cycles) {
+    logs.push({
+      id: c.id,
+      type: 'cycle',
+      timestamp: c.started_at,
+      data: c as unknown as Record<string, unknown>,
+    });
+  }
+
+  // Get recommendations
+  const recs = db.prepare(`SELECT * FROM recommendations ORDER BY created_at DESC LIMIT ?`).all(limit / 4) as RecommendationRow[];
+  for (const r of recs) {
+    logs.push({
+      id: r.id,
+      type: 'recommendation',
+      timestamp: r.created_at,
+      symbol: r.symbol,
+      data: r as unknown as Record<string, unknown>,
+    });
+  }
+
+  // Get trades
+  const trades = db.prepare(`SELECT * FROM trades ORDER BY created_at DESC LIMIT ?`).all(limit / 4) as TradeRow[];
+  for (const t of trades) {
+    logs.push({
+      id: t.id,
+      type: 'trade',
+      timestamp: t.created_at,
+      symbol: t.symbol,
+      data: t as unknown as Record<string, unknown>,
+    });
+  }
+
+  // Get executions
+  const execs = db.prepare(`SELECT * FROM executions ORDER BY created_at DESC LIMIT ?`).all(limit / 4) as ExecutionRow[];
+  for (const e of execs) {
+    logs.push({
+      id: e.id,
+      type: 'execution',
+      timestamp: e.created_at,
+      symbol: e.symbol,
+      data: e as unknown as Record<string, unknown>,
+    });
+  }
+
+  // Sort by timestamp descending
+  logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  return logs.slice(0, limit);
+}
+
+/**
+ * Get statistics summary
+ */
+export function getStats(): {
+  runs: number;
+  cycles: number;
+  recommendations: number;
+  trades: number;
+  executions: number;
+  winRate: number;
+  totalPnl: number;
+} {
+  const db = getTradingDb();
+
+  const cycleCount = (db.prepare('SELECT COUNT(*) as count FROM cycles').get() as { count: number }).count;
+  const recCount = (db.prepare('SELECT COUNT(*) as count FROM recommendations').get() as { count: number }).count;
+  const tradeCount = (db.prepare("SELECT COUNT(*) as count FROM trades WHERE status NOT IN ('rejected', 'cancelled', 'error')").get() as { count: number }).count;
+  const execCount = (db.prepare('SELECT COUNT(*) as count FROM executions').get() as { count: number }).count;
+
+  // Win rate calculation
+  const wins = (db.prepare("SELECT COUNT(*) as count FROM trades WHERE pnl > 0 AND status NOT IN ('rejected', 'cancelled', 'error')").get() as { count: number }).count;
+  const losses = (db.prepare("SELECT COUNT(*) as count FROM trades WHERE pnl < 0 AND status NOT IN ('rejected', 'cancelled', 'error')").get() as { count: number }).count;
+  const winRate = (wins + losses) > 0 ? wins / (wins + losses) : 0;
+
+  // Total PnL
+  const pnlRow = db.prepare("SELECT COALESCE(SUM(pnl), 0) as total FROM trades WHERE pnl IS NOT NULL AND status NOT IN ('rejected', 'cancelled', 'error')").get() as { total: number };
+
+  // Runs count
+  const runCount = (db.prepare("SELECT COUNT(*) as count FROM runs").get() as { count: number }).count;
+
+  return {
+    runs: runCount,
+    cycles: cycleCount,
+    recommendations: recCount,
+    trades: tradeCount,
+    executions: execCount,
+    winRate,
+    totalPnl: pnlRow.total,
+  };
+}
+
+// ============================================================
+// HIERARCHICAL DATA FOR LOG TRAIL
+// ============================================================
+
+export interface RunWithHierarchy extends RunRow {
+  cycles: CycleWithRecommendations[];
+}
+
+export interface CycleWithRecommendations extends CycleRow {
+  recommendations: RecommendationWithTrades[];
+}
+
+export interface RecommendationWithTrades extends RecommendationRow {
+  trades: TradeWithExecutions[];
+}
+
+export interface TradeWithExecutions extends TradeRow {
+  executions: ExecutionRow[];
+}
+
+export interface InstanceWithHierarchy extends InstanceRow {
+  runs: RunWithHierarchy[];
+  total_cycles: number;
+  total_recommendations: number;
+  total_trades: number;
+  total_pnl: number;
+  win_count: number;
+  loss_count: number;
+}
+
+/**
+ * Get instances with full hierarchy for LogTrail (Level 0)
+ * Instance → Runs → Cycles → Recommendations → Trades → Executions
+ */
+export function getInstancesWithHierarchy(limit: number = 10): InstanceWithHierarchy[] {
+  const db = getTradingDb();
+
+  // Get all active instances
+  const instances = db.prepare(`
+    SELECT * FROM instances
+    WHERE is_active = 1
+    ORDER BY name
+  `).all() as InstanceRow[];
+
+  return instances.map(instance => {
+    // Get runs for this instance (limited)
+    const runs = db.prepare(`
+      SELECT * FROM runs
+      WHERE instance_id = ?
+      ORDER BY started_at DESC
+      LIMIT ?
+    `).all(instance.id, limit) as RunRow[];
+
+    const runsWithHierarchy = runs.map(run => ({
+      ...run,
+      cycles: getCyclesWithRecommendations(run.id),
+    }));
+
+    // Aggregate stats across all runs of this instance
+    // Count actual trades from trades table, not aggregate counters
+    const stats = db.prepare(`
+      SELECT
+        COALESCE(SUM(r.total_cycles), 0) as total_cycles,
+        COALESCE(SUM(r.total_recommendations), 0) as total_recommendations,
+        COALESCE(COUNT(DISTINCT t.id), 0) as total_trades,
+        COALESCE(SUM(CASE WHEN t.pnl IS NOT NULL THEN t.pnl ELSE 0 END), 0) as total_pnl,
+        COALESCE(SUM(CASE WHEN t.pnl > 0 THEN 1 ELSE 0 END), 0) as win_count,
+        COALESCE(SUM(CASE WHEN t.pnl < 0 THEN 1 ELSE 0 END), 0) as loss_count
+      FROM runs r
+      LEFT JOIN cycles c ON c.run_id = r.id
+      LEFT JOIN trades t ON t.cycle_id = c.id AND t.status NOT IN ('rejected', 'cancelled', 'error')
+      WHERE r.instance_id = ?
+    `).get(instance.id) as {
+      total_cycles: number;
+      total_recommendations: number;
+      total_trades: number;
+      total_pnl: number;
+      win_count: number;
+      loss_count: number;
+    };
+
+    return {
+      ...instance,
+      runs: runsWithHierarchy,
+      total_cycles: stats.total_cycles,
+      total_recommendations: stats.total_recommendations,
+      total_trades: stats.total_trades,
+      total_pnl: stats.total_pnl,
+      win_count: stats.win_count,
+      loss_count: stats.loss_count,
+    };
+  });
+}
+
+/**
+ * Get runs with full hierarchy for LogTrail
+ */
+export function getRunsWithHierarchy(limit: number = 10): RunWithHierarchy[] {
+  const db = getTradingDb();
+
+  // Get runs
+  const runs = db.prepare(`
+    SELECT * FROM runs
+    ORDER BY started_at DESC
+    LIMIT ?
+  `).all(limit) as RunRow[];
+
+  return runs.map(run => ({
+    ...run,
+    cycles: getCyclesWithRecommendations(run.id),
+  }));
+}
+
+/**
+ * Get cycles with recommendations for a run
+ */
+function getCyclesWithRecommendations(runId: string): CycleWithRecommendations[] {
+  const db = getTradingDb();
+
+  const cycles = db.prepare(`
+    SELECT * FROM cycles
+    WHERE run_id = ?
+    ORDER BY started_at DESC
+  `).all(runId) as CycleRow[];
+
+  return cycles.map(cycle => ({
+    ...cycle,
+    recommendations: getRecommendationsWithTrades(cycle.id),
+  }));
+}
+
+/**
+ * Get recommendations with trades for a cycle
+ */
+function getRecommendationsWithTrades(cycleId: string): RecommendationWithTrades[] {
+  const db = getTradingDb();
+
+  const recommendations = db.prepare(`
+    SELECT * FROM recommendations
+    WHERE cycle_id = ?
+    ORDER BY created_at DESC
+  `).all(cycleId) as RecommendationRow[];
+
+  return recommendations.map(rec => ({
+    ...rec,
+    trades: getTradesWithExecutions(rec.id),
+  }));
+}
+
+/**
+ * Get trades with executions for a recommendation
+ */
+function getTradesWithExecutions(recommendationId: string): TradeWithExecutions[] {
+  const db = getTradingDb();
+
+  const trades = db.prepare(`
+    SELECT * FROM trades
+    WHERE recommendation_id = ?
+    ORDER BY created_at DESC
+  `).all(recommendationId) as TradeRow[];
+
+  return trades.map(trade => ({
+    ...trade,
+    executions: getExecutionsByTradeId(trade.id),
+  }));
+}
+
+/**
+ * Get executions for a trade
+ */
+function getExecutionsByTradeId(tradeId: string): ExecutionRow[] {
+  const db = getTradingDb();
+
+  return db.prepare(`
+    SELECT * FROM executions
+    WHERE trade_id = ?
+    ORDER BY exec_time DESC
+  `).all(tradeId) as ExecutionRow[];
+}
+
+// ============================================================
+// STATS OPERATIONS (Aggregated metrics)
+// ============================================================
+
+export interface StatsResult {
+  images_analyzed: number;
+  valid_signals: number;
+  avg_confidence: number;
+  actionable_percent: number;
+  total_trades: number;
+  win_count: number;
+  loss_count: number;
+  total_pnl: number;
+}
+
+/**
+ * Get stats for a specific cycle
+ */
+export function getStatsByCycleId(cycleId: string): StatsResult {
+  const db = getTradingDb();
+
+  const cycle = db.prepare('SELECT * FROM cycles WHERE id = ?').get(cycleId) as CycleRow | undefined;
+  const recs = db.prepare(`
+    SELECT COUNT(*) as total,
+           SUM(CASE WHEN recommendation IN ('BUY', 'SELL', 'LONG', 'SHORT') THEN 1 ELSE 0 END) as actionable,
+           AVG(confidence) as avg_conf
+    FROM recommendations WHERE cycle_id = ?
+  `).get(cycleId) as { total: number; actionable: number; avg_conf: number | null };
+
+  const trades = db.prepare(`
+    SELECT COUNT(*) as total,
+           SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+           SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losses,
+           SUM(COALESCE(pnl, 0)) as total_pnl
+    FROM trades
+    WHERE cycle_id = ?
+      AND status NOT IN ('rejected', 'cancelled', 'error')
+  `).get(cycleId) as { total: number; wins: number; losses: number; total_pnl: number };
+
+  return {
+    images_analyzed: cycle?.charts_captured || 0,
+    valid_signals: recs?.actionable || 0,
+    avg_confidence: recs?.avg_conf || 0,
+    actionable_percent: recs?.total > 0 ? (recs.actionable / recs.total) * 100 : 0,
+    total_trades: trades?.total || 0,
+    win_count: trades?.wins || 0,
+    loss_count: trades?.losses || 0,
+    total_pnl: trades?.total_pnl || 0,
+  };
+}
+
+/**
+ * Get stats for a specific run
+ */
+export function getStatsByRunId(runId: string): StatsResult {
+  const db = getTradingDb();
+
+  const cycles = db.prepare('SELECT SUM(charts_captured) as total FROM cycles WHERE run_id = ?').get(runId) as { total: number | null };
+  const recs = db.prepare(`
+    SELECT COUNT(*) as total,
+           SUM(CASE WHEN rec.recommendation IN ('BUY', 'SELL', 'LONG', 'SHORT') THEN 1 ELSE 0 END) as actionable,
+           AVG(rec.confidence) as avg_conf
+    FROM recommendations rec
+    JOIN cycles c ON rec.cycle_id = c.id
+    WHERE c.run_id = ?
+  `).get(runId) as { total: number; actionable: number; avg_conf: number | null };
+
+  const trades = db.prepare(`
+    SELECT COUNT(*) as total,
+           SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+           SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losses,
+           SUM(COALESCE(pnl, 0)) as total_pnl
+    FROM trades
+    WHERE run_id = ?
+      AND status NOT IN ('rejected', 'cancelled', 'error')
+  `).get(runId) as { total: number; wins: number; losses: number; total_pnl: number };
+
+  return {
+    images_analyzed: cycles?.total || 0,
+    valid_signals: recs?.actionable || 0,
+    avg_confidence: recs?.avg_conf || 0,
+    actionable_percent: recs?.total > 0 ? (recs.actionable / recs.total) * 100 : 0,
+    total_trades: trades?.total || 0,
+    win_count: trades?.wins || 0,
+    loss_count: trades?.losses || 0,
+    total_pnl: trades?.total_pnl || 0,
+  };
+}
+
+/**
+ * Get stats for a specific instance (all runs)
+ */
+export function getStatsByInstanceId(instanceId: string): StatsResult {
+  const db = getTradingDb();
+
+  const cycles = db.prepare(`
+    SELECT SUM(c.charts_captured) as total
+    FROM cycles c
+    JOIN runs r ON c.run_id = r.id
+    WHERE r.instance_id = ?
+  `).get(instanceId) as { total: number | null };
+
+  const recs = db.prepare(`
+    SELECT COUNT(*) as total,
+           SUM(CASE WHEN rec.recommendation IN ('BUY', 'SELL', 'LONG', 'SHORT') THEN 1 ELSE 0 END) as actionable,
+           AVG(rec.confidence) as avg_conf
+    FROM recommendations rec
+    JOIN cycles c ON rec.cycle_id = c.id
+    JOIN runs r ON c.run_id = r.id
+    WHERE r.instance_id = ?
+  `).get(instanceId) as { total: number; actionable: number; avg_conf: number | null };
+
+  const trades = db.prepare(`
+    SELECT COUNT(*) as total,
+           SUM(CASE WHEN t.pnl > 0 THEN 1 ELSE 0 END) as wins,
+           SUM(CASE WHEN t.pnl < 0 THEN 1 ELSE 0 END) as losses,
+           SUM(COALESCE(t.pnl, 0)) as total_pnl
+    FROM trades t
+    JOIN runs r ON t.run_id = r.id
+    WHERE r.instance_id = ?
+      AND t.status NOT IN ('rejected', 'cancelled', 'error')
+  `).get(instanceId) as { total: number; wins: number; losses: number; total_pnl: number };
+
+  return {
+    images_analyzed: cycles?.total || 0,
+    valid_signals: recs?.actionable || 0,
+    avg_confidence: recs?.avg_conf || 0,
+    actionable_percent: recs?.total > 0 ? (recs.actionable / recs.total) * 100 : 0,
+    total_trades: trades?.total || 0,
+    win_count: trades?.wins || 0,
+    loss_count: trades?.losses || 0,
+    total_pnl: trades?.total_pnl || 0,
+  };
+}
+
+/**
+ * Get global stats (all instances)
+ */
+export function getGlobalStats(): StatsResult & { instance_count: number } {
+  const db = getTradingDb();
+
+  const instances = db.prepare('SELECT COUNT(*) as total FROM instances WHERE is_active = 1').get() as { total: number };
+  const cycles = db.prepare('SELECT SUM(charts_captured) as total FROM cycles').get() as { total: number | null };
+  const recs = db.prepare(`
+    SELECT COUNT(*) as total,
+           SUM(CASE WHEN recommendation IN ('BUY', 'SELL', 'LONG', 'SHORT') THEN 1 ELSE 0 END) as actionable,
+           AVG(confidence) as avg_conf
+    FROM recommendations
+  `).get() as { total: number; actionable: number; avg_conf: number | null };
+
+  const trades = db.prepare(`
+    SELECT COUNT(*) as total,
+           SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+           SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losses,
+           SUM(COALESCE(pnl, 0)) as total_pnl
+    FROM trades
+    WHERE status NOT IN ('rejected', 'cancelled', 'error')
+  `).get() as { total: number; wins: number; losses: number; total_pnl: number };
+
+  return {
+    instance_count: instances?.total || 0,
+    images_analyzed: cycles?.total || 0,
+    valid_signals: recs?.actionable || 0,
+    avg_confidence: recs?.avg_conf || 0,
+    actionable_percent: recs?.total > 0 ? (recs.actionable / recs.total) * 100 : 0,
+    total_trades: trades?.total || 0,
+    win_count: trades?.wins || 0,
+    loss_count: trades?.losses || 0,
+    total_pnl: trades?.total_pnl || 0,
+  };
+}
+
+/**
+ * Get stats for the latest run of an instance
+ */
+export function getLatestRunStatsByInstanceId(instanceId: string): StatsResult | null {
+  const db = getTradingDb();
+
+  // Get the latest run for this instance
+  const latestRun = db.prepare(`
+    SELECT id FROM runs
+    WHERE instance_id = ?
+    ORDER BY started_at DESC
+    LIMIT 1
+  `).get(instanceId) as { id: string } | undefined;
+
+  if (!latestRun) return null;
+
+  return getStatsByRunId(latestRun.id);
+}
+
+/**
+ * Get stats for the latest cycle of the latest run of an instance
+ */
+export function getLatestCycleStatsByInstanceId(instanceId: string): StatsResult | null {
+  const db = getTradingDb();
+
+  // Get the latest cycle for this instance's runs
+  const latestCycle = db.prepare(`
+    SELECT c.id FROM cycles c
+    JOIN runs r ON c.run_id = r.id
+    WHERE r.instance_id = ?
+    ORDER BY c.started_at DESC
+    LIMIT 1
+  `).get(instanceId) as { id: string } | undefined;
+
+  if (!latestCycle) return null;
+
+  return getStatsByCycleId(latestCycle.id);
+}
+
+
+// ============================================================
+// ERROR LOGS
+// ============================================================
+
+export interface ErrorLogRow {
+  id: string;
+  timestamp: string;
+  level: string;
+  run_id: string | null;
+  cycle_id: string | null;
+  trade_id: string | null;
+  symbol: string | null;
+  component: string | null;
+  event: string | null;
+  message: string;
+  stack_trace: string | null;
+  context: string | null;
+  created_at: string;
+}
+
+/**
+ * Get recent error logs
+ */
+export function getErrorLogs(limit = 100, instanceId?: string): ErrorLogRow[] {
+  const db = getTradingDb();
+
+  if (instanceId) {
+    // Filter by instance via run_id
+    return db.prepare(`
+      SELECT el.* FROM error_logs el
+      LEFT JOIN runs r ON el.run_id = r.id
+      WHERE r.instance_id = ? OR el.run_id IS NULL
+      ORDER BY el.timestamp DESC
+      LIMIT ?
+    `).all(instanceId, limit) as ErrorLogRow[];
+  }
+
+  return db.prepare(`
+    SELECT * FROM error_logs
+    ORDER BY timestamp DESC
+    LIMIT ?
+  `).all(limit) as ErrorLogRow[];
+}
+
+interface RunWithLogs {
+  run_id: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  log_count: number;
+  logs: ErrorLogRow[];
+}
+
+/**
+ * Get error logs grouped by run
+ */
+export function getErrorLogsGroupedByRun(limit = 200, instanceId?: string): RunWithLogs[] {
+  const db = getTradingDb();
+
+  // Get runs with log counts
+  const runsQuery = instanceId
+    ? `
+      SELECT
+        el.run_id,
+        r.started_at,
+        r.ended_at,
+        COUNT(*) as log_count
+      FROM error_logs el
+      LEFT JOIN runs r ON el.run_id = r.id
+      WHERE r.instance_id = ? OR el.run_id IS NULL
+      GROUP BY el.run_id
+      ORDER BY COALESCE(r.started_at, el.timestamp) DESC
+      LIMIT 20
+    `
+    : `
+      SELECT
+        el.run_id,
+        r.started_at,
+        r.ended_at,
+        COUNT(*) as log_count
+      FROM error_logs el
+      LEFT JOIN runs r ON el.run_id = r.id
+      GROUP BY el.run_id
+      ORDER BY COALESCE(r.started_at, el.timestamp) DESC
+      LIMIT 20
+    `;
+
+  const runs = instanceId
+    ? db.prepare(runsQuery).all(instanceId) as { run_id: string | null; started_at: string | null; ended_at: string | null; log_count: number }[]
+    : db.prepare(runsQuery).all() as { run_id: string | null; started_at: string | null; ended_at: string | null; log_count: number }[];
+
+  // Get logs for each run
+  const result: RunWithLogs[] = [];
+
+  for (const run of runs) {
+    const logsQuery = run.run_id
+      ? `SELECT * FROM error_logs WHERE run_id = ? ORDER BY timestamp ASC LIMIT ?`
+      : `SELECT * FROM error_logs WHERE run_id IS NULL ORDER BY timestamp ASC LIMIT ?`;
+
+    const logs = run.run_id
+      ? db.prepare(logsQuery).all(run.run_id, Math.min(50, limit)) as ErrorLogRow[]
+      : db.prepare(logsQuery).all(Math.min(50, limit)) as ErrorLogRow[];
+
+    result.push({
+      run_id: run.run_id,
+      started_at: run.started_at,
+      ended_at: run.ended_at,
+      log_count: run.log_count,
+      logs
+    });
+  }
+
+  return result;
+}

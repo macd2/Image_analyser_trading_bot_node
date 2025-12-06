@@ -1,0 +1,187 @@
+import { Server as HTTPServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io';
+import { BybitWebSocket, TickerData, PositionData } from './bybit-ws';
+import { processMonitor, ProcessStatusUpdate } from './process-monitor';
+import { updateRunStatusByInstanceId, getRunningRuns, getRunningRunByInstanceId } from '../db/trading-db';
+import { restoreProcessStates } from '../process-state';
+
+let io: SocketIOServer | null = null;
+let bybit: BybitWebSocket | null = null;
+
+const WATCHLIST = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT'];
+
+// Store latest data
+const tickers: Record<string, TickerData> = {};
+const positions: PositionData[] = [];
+
+export function getSocketServer(): SocketIOServer | null {
+  return io;
+}
+
+/**
+ * Emit a log message to all connected clients
+ */
+export function emitLog(log: string, instanceId?: string): void {
+  if (io) {
+    io.emit('bot_log', { log, instanceId, timestamp: Date.now() });
+  }
+}
+
+export function initSocketServer(httpServer: HTTPServer): SocketIOServer {
+  if (io) return io;
+
+  io = new SocketIOServer(httpServer, {
+    cors: { origin: '*', methods: ['GET', 'POST'] },
+    path: '/api/socketio'
+  });
+
+  // Initialize Process Monitor for bot status tracking
+  initProcessMonitor();
+
+  // Initialize Bybit WebSocket with error handling
+  try {
+    bybit = new BybitWebSocket({
+      apiKey: process.env.BYBIT_API_KEY,
+      apiSecret: process.env.BYBIT_API_SECRET,
+      testnet: process.env.BYBIT_TESTNET === 'true'
+    });
+
+    // Connect to Bybit (will handle errors internally and reconnect)
+    bybit.connectPublic(WATCHLIST).catch(() => {
+      // Silently catch - reconnect logic will handle it
+    });
+    if (process.env.BYBIT_API_KEY) {
+      bybit.connectPrivate().catch(() => {
+        // Silently catch - reconnect logic will handle it
+      });
+    }
+    // Forward ticker updates
+    bybit.on('ticker', (data: TickerData) => {
+      tickers[data.symbol] = data;
+      io?.emit('ticker', data);
+    });
+
+    // Forward position updates
+    bybit.on('position', (data: PositionData[]) => {
+      const openPositions = data.filter(p => parseFloat(p.size) !== 0);
+      positions.length = 0;
+      positions.push(...openPositions);
+      io?.emit('positions', openPositions);
+    });
+
+    // Forward order updates
+    bybit.on('order', (data: unknown) => {
+      io?.emit('order', data);
+    });
+  } catch (err) {
+    console.error('[Socket.io] Failed to initialize Bybit WS:', err);
+    // Continue without real-time data - dashboard will still work
+  }
+
+  // Handle client connections
+  io.on('connection', (socket) => {
+    console.log('[Socket.io] Client connected:', socket.id);
+
+    // Send current state on connect (include bot process statuses)
+    socket.emit('init', {
+      tickers,
+      positions,
+      runningInstances: processMonitor.getRunningInstanceIds()
+    });
+
+    socket.on('disconnect', () => {
+      console.log('[Socket.io] Client disconnected:', socket.id);
+    });
+  });
+
+  console.log('[Socket.io] Server initialized');
+  return io;
+}
+
+/**
+ * Initialize process monitor and sync with database
+ */
+function initProcessMonitor(): void {
+  // Restore process states from persistent storage
+  console.log('[ProcessMonitor] Restoring process states from disk...');
+  const restored = restoreProcessStates();
+
+  if (restored.length > 0) {
+    console.log(`[ProcessMonitor] Found ${restored.length} running process(es)`);
+    // Register with process monitor
+    for (const state of restored) {
+      processMonitor.registerProcess(state.instanceId, state.pid);
+      console.log(`[ProcessMonitor] Restored: instance=${state.instanceId}, PID=${state.pid}`);
+    }
+  } else {
+    console.log('[ProcessMonitor] No running processes to restore');
+  }
+
+  // Start the process monitor
+  processMonitor.start();
+
+  // On status updates, update the database and emit to clients
+  processMonitor.on('status', async (update: ProcessStatusUpdate) => {
+    console.log(`[ProcessMonitor] Status update: instance=${update.instanceId}, alive=${update.isAlive}, reason=${update.reason}`);
+
+    // Update database when process dies - update by instance_id
+    if (!update.isAlive && update.reason) {
+      try {
+        const dbStatus = update.reason === 'crashed' ? 'crashed' : 'stopped';
+        const updated = await updateRunStatusByInstanceId(update.instanceId, dbStatus, `Process ${update.reason}`);
+        console.log(`[ProcessMonitor] Updated DB: instance=${update.instanceId} -> ${dbStatus} (${updated} runs affected)`);
+      } catch (err) {
+        console.error('[ProcessMonitor] Failed to update DB:', err);
+      }
+    }
+
+    // Get current run_id for the instance (if any)
+    const currentRun = await getRunningRunByInstanceId(update.instanceId);
+
+    // Emit to all connected clients
+    io?.emit('instance_status', {
+      instanceId: update.instanceId,
+      runId: currentRun?.id || null,
+      isRunning: update.isAlive,
+      reason: update.reason
+    });
+  });
+
+  // On startup, check for stale "running" entries in DB and clean them up
+  syncStaleRuns();
+}
+
+/**
+ * Sync stale runs on startup - mark runs as crashed if their process is not running
+ * Uses persistent process state to determine which processes are actually running
+ */
+async function syncStaleRuns(): Promise<void> {
+  try {
+    const runningRuns = await getRunningRuns();
+    // Get tracked instances from process monitor (which was restored from persistent state)
+    const trackedInstanceIds = processMonitor.getRunningInstanceIds();
+
+    console.log(`[ProcessMonitor] Syncing stale runs: ${runningRuns.length} DB runs, ${trackedInstanceIds.length} tracked processes`);
+
+    for (const run of runningRuns) {
+      // If this run is marked as running but we don't have a process for its instance, mark as crashed
+      if (!run.instance_id || !trackedInstanceIds.includes(run.instance_id)) {
+        console.log(`[ProcessMonitor] Stale run detected: ${run.id} (instance: ${run.instance_id}) - marking as crashed`);
+        if (run.instance_id) {
+          await updateRunStatusByInstanceId(run.instance_id, 'crashed', 'Process not found on startup');
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[ProcessMonitor] Failed to sync stale runs:', err);
+  }
+}
+
+export function shutdownSocketServer(): void {
+  processMonitor.stop();
+  bybit?.disconnect();
+  io?.close();
+  io = null;
+  bybit = null;
+}
+

@@ -1,0 +1,45 @@
+# Nixpacks configuration for Railway deployment
+# Handles Python + Playwright browser dependencies
+
+[phases.setup]
+nixPkgs = [
+    "python312",
+    "chromium",
+    "xorg.libX11",
+    "xorg.libXcomposite", 
+    "xorg.libXdamage",
+    "xorg.libXext",
+    "xorg.libXfixes",
+    "xorg.libXrandr",
+    "nss",
+    "nspr",
+    "atk",
+    "cups",
+    "libdrm",
+    "libxkbcommon",
+    "pango",
+    "cairo",
+    "alsa-lib",
+    "mesa",
+    "expat",
+    "glib",
+    "gtk3",
+    "dbus"
+]
+
+[phases.install]
+cmds = [
+    "pip install -r requirements.txt",
+    "playwright install chromium --with-deps"
+]
+
+[phases.build]
+cmds = []
+
+[start]
+cmd = "python run_bot.py"
+
+[variables]
+PYTHON_VERSION = "3.12"
+PLAYWRIGHT_BROWSERS_PATH = "/app/.cache/playwright"
+

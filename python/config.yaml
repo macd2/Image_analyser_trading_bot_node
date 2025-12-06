@@ -1,0 +1,108 @@
+# =================================================================================
+# TRADING BOT STATIC CONFIGURATION
+# =================================================================================
+# This file contains STATIC configuration settings that are NOT editable via dashboard.
+# Dashboard-editable settings are stored in the SQLite database (config table).
+#
+# WHAT'S HERE (Static - requires restart to change):
+# - paths: File system paths and directories
+# - logging: Log file rotation settings
+# - file_management: Chart cleanup settings
+# - bybit.circuit_breaker: Circuit breaker configuration
+# - tradingview: Browser automation and screenshot settings
+# - openai.assistant: Assistant API timeouts and polling
+#
+# WHAT'S IN DATABASE (Editable via Dashboard):
+# - trading.*: All trading parameters (risk, leverage, confidence, etc.)
+# - bybit.use_testnet, bybit.recv_window, bybit.max_retries
+# - openai.model, openai.assistant_id
+#
+# WHAT'S IN .env (Secrets):
+# - BYBIT_API_KEY, BYBIT_API_SECRET
+# - OPENAI_API_KEY, ANTHROPIC_API_KEY
+# - TRADINGVIEW_EMAIL, TRADINGVIEW_PASSWORD
+# =================================================================================
+
+# File Paths Configuration
+paths:
+  database: "trading_bot/data/analysis_results.db"
+  charts: "trading_bot/data/charts"
+  logs: "logs"
+  session_file: "trading_bot/data/"
+
+# Logging Configuration
+logging:
+  rotation:
+    max_file_size_mb: 10
+    backup_count: 5
+  style: "compact"
+  show_icons: true
+
+# File Management Configuration
+file_management:
+  enable_backup: true
+  chart_cleaning:
+    enable_age_based_cleaning: true
+    max_file_age_hours: 2
+    enable_cycle_based_cleaning: true
+
+# Bybit Circuit Breaker (static - not in dashboard)
+bybit:
+  circuit_breaker:
+    error_threshold: 5
+    recovery_timeout: 300
+    max_recv_window: 600000
+    backoff_multiplier: 2.0
+    jitter_range: 0.1
+
+# OpenAI Assistant API Configuration (static timeouts)
+openai:
+  assistant:
+    default_timeout: 100
+    poll_interval: 0.5
+    max_retries: 1
+
+# TradingView Chart Capture Configuration
+tradingview:
+  enabled: true
+  base_url: "https://www.tradingview.com"
+  login_url: "https://www.tradingview.com/accounts/signin/"
+  chart_url_template: "https://www.tradingview.com/chart/?symbol={symbol}&interval={timeframe}"
+  target_chart: "https://www.tradingview.com/chart/iXrxoaRu/"
+
+  browser:
+    headless: true
+    timeout: 300000
+    viewport_width: 1600
+    viewport_height: 900
+    user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    use_vnc: false
+    vnc_display: ":99"
+    vnc_port: 5999
+    vnc_window_size: "1920x1080"
+
+  auth:
+    session_timeout: 604800
+    max_login_attempts: 3
+    login_retry_delay: 5
+    js_render_wait: 3000
+
+  screenshot:
+    chart_selector: ".chart-container"
+    wait_for_load: 5000
+    hide_elements:
+      - ".header-chart-panel"
+      - ".bottom-widgetbar-content"
+      - ".layout__area--right"
+      - ".toast-wrapper"
+    quality: 90
+
+  rate_limit:
+    requests_per_minute: 12
+    delay_between_requests: 4
+    respect_rate_limits: true
+
+  retry:
+    max_attempts: 3
+    backoff_factor: 2
+    base_delay: 5
