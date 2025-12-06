@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, CheckCircle, RefreshCw, Info, Power } from 'lucide-react'
 
 interface VncLoginModalProps {
@@ -17,6 +17,63 @@ interface VncLoginModalProps {
 export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginModalProps) {
   const [confirming, setConfirming] = useState(false)
   const [killingVnc, setKillingVnc] = useState(false)
+  const [startingVnc, setStartingVnc] = useState(false)
+  const [vncStarted, setVncStarted] = useState(false)
+  const [vncEnabled, setVncEnabled] = useState<boolean | null>(null)
+
+  // Check if VNC is enabled when modal opens
+  useEffect(() => {
+    if (isOpen && vncEnabled === null) {
+      checkVncEnabled()
+    }
+  }, [isOpen, vncEnabled])
+
+  // Start VNC services when modal opens (only if VNC is enabled), reset when closed
+  useEffect(() => {
+    if (isOpen && vncEnabled === true && !vncStarted) {
+      startVncServices()
+    } else if (!isOpen && vncStarted) {
+      // Reset state when modal closes
+      setVncStarted(false)
+    }
+  }, [isOpen, vncEnabled, vncStarted])
+
+  const checkVncEnabled = async () => {
+    try {
+      const response = await fetch('/api/vnc/status')
+      const data = await response.json()
+      setVncEnabled(data.enableVnc || false)
+      console.log('VNC enabled:', data.enableVnc)
+    } catch (error) {
+      console.error('Failed to check VNC status:', error)
+      setVncEnabled(false)
+    }
+  }
+
+  const startVncServices = async () => {
+    setStartingVnc(true)
+    try {
+      const response = await fetch('/api/vnc/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start' })
+      })
+      const data = await response.json()
+
+      if (data.success) {
+        console.log('VNC services started successfully')
+        setVncStarted(true)
+      } else {
+        console.error('Failed to start VNC:', data.error)
+        alert(`Failed to start VNC services: ${data.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Failed to start VNC:', error)
+      alert('Failed to start VNC services. Check console for details.')
+    } finally {
+      setStartingVnc(false)
+    }
+  }
 
   const handleConfirm = async () => {
     setConfirming(true)
@@ -39,6 +96,7 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
 
       if (data.success) {
         alert('VNC services stopped successfully. Browser session closed.')
+        setVncStarted(false) // Reset state so VNC can be restarted if modal reopens
       } else {
         alert(`Failed to stop VNC: ${data.error || 'Unknown error'}`)
       }
@@ -74,18 +132,34 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
           </button>
         </div>
 
-        {/* Content - Static Instructions */}
+        {/* Content - Instructions based on VNC mode */}
         <div className="flex-1 overflow-auto p-4">
           <div className="h-full flex flex-col gap-4">
-            {/* Connection Instructions */}
-            <div className="bg-blue-900/30 border border-blue-600 rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <Info className="w-6 h-6 text-blue-400 mt-0.5 flex-shrink-0" />
-                <div className="text-sm text-blue-100">
-                  <strong className="text-base block mb-2">Connect with VNC Client</strong>
-                  <p className="mb-3">
-                    Use a desktop VNC client to connect to the browser for manual TradingView login.
-                  </p>
+            {/* VNC Starting Status */}
+            {startingVnc && (
+              <div className="bg-blue-900/30 border border-blue-600 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <RefreshCw className="w-6 h-6 text-blue-400 animate-spin flex-shrink-0" />
+                  <div className="text-sm text-blue-100">
+                    <strong className="text-base block mb-1">Starting VNC Services...</strong>
+                    <p className="text-xs text-blue-200">
+                      Launching Xvfb and x11vnc. This may take a few seconds.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* VNC Mode Instructions (Railway) */}
+            {vncEnabled === true && (
+              <div className="bg-blue-900/30 border border-blue-600 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <Info className="w-6 h-6 text-blue-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-blue-100">
+                    <strong className="text-base block mb-2">Connect with VNC Client</strong>
+                    <p className="mb-3">
+                      Use a desktop VNC client to connect to the browser for manual TradingView login.
+                    </p>
 
                   <div className="bg-slate-900/50 rounded-lg p-3 mb-3">
                     <p className="font-mono text-xs text-green-400 mb-1">VNC Server Address:</p>
@@ -125,30 +199,67 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
                 </div>
               </div>
             </div>
+            )}
+
+            {/* Local Mode Instructions (No VNC) */}
+            {vncEnabled === false && (
+              <div className="bg-green-900/30 border border-green-600 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <Info className="w-6 h-6 text-green-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-green-100">
+                    <strong className="text-base block mb-2">Browser Window Opened</strong>
+                    <p className="mb-3">
+                      A browser window should have opened on your desktop for manual TradingView login.
+                    </p>
+
+                    <div className="space-y-2 mb-3">
+                      <p className="font-semibold">Steps:</p>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>Check your desktop for the browser window</li>
+                        <li>Log in to TradingView in the browser</li>
+                        <li>Navigate to your chart to verify login works</li>
+                        <li>Return here and click &quot;Confirm Login&quot; below</li>
+                      </ol>
+                    </div>
+
+                    <div className="bg-amber-900/30 border border-amber-600 rounded-lg p-3">
+                      <p className="font-semibold text-amber-200 mb-1">⚠️ Note:</p>
+                      <p className="text-xs text-amber-100">
+                        If you don&apos;t see a browser window, check your taskbar or try clicking &quot;Open Browser Login&quot; again.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Footer - Always visible buttons */}
+        {/* Footer - Buttons based on VNC mode */}
         <div className="flex items-center justify-between p-4 border-t border-slate-600">
-          {/* Left side - Kill VNC button (always visible) */}
-          <button
-            onClick={handleKillVnc}
-            disabled={killingVnc || confirming}
-            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
-            title="Stop VNC services and close browser session"
-          >
-            {killingVnc ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Stopping...
-              </>
-            ) : (
-              <>
-                <Power className="w-4 h-4" />
-                Kill VNC
-              </>
-            )}
-          </button>
+          {/* Left side - Kill VNC button (only visible in VNC mode) */}
+          {vncEnabled === true ? (
+            <button
+              onClick={handleKillVnc}
+              disabled={killingVnc || confirming}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+              title="Stop VNC services and close browser session"
+            >
+              {killingVnc ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Stopping...
+                </>
+              ) : (
+                <>
+                  <Power className="w-4 h-4" />
+                  Kill VNC
+                </>
+              )}
+            </button>
+          ) : (
+            <div></div>
+          )}
 
           {/* Right side - Cancel and Confirm buttons (always visible) */}
           <div className="flex items-center gap-2">
