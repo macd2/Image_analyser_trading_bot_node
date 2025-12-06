@@ -1,4 +1,4 @@
-"""Data agent for storing and retrieving analysis results in SQLite."""
+"""Data agent for storing and retrieving analysis results (SQLite/PostgreSQL)."""
 import gc
 import json
 import sqlite3
@@ -8,7 +8,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 
-from trading_bot.db.client import get_connection as get_db_connection, DB_TYPE
+from trading_bot.db.client import (
+    get_connection as get_db_connection,
+    DB_TYPE,
+    get_table_columns,
+    add_column_if_missing
+)
 
 
 class DataAgent:
@@ -66,15 +71,14 @@ class DataAgent:
         """Get database connection using centralized client."""
         return get_db_connection()
 
-    def _ensure_trades_columns_exist(self, cursor):
+    def _ensure_trades_columns_exist(self, conn, cursor):
         """
         Ensure all required columns exist in trades table.
         This handles schema migrations for existing databases.
         Called during database initialization to auto-migrate schema.
         """
-        # Get current columns
-        cursor.execute("PRAGMA table_info(trades)")
-        existing_columns = {row[1] for row in cursor.fetchall()}
+        # Get current columns using centralized helper (works with SQLite and PostgreSQL)
+        existing_columns = get_table_columns(conn, "trades")
 
         # Define all required columns with their types and defaults
         required_columns = [
@@ -116,7 +120,7 @@ class DataAgent:
                         sql = f"ALTER TABLE trades ADD COLUMN {col_name} {col_type}"
                     cursor.execute(sql)
                     columns_added.append(col_name)
-                except sqlite3.Error as e:
+                except Exception as e:
                     print(f"⚠️  Warning: Could not add column {col_name}: {e}")
 
         if columns_added:
@@ -157,10 +161,8 @@ class DataAgent:
                 )
             ''')
             
-            # Migration: Add new columns if they don't exist
-            # Check existing columns
-            cursor.execute("PRAGMA table_info(analysis_results)")
-            existing_columns = {row[1] for row in cursor.fetchall()}
+            # Migration: Add new columns if they don't exist using centralized helper
+            existing_columns = get_table_columns(conn, "analysis_results")
 
             # Add prompt_id column if missing
             if 'prompt_id' not in existing_columns:
@@ -226,8 +228,7 @@ class DataAgent:
             ''')
 
             # Migration: Add new columns to latest_recommendations if they don't exist
-            cursor.execute("PRAGMA table_info(latest_recommendations)")
-            existing_lr_columns = {row[1] for row in cursor.fetchall()}
+            existing_lr_columns = get_table_columns(conn, "latest_recommendations")
 
             # Add prompt_id column if missing
             if 'prompt_id' not in existing_lr_columns:
@@ -271,7 +272,7 @@ class DataAgent:
             ''')
 
             # Ensure all columns exist (for existing databases)
-            self._ensure_trades_columns_exist(cursor)
+            self._ensure_trades_columns_exist(conn, cursor)
 
             # Add unique constraint on order_id if it doesn't exist
             try:
@@ -325,9 +326,8 @@ class DataAgent:
             conn = self.get_connection()
             cursor = conn.cursor()
 
-            # Check existing columns in trades table
-            cursor.execute("PRAGMA table_info(trades)")
-            columns = [column[1] for column in cursor.fetchall()]
+            # Check existing columns in trades table using centralized helper
+            columns = get_table_columns(conn, "trades")
 
             # Migration 1: Add placed_by column
             if 'placed_by' not in columns:
@@ -355,9 +355,8 @@ class DataAgent:
                     print(f"Migration skipped: '{column_name}' column already exists")
             
             # Check and add market_condition and market_direction columns to analysis_results table
-            cursor.execute("PRAGMA table_info(analysis_results)")
-            analysis_columns = [column[1] for column in cursor.fetchall()]
-            
+            analysis_columns = get_table_columns(conn, "analysis_results")
+
             if 'market_condition' not in analysis_columns:
                 print("Adding 'market_condition' column to analysis_results table...")
                 cursor.execute("ALTER TABLE analysis_results ADD COLUMN market_condition TEXT")
@@ -381,9 +380,8 @@ class DataAgent:
                 print("Migration skipped: 'analysis_prompt' column already exists")
             
             # Check and add market_condition and market_direction columns to latest_recommendations table
-            cursor.execute("PRAGMA table_info(latest_recommendations)")
-            latest_columns = [column[1] for column in cursor.fetchall()]
-            
+            latest_columns = get_table_columns(conn, "latest_recommendations")
+
             if 'market_condition' not in latest_columns:
                 print("Adding 'market_condition' column to latest_recommendations table...")
                 cursor.execute("ALTER TABLE latest_recommendations ADD COLUMN market_condition TEXT")
@@ -399,9 +397,8 @@ class DataAgent:
                 print("Migration skipped: 'market_direction' column already exists in latest_recommendations")
             
             # Check and add last_tightened_milestone column to trades table
-            cursor.execute("PRAGMA table_info(trades)")
-            trades_columns = [column[1] for column in cursor.fetchall()]
-            
+            trades_columns = get_table_columns(conn, "trades")
+
             if 'last_tightened_milestone' not in trades_columns:
                 print("Adding 'last_tightened_milestone' column to trades table...")
                 cursor.execute("ALTER TABLE trades ADD COLUMN last_tightened_milestone TEXT")
@@ -410,16 +407,14 @@ class DataAgent:
                 print("Migration skipped: 'last_tightened_milestone' column already exists")
             
             # Check and add alteration_details column to trades table
-            cursor.execute("PRAGMA table_info(trades)")
-            trades_columns = [column[1] for column in cursor.fetchall()]
-            
+            # Reuse trades_columns from above - already has the columns
             if 'alteration_details' not in trades_columns:
                 print("Adding 'alteration_details' column to trades table...")
                 cursor.execute("ALTER TABLE trades ADD COLUMN alteration_details TEXT")
                 print("Migration completed: 'alteration_details' column added successfully")
             else:
                 print("Migration skipped: 'alteration_details' column already exists")
-            
+
             if 'orderLinkId' not in trades_columns:
                 print("Adding 'orderLinkId' column to trades table...")
                 cursor.execute("ALTER TABLE trades ADD COLUMN orderLinkId TEXT")
@@ -468,16 +463,15 @@ class DataAgent:
         
         # Migration: Add missing columns to existing trading_stats table (silent)
         try:
-            cursor.execute("PRAGMA table_info(trading_stats)")
-            existing_columns = [column[1] for column in cursor.fetchall()]
+            stats_columns = get_table_columns(conn, "trading_stats")
 
-            if 'total_win_pnl' not in existing_columns:
+            if 'total_win_pnl' not in stats_columns:
                 cursor.execute("ALTER TABLE trading_stats ADD COLUMN total_win_pnl REAL DEFAULT 0.0")
 
-            if 'total_loss_pnl' not in existing_columns:
+            if 'total_loss_pnl' not in stats_columns:
                 cursor.execute("ALTER TABLE trading_stats ADD COLUMN total_loss_pnl REAL DEFAULT 0.0")
 
-        except sqlite3.Error as e:
+        except Exception as e:
             print(f"Migration warning for trading_stats: {e}")
         
         # Position tracking table for live R/R monitoring

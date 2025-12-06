@@ -135,12 +135,12 @@ def query_one(conn, sql: str, params: Tuple = ()) -> Optional[Any]:
     """
     Execute a SELECT query and return one row.
     Automatically handles parameter placeholder conversion.
-    
+
     Args:
         conn: Database connection
         sql: SQL query with ? placeholders
         params: Query parameters
-        
+
     Returns:
         Single row (as dict or sqlite3.Row object) or None
     """
@@ -150,6 +150,69 @@ def query_one(conn, sql: str, params: Tuple = ()) -> Optional[Any]:
     return cursor.fetchone()
 
 
+def get_table_columns(conn, table_name: str) -> set:
+    """
+    Get set of column names for a table.
+    Works with both SQLite and PostgreSQL.
+
+    Args:
+        conn: Database connection
+        table_name: Name of the table
+
+    Returns:
+        Set of column names
+    """
+    cursor = conn.cursor()
+
+    if DB_TYPE == 'postgres':
+        # PostgreSQL: Use information_schema
+        cursor.execute("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = %s
+        """, (table_name,))
+        rows = cursor.fetchall()
+        # Handle dict cursor vs tuple cursor
+        if rows and hasattr(rows[0], 'get'):
+            return {row.get('column_name') or row['column_name'] for row in rows}
+        return {row[0] for row in rows}
+    else:
+        # SQLite: Use PRAGMA table_info
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        return {row[1] for row in cursor.fetchall()}
+
+
+def add_column_if_missing(conn, table_name: str, column_name: str, column_type: str, default_value: str = None) -> bool:
+    """
+    Add a column to a table if it doesn't exist.
+    Works with both SQLite and PostgreSQL.
+
+    Args:
+        conn: Database connection
+        table_name: Name of the table
+        column_name: Name of the column to add
+        column_type: SQL type of the column (e.g., 'TEXT', 'REAL', 'INTEGER')
+        default_value: Optional default value (SQL expression)
+
+    Returns:
+        True if column was added, False if it already existed
+    """
+    existing_columns = get_table_columns(conn, table_name)
+
+    if column_name in existing_columns:
+        return False
+
+    cursor = conn.cursor()
+
+    if default_value:
+        sql = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type} DEFAULT {default_value}"
+    else:
+        sql = f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
+
+    cursor.execute(sql)
+    return True
+
+
 __all__ = [
     'get_connection',
     'get_db_path',
@@ -157,6 +220,8 @@ __all__ = [
     'query',
     'query_one',
     'convert_placeholders',
+    'get_table_columns',
+    'add_column_if_missing',
     'DB_TYPE',
 ]
 

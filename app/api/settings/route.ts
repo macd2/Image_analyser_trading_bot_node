@@ -12,11 +12,11 @@ export async function GET(request: NextRequest) {
   try {
     if (!instanceId) {
       // List all instances
-      const instances = listInstances();
+      const instances = await listInstances();
       return NextResponse.json({ instances });
     }
 
-    const settings = getSettings(instanceId);
+    const settings = await getSettings(instanceId);
     return NextResponse.json({ instanceId, settings: settings || {} });
   } catch (error) {
     console.error('Settings GET error:', error);
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'instanceId is required' }, { status: 400 });
     }
 
-    saveSettings(instanceId, settings || {});
+    await saveSettings(instanceId, settings || {});
     return NextResponse.json({ success: true, instanceId });
   } catch (error) {
     console.error('Settings POST error:', error);
@@ -50,7 +50,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    const deleted = deleteSettings(instanceId);
+    const deleted = await deleteSettings(instanceId);
     return NextResponse.json({ success: deleted, instanceId });
   } catch (error) {
     console.error('Settings DELETE error:', error);
