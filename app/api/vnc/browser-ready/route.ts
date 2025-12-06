@@ -3,11 +3,11 @@
  *
  * POST - Set browser_open_requested state to signal Python to launch browser
  */
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { execSync } from 'child_process';
 import path from 'path';
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     // Path to Python login state manager
     const pythonDir = path.join(process.cwd(), 'python');
