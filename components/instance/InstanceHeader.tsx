@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { ArrowLeft, Play, Square, Settings, Clock, Wifi, WifiOff, RefreshCw, Skull, Save } from 'lucide-react'
+import { ArrowLeft, Play, Square, Settings, Clock, Wifi, WifiOff, RefreshCw, Skull, Save, CheckCircle, X, AlertTriangle } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/shared'
@@ -11,6 +11,19 @@ import { useRealtime } from '@/hooks/useRealtime'
 interface InstanceHeaderProps {
   instanceId: string
   onSettingsClick: () => void
+}
+
+interface HealthCheck {
+  service: string
+  status: 'ok' | 'error' | 'timeout'
+  latency?: number
+  error?: string
+}
+
+interface HealthStatus {
+  overall: 'healthy' | 'degraded' | 'checking'
+  timestamp?: string
+  checks: HealthCheck[]
 }
 
 interface ControlStatus {
@@ -58,6 +71,8 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
   const [instanceName, setInstanceName] = useState('')
   const [instanceNameSaving, setInstanceNameSaving] = useState(false)
   const [instanceLoaded, setInstanceLoaded] = useState(false)
+  const [healthStatus, setHealthStatus] = useState<HealthStatus>({ overall: 'checking', checks: [] })
+  const [showHealthModal, setShowHealthModal] = useState(false)
 
   // Fetch instance and config (once on mount)
   const fetchInstanceData = useCallback(async () => {
@@ -111,17 +126,41 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
     }
   }, [setLogs])
 
+  // Fetch health status
+  const fetchHealthStatus = useCallback(async () => {
+    try {
+      setHealthStatus(prev => ({ ...prev, overall: 'checking' }))
+      const res = await fetch('/api/bot/health')
+      const data = await res.json()
+      setHealthStatus(data)
+    } catch (err) {
+      console.error('Failed to fetch health status:', err)
+      setHealthStatus({
+        overall: 'degraded',
+        timestamp: new Date().toISOString(),
+        checks: [{ service: 'Health API', status: 'error', error: 'Failed to reach health endpoint' }]
+      })
+    }
+  }, [])
+
   // Initial load
   useEffect(() => {
     fetchInstanceData()
     fetchControlStatus()
-  }, [fetchInstanceData, fetchControlStatus])
+    fetchHealthStatus()
+  }, [fetchInstanceData, fetchControlStatus, fetchHealthStatus])
 
   // Poll for control status (running state + logs)
   useEffect(() => {
     const interval = setInterval(fetchControlStatus, 3000)
     return () => clearInterval(interval)
   }, [fetchControlStatus])
+
+  // Poll for health status every 60 seconds
+  useEffect(() => {
+    const interval = setInterval(fetchHealthStatus, 60000)
+    return () => clearInterval(interval)
+  }, [fetchHealthStatus])
 
   // Listen for real-time instance status changes via socket
   useEffect(() => {
@@ -214,32 +253,34 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
   const isPaperTrading = dryRun
 
   return (
+    <>
     <div className="bg-slate-800 border-b border-slate-700 px-4 py-3">
-      <div className="flex items-center justify-between">
+      {/* Responsive flex container */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         {/* Left: Back + Instance Name + Status */}
-        <div className="flex items-center gap-4">
-          <Link href="/instances">
-            <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white">
-              <ArrowLeft size={16} className="mr-1" />
-              Back
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+          <Link href="/instances" className="shrink-0">
+            <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white px-2 sm:px-3">
+              <ArrowLeft size={16} className="sm:mr-1" />
+              <span className="hidden sm:inline">Back</span>
             </Button>
           </Link>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             {/* Editable instance name */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2 min-w-0">
               <input
                 type="text"
                 value={instanceName}
                 onChange={(e) => setInstanceName(e.target.value)}
                 placeholder="Instance name..."
-                className="bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm text-white w-36 focus:outline-none focus:border-sky-500"
+                className="bg-slate-700 border border-slate-600 rounded px-2 sm:px-3 py-1.5 text-sm text-white w-24 sm:w-36 focus:outline-none focus:border-sky-500"
                 disabled={isRunning}
               />
               <button
                 onClick={saveInstanceName}
                 disabled={instanceNameSaving || instanceName === instance?.name || instanceName.trim() === '' || isRunning}
-                className="p-1.5 rounded bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                className="p-1.5 rounded bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition shrink-0"
                 title="Save instance name"
               >
                 {instanceNameSaving ? (
@@ -254,8 +295,8 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
           </div>
         </div>
 
-        {/* Right: Mode Toggles + Uptime + Connection + Actions */}
-        <div className="flex items-center gap-3">
+        {/* Right: Mode Toggles + Health + Actions */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* Testnet/Mainnet Toggle */}
           <div className="flex items-center gap-2 bg-slate-700 rounded-lg px-2 py-1.5">
             <span className="text-[10px] text-slate-400 uppercase tracking-wide">Network</span>
@@ -316,18 +357,30 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
             </div>
           )}
 
-          {/* Connection Status - based on config, not status */}
-          <div className="flex items-center gap-1.5 text-sm">
-            {isRunning ? (
-              useTestnet ? (
-                <><Wifi size={14} className="text-yellow-400" /><span className="text-yellow-400">Testnet</span></>
-              ) : (
-                <><Wifi size={14} className="text-green-400" /><span className="text-green-400">Mainnet</span></>
-              )
+          {/* Network Health Indicator - matches BotDashboard */}
+          <button
+            onClick={() => { setShowHealthModal(true); fetchHealthStatus() }}
+            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg transition ${
+              healthStatus.overall === 'healthy' ? 'bg-green-900/30 hover:bg-green-900/50' :
+              healthStatus.overall === 'checking' ? 'bg-slate-700 hover:bg-slate-600' :
+              'bg-red-900/30 hover:bg-red-900/50'
+            }`}
+            title="Network Health"
+          >
+            {healthStatus.overall === 'healthy' ? (
+              <Wifi className="w-4 h-4 text-green-400" />
+            ) : healthStatus.overall === 'checking' ? (
+              <Wifi className="w-4 h-4 text-slate-400 animate-pulse" />
             ) : (
-              <><WifiOff size={14} className="text-slate-500" /><span className="text-slate-500">Offline</span></>
+              <WifiOff className="w-4 h-4 text-red-400" />
             )}
-          </div>
+            <span className={`text-xs font-medium ${
+              healthStatus.overall === 'healthy' ? 'text-green-400' :
+              healthStatus.overall === 'checking' ? 'text-slate-400' : 'text-red-400'
+            }`}>
+              {healthStatus.overall === 'checking' ? '...' : `${healthStatus.checks.filter(c => c.status === 'ok').length}/${healthStatus.checks.length}`}
+            </span>
+          </button>
 
           {/* Settings Button */}
           <Button variant="outline" size="sm" onClick={onSettingsClick}>
@@ -372,11 +425,109 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
 
           {/* PID Info */}
           {isRunning && controlStatus?.pid && (
-            <span className="text-xs text-slate-500 tabular-nums">PID: {controlStatus.pid}</span>
+            <span className="text-xs text-slate-500 tabular-nums hidden sm:inline">PID: {controlStatus.pid}</span>
           )}
         </div>
       </div>
     </div>
+
+    {/* Health Check Modal */}
+    {showHealthModal && (
+      <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div className="bg-slate-800 rounded-xl w-full max-w-lg flex flex-col shadow-2xl border border-slate-700">
+          {/* Modal Header */}
+          <div className="flex items-center justify-between p-4 border-b border-slate-700">
+            <div className="flex items-center gap-3">
+              {healthStatus.overall === 'healthy' ? (
+                <Wifi className="w-5 h-5 text-green-400" />
+              ) : healthStatus.overall === 'checking' ? (
+                <Wifi className="w-5 h-5 text-slate-400 animate-pulse" />
+              ) : (
+                <WifiOff className="w-5 h-5 text-red-400" />
+              )}
+              <h2 className="text-lg font-bold text-white">Network Health</h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={fetchHealthStatus}
+                className="p-2 rounded bg-slate-700 hover:bg-slate-600 transition"
+                title="Refresh"
+              >
+                <RefreshCw className={`w-4 h-4 text-slate-300 ${healthStatus.overall === 'checking' ? 'animate-spin' : ''}`} />
+              </button>
+              <button
+                onClick={() => setShowHealthModal(false)}
+                className="p-2 rounded bg-slate-700 hover:bg-slate-600 transition"
+              >
+                <X className="w-4 h-4 text-slate-300" />
+              </button>
+            </div>
+          </div>
+
+          {/* Health Check Results */}
+          <div className="p-4 space-y-3">
+            {healthStatus.checks.length === 0 ? (
+              <div className="text-center text-slate-400 py-8">
+                <Wifi className="w-8 h-8 mx-auto mb-2 animate-pulse" />
+                <p>Checking network connectivity...</p>
+              </div>
+            ) : (
+              healthStatus.checks.map((check, i) => (
+                <div
+                  key={i}
+                  className={`flex items-center justify-between p-3 rounded-lg border ${
+                    check.status === 'ok' ? 'bg-green-900/20 border-green-700/50' :
+                    check.status === 'timeout' ? 'bg-amber-900/20 border-amber-700/50' :
+                    'bg-red-900/20 border-red-700/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    {check.status === 'ok' ? (
+                      <CheckCircle className="w-5 h-5 text-green-400" />
+                    ) : check.status === 'timeout' ? (
+                      <Clock className="w-5 h-5 text-amber-400" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5 text-red-400" />
+                    )}
+                    <div>
+                      <div className="font-medium text-white">{check.service}</div>
+                      {check.error && (
+                        <div className="text-xs text-slate-400">{check.error}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className={`text-sm font-medium ${
+                      check.status === 'ok' ? 'text-green-400' :
+                      check.status === 'timeout' ? 'text-amber-400' : 'text-red-400'
+                    }`}>
+                      {check.status.toUpperCase()}
+                    </div>
+                    {check.latency !== undefined && (
+                      <div className="text-xs text-slate-500">{check.latency}ms</div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-between p-3 border-t border-slate-700 text-xs text-slate-500">
+            <span>
+              Overall: <span className={
+                healthStatus.overall === 'healthy' ? 'text-green-400' :
+                healthStatus.overall === 'checking' ? 'text-slate-400' : 'text-red-400'
+              }>{healthStatus.overall}</span>
+            </span>
+            {healthStatus.timestamp && (
+              <span>Last check: {new Date(healthStatus.timestamp).toLocaleTimeString()}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
 
