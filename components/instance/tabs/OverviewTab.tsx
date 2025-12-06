@@ -99,7 +99,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
   const [logFilter, setLogFilter] = useState<LogLevel>('all')
   const [autoScroll, setAutoScroll] = useState(true)
   const [loginState, setLoginState] = useState<{
-    state: string
+    state: 'idle' | 'waiting_for_login' | 'login_confirmed' | 'browser_opened'
     message: string | null
     browser_opened: boolean
     requires_action: boolean
