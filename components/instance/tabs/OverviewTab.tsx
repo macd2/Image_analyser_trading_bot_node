@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Activity, Clock, Maximize2, AlertTriangle, CheckCircle, RefreshCw, X } from 'lucide-react'
 import { LoadingState, ErrorState } from '@/components/shared'
-import LiveTradeChart from '@/components/LiveTradeChart'
+import TradeChartModal from '@/components/shared/TradeChartModal'
 import StatsBar, { StatsScope } from '@/components/StatsBar'
 import { useBotState } from '@/lib/context/BotStateContext'
 import { useRealtime } from '@/hooks/useRealtime'
@@ -573,57 +573,13 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         </div>
       )}
 
-      {/* Trade Chart Modal */}
-      {selectedTrade && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl border border-slate-700">
-            <div className="flex items-center justify-between p-4 border-b border-slate-700">
-              <div className="flex items-center gap-3">
-                <span className="font-mono font-bold text-white text-lg">{selectedTrade.symbol}</span>
-                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                  selectedTrade.side === 'Buy' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'
-                }`}>
-                  {selectedTrade.side === 'Buy' ? 'LONG' : 'SHORT'}
-                </span>
-                <span className={`px-2 py-1 rounded text-xs ${
-                  selectedTrade.status === 'filled' ? 'bg-green-900/50 text-green-400' :
-                  selectedTrade.status === 'closed' ? 'bg-slate-700 text-slate-300' :
-                  'bg-yellow-900/50 text-yellow-400'
-                }`}>
-                  {selectedTrade.status}
-                </span>
-              </div>
-              <button
-                onClick={() => setSelectedTrade(null)}
-                className="p-1.5 rounded hover:bg-slate-700 transition text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-4">
-              <LiveTradeChart trade={selectedTrade} height={400} />
-            </div>
-            <div className="p-4 border-t border-slate-700 grid grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="text-slate-400">Entry:</span>{' '}
-                <span className="text-white">${selectedTrade.entry_price.toFixed(2)}</span>
-              </div>
-              <div>
-                <span className="text-slate-400">Stop Loss:</span>{' '}
-                <span className="text-red-400">{selectedTrade.stop_loss ? `$${selectedTrade.stop_loss.toFixed(2)}` : '-'}</span>
-              </div>
-              <div>
-                <span className="text-slate-400">Take Profit:</span>{' '}
-                <span className="text-green-400">{selectedTrade.take_profit ? `$${selectedTrade.take_profit.toFixed(2)}` : '-'}</span>
-              </div>
-              <div>
-                <span className="text-slate-400">Timeframe:</span>{' '}
-                <span className="text-white">{selectedTrade.timeframe || '-'}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Trade Chart Modal - Using shared component */}
+      <TradeChartModal
+        isOpen={selectedTrade !== null}
+        onClose={() => setSelectedTrade(null)}
+        trade={selectedTrade}
+        mode={selectedTrade?.status === 'closed' ? 'historical' : 'live'}
+      />
 
       {/* VNC Login Modal */}
       <VncLoginModal
