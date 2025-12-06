@@ -18,8 +18,8 @@ function formatTime(seconds: number): string {
 }
 
 export function PipelineTab({ instanceId: _instanceId }: PipelineTabProps) {
-  const { data: sourcerData, loading: sourcerLoading, error: sourcerError, refetch: refetchSourcer } = useSourcerStatus(5000)
-  const { data: cyclesData, loading: cyclesLoading, error: cyclesError, refetch: refetchCycles } = useCyclesData(10000)
+  const { data: sourcerData, loading: sourcerLoading, refreshing: sourcerRefreshing, error: sourcerError, refetch: refetchSourcer } = useSourcerStatus(5000)
+  const { data: cyclesData, loading: cyclesLoading, refreshing: cyclesRefreshing, error: cyclesError, refetch: refetchCycles } = useCyclesData(10000)
   const [countdown, setCountdown] = useState<number>(0)
 
   useEffect(() => {
@@ -54,8 +54,8 @@ export function PipelineTab({ instanceId: _instanceId }: PipelineTabProps) {
             <CardTitle className="flex items-center gap-2 text-base">
               <Camera className="text-blue-400" size={18} />
               Chart Capture
-              <Button variant="ghost" size="sm" onClick={refetchSourcer} className="ml-auto h-6 w-6 p-0">
-                <RefreshCw size={12} />
+              <Button variant="ghost" size="sm" onClick={() => refetchSourcer(true)} disabled={sourcerRefreshing} className="ml-auto h-6 w-6 p-0">
+                <RefreshCw size={12} className={sourcerRefreshing ? 'animate-spin' : ''} />
               </Button>
             </CardTitle>
           </CardHeader>
@@ -90,8 +90,8 @@ export function PipelineTab({ instanceId: _instanceId }: PipelineTabProps) {
               <Brain className="text-purple-400" size={18} />
               AI Analysis
               <span className="text-xs text-slate-500 font-normal ml-2">{promptInfo.name}</span>
-              <Button variant="ghost" size="sm" onClick={refetchCycles} className="ml-auto h-6 w-6 p-0">
-                <RefreshCw size={12} />
+              <Button variant="ghost" size="sm" onClick={() => refetchCycles(true)} disabled={cyclesRefreshing} className="ml-auto h-6 w-6 p-0">
+                <RefreshCw size={12} className={cyclesRefreshing ? 'animate-spin' : ''} />
               </Button>
             </CardTitle>
           </CardHeader>

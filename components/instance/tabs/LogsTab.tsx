@@ -42,12 +42,14 @@ const levelColors: Record<LogLevel, string> = {
 export function LogsTab({ instanceId }: LogsTabProps) {
   const [runs, setRuns] = useState<RunWithLogs[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<LogLevel>('all')
   const [expandedRuns, setExpandedRuns] = useState<Set<string | null>>(new Set())
   const [autoRefresh, setAutoRefresh] = useState(true)
 
-  const fetchLogs = useCallback(async () => {
+  const fetchLogs = useCallback(async (isManualRefresh = false) => {
+    if (isManualRefresh) setRefreshing(true)
     try {
       const res = await fetch(`/api/bot/error-logs?instance_id=${instanceId}&limit=200&group_by_run=true`)
       if (res.ok) {
@@ -65,6 +67,7 @@ export function LogsTab({ instanceId }: LogsTabProps) {
       setError(err instanceof Error ? err.message : 'Failed to fetch logs')
     } finally {
       setLoading(false)
+      if (isManualRefresh) setRefreshing(false)
     }
   }, [instanceId, loading])
 
@@ -177,8 +180,8 @@ export function LogsTab({ instanceId }: LogsTabProps) {
           <Button variant="outline" size="sm" className="h-7" onClick={downloadLogs}>
             <Download size={14} />
           </Button>
-          <Button variant="outline" size="sm" className="h-7" onClick={fetchLogs}>
-            <RefreshCw size={14} />
+          <Button variant="outline" size="sm" className="h-7" onClick={() => fetchLogs(true)} disabled={refreshing}>
+            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
           </Button>
         </div>
       </div>

@@ -13,15 +13,18 @@ export function useBotData<T>(
   } = {}
 ) {
   const { refreshInterval = 0, enabled = true } = options;
-  
+
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (isManualRefresh = false) => {
     if (!enabled) return;
-    
+
+    if (isManualRefresh) setRefreshing(true);
+
     try {
       const res = await fetch(endpoint);
       if (!res.ok) {
@@ -35,6 +38,7 @@ export function useBotData<T>(
       setError(e instanceof Error ? e.message : 'Unknown error');
     } finally {
       setLoading(false);
+      if (isManualRefresh) setRefreshing(false);
     }
   }, [endpoint, enabled]);
 
@@ -52,7 +56,7 @@ export function useBotData<T>(
     return undefined;
   }, [fetchData, refreshInterval, enabled]);
 
-  return { data, loading, error, lastUpdate, refetch: fetchData };
+  return { data, loading, refreshing, error, lastUpdate, refetch: fetchData };
 }
 
 // ============================================================

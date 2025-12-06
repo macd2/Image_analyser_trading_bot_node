@@ -86,6 +86,7 @@ function formatDuration(start: string | null, end: string | null): string {
 export function TradesTab({ instanceId }: TradesTabProps) {
   const [data, setData] = useState<GroupedTradesData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'filled' | 'pending' | 'rejected'>('all')
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set())
@@ -93,7 +94,8 @@ export function TradesTab({ instanceId }: TradesTabProps) {
   const [selectedTrade, setSelectedTrade] = useState<TradeRow | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
 
-  const refetch = useCallback(async () => {
+  const refetch = useCallback(async (isManualRefresh = false) => {
+    if (isManualRefresh) setRefreshing(true)
     try {
       const res = await fetch(`/api/bot/trades?group_by_run=true&instance_id=${instanceId}&limit=300`)
       if (!res.ok) throw new Error('Failed to fetch trades')
@@ -111,6 +113,7 @@ export function TradesTab({ instanceId }: TradesTabProps) {
       setError(e instanceof Error ? e.message : 'Error')
     } finally {
       setLoading(false)
+      if (isManualRefresh) setRefreshing(false)
     }
   }, [instanceId, expandedRuns.size])
 
@@ -188,7 +191,9 @@ export function TradesTab({ instanceId }: TradesTabProps) {
           <Button variant="outline" size="sm" onClick={() => { setExpandedRuns(new Set()); setExpandedCycles(new Set()) }}>
             Collapse All
           </Button>
-          <Button variant="ghost" size="sm" onClick={refetch}><RefreshCw size={14} /></Button>
+          <Button variant="ghost" size="sm" onClick={() => refetch(true)} disabled={refreshing}>
+            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+          </Button>
         </div>
       </div>
 

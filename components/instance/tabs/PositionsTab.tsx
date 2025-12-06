@@ -40,7 +40,7 @@ function formatPrice(price: number | null): string {
 }
 
 export function PositionsTab({ instanceId }: PositionsTabProps) {
-  const { data, loading, error, refetch } = usePositions(5000)
+  const { data, loading, refreshing, error, refetch } = usePositions(5000)
   const [monitorActivity, setMonitorActivity] = useState<MonitorActivity[]>([])
   const [activityLoading, setActivityLoading] = useState(true)
   const [monitorSettings, setMonitorSettings] = useState<MonitorSettings | null>(null)
@@ -271,8 +271,8 @@ export function PositionsTab({ instanceId }: PositionsTabProps) {
       <Card className="bg-slate-800 border-slate-700">
         <CardHeader className="pb-2 flex flex-row items-center justify-between">
           <CardTitle className="text-base">Open Positions</CardTitle>
-          <Button variant="ghost" size="sm" onClick={refetch}>
-            <RefreshCw size={14} />
+          <Button variant="ghost" size="sm" onClick={() => refetch(true)} disabled={refreshing}>
+            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
           </Button>
         </CardHeader>
         <CardContent>
