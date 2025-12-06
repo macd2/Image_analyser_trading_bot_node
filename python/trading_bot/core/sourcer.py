@@ -3349,8 +3349,8 @@ class ChartSourcer:
             else:
                 self.logger.info("🖥️ VNC mode: Browser ready - user must click 'Open Browser Login' in dashboard")
 
-            # Poll for dashboard confirmation (max 3 minutes)
-            max_wait_seconds = 180
+            # Poll for dashboard confirmation (max 5 minutes)
+            max_wait_seconds = 380
             poll_interval = 2
             waited = 0
 
