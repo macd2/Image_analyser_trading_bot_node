@@ -12,7 +12,6 @@ import { emitLog } from '@/lib/ws/socket-server';
 import {
   saveProcessState,
   removeProcessState,
-  getProcessState,
   getAllProcessStates,
   restoreProcessStates,
   isProcessAlive
