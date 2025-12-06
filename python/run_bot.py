@@ -33,6 +33,7 @@ from trading_bot.engine.trade_tracker import TradeTracker
 from trading_bot.core.utils import seconds_until_next_boundary, get_current_cycle_boundary
 from trading_bot.core.error_logger import setup_error_logging, set_run_id, set_cycle_id, clear_cycle_id
 from trading_bot.db.init_trading_db import init_database, get_connection
+from trading_bot.db.client import execute, query, query_one
 
 # Configure logging
 logging.basicConfig(
@@ -87,12 +88,12 @@ class TradingBot:
         # Load instance configuration (prompt_name)
         self.instance_prompt_name: Optional[str] = None
         if self.instance_id:
-            row = self._db.execute(
+            row = query_one(self._db,
                 "SELECT prompt_name FROM instances WHERE id = ?",
                 (self.instance_id,)
-            ).fetchone()
-            if row and row[0]:
-                self.instance_prompt_name = row[0]
+            )
+            if row and row['prompt_name']:
+                self.instance_prompt_name = row['prompt_name']
                 logger.info(f"📋 Instance prompt: {self.instance_prompt_name}")
 
         # Use command line args if provided, otherwise use config from database
@@ -147,13 +148,12 @@ class TradingBot:
     def _cleanup_stale_runs(self) -> None:
         """Mark any 'running' runs as 'crashed' - they're from previous sessions."""
         try:
-            cursor = self._db.execute(
+            stale_runs = query(self._db,
                 "SELECT id FROM runs WHERE status = 'running'"
             )
-            stale_runs = cursor.fetchall()
 
             if stale_runs:
-                self._db.execute("""
+                execute(self._db, """
                     UPDATE runs
                     SET status = 'crashed',
                         stop_reason = 'stale_cleanup',
@@ -192,7 +192,7 @@ class TradingBot:
             },
         }
 
-        self._db.execute("""
+        execute(self._db, """
             INSERT INTO runs (
                 id, instance_id, started_at, status, timeframe, paper_trading,
                 min_confidence, max_leverage, config_snapshot
@@ -215,7 +215,7 @@ class TradingBot:
     def _end_run(self, status: str = "stopped", reason: str = None) -> None:
         """Mark run as ended."""
         try:
-            self._db.execute("""
+            execute(self._db, """
                 UPDATE runs
                 SET ended_at = ?, status = ?, stop_reason = ?
                 WHERE id = ?
