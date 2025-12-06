@@ -20,13 +20,17 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
   const [openingBrowser, setOpeningBrowser] = useState(false)
   const [browserOpened, setBrowserOpened] = useState(false)
   const [vncEnabled, setVncEnabled] = useState<boolean | null>(null)
+  const [vncRunning, setVncRunning] = useState<boolean>(false)
 
-  // Check if VNC is enabled when modal opens
+  // Check VNC status when modal opens
   useEffect(() => {
-    if (isOpen && vncEnabled === null) {
-      checkVncEnabled()
+    if (isOpen) {
+      checkVncStatus()
+      // Poll VNC status every 3 seconds while modal is open
+      const interval = setInterval(checkVncStatus, 3000)
+      return () => clearInterval(interval)
     }
-  }, [isOpen, vncEnabled])
+  }, [isOpen])
 
   // Reset state when modal closes
   useEffect(() => {
@@ -35,15 +39,17 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
     }
   }, [isOpen, browserOpened])
 
-  const checkVncEnabled = async () => {
+  const checkVncStatus = async () => {
     try {
       const response = await fetch('/api/vnc/status')
       const data = await response.json()
       setVncEnabled(data.enableVnc || false)
-      console.log('VNC enabled:', data.enableVnc)
+      setVncRunning(data.running || false)
+      console.log('VNC status:', { enabled: data.enableVnc, running: data.running })
     } catch (error) {
       console.error('Failed to check VNC status:', error)
       setVncEnabled(false)
+      setVncRunning(false)
     }
   }
 
@@ -139,7 +145,19 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
               🔐
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white">TradingView Login</h2>
+              <h2 className="text-xl font-bold text-white flex items-center gap-3">
+                TradingView Login
+                {/* VNC Status Indicator */}
+                {vncEnabled !== null && (
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    vncEnabled
+                      ? (vncRunning ? 'bg-green-600/20 text-green-400 border border-green-600/50' : 'bg-blue-600/20 text-blue-400 border border-blue-600/50')
+                      : 'bg-slate-600/20 text-slate-400 border border-slate-600/50'
+                  }`}>
+                    {vncEnabled ? (vncRunning ? '● VNC Running' : '○ VNC Enabled') : 'Local Mode'}
+                  </span>
+                )}
+              </h2>
               <p className="text-sm text-slate-400">Log in to TradingView to continue</p>
             </div>
           </div>
@@ -269,75 +287,67 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
           </div>
         </div>
 
-        {/* Footer - Buttons */}
+        {/* Footer - Buttons (ALWAYS VISIBLE) */}
         <div className="flex items-center justify-between p-4 border-t border-slate-600">
-          {/* Left side - Kill VNC button (only visible in VNC mode after browser opened) */}
-          {vncEnabled === true && browserOpened ? (
+          {/* Left side - Kill VNC button (ALWAYS VISIBLE) */}
+          <button
+            onClick={handleKillVnc}
+            disabled={killingVnc || confirming || !vncRunning}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+            title={vncRunning ? "Stop VNC services and close browser session" : "VNC not running"}
+          >
+            {killingVnc ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Stopping...
+              </>
+            ) : (
+              <>
+                <Power className="w-4 h-4" />
+                Kill VNC
+              </>
+            )}
+          </button>
+
+          {/* Right side - All action buttons (ALWAYS VISIBLE) */}
+          <div className="flex items-center gap-2">
+            {/* Open Browser button (ALWAYS VISIBLE) */}
             <button
-              onClick={handleKillVnc}
-              disabled={killingVnc || confirming}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
-              title="Stop VNC services and close browser session"
+              onClick={handleOpenBrowser}
+              disabled={openingBrowser}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
             >
-              {killingVnc ? (
+              {openingBrowser ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Stopping...
+                  Opening...
                 </>
               ) : (
                 <>
-                  <Power className="w-4 h-4" />
-                  Kill VNC
+                  <Info className="w-4 h-4" />
+                  Open Browser for Login
                 </>
               )}
             </button>
-          ) : (
-            <div></div>
-          )}
 
-          {/* Right side - Open Browser and Confirm buttons */}
-          <div className="flex items-center gap-2">
-            {/* Open Browser button - only show if browser not opened yet */}
-            {!browserOpened && (
-              <button
-                onClick={handleOpenBrowser}
-                disabled={openingBrowser}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
-              >
-                {openingBrowser ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Opening...
-                  </>
-                ) : (
-                  <>
-                    <Info className="w-4 h-4" />
-                    Open Browser for Login
-                  </>
-                )}
-              </button>
-            )}
-
-            {/* Confirm Login button - only show after browser opened */}
-            {browserOpened && (
-              <button
-                onClick={handleConfirm}
-                disabled={confirming}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
-              >
-                {confirming ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Confirming...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="w-4 h-4" />
-                    Confirm Login
-                  </>
-                )}
-              </button>
-            )}
+            {/* Confirm Login button (ALWAYS VISIBLE) */}
+            <button
+              onClick={handleConfirm}
+              disabled={confirming}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+            >
+              {confirming ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Confirming...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  Confirm Login
+                </>
+              )}
+            </button>
 
             <button
               onClick={onClose}

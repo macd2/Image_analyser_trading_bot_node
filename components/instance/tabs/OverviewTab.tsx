@@ -314,9 +314,20 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         </div>
         {/* Account Summary - compact */}
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
-          <div className="text-xs text-slate-400 mb-1 flex items-center gap-2">
-            Account
-            {liveWallet && <span className="text-green-500 text-[10px]">● LIVE</span>}
+          <div className="text-xs text-slate-400 mb-1 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              Account
+              {liveWallet && <span className="text-green-500 text-[10px]">● LIVE</span>}
+            </div>
+            {/* Permanent VNC Login Button */}
+            <button
+              onClick={() => setVncModalOpen(true)}
+              className="flex items-center gap-1 px-2 py-1 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-600/50 rounded text-blue-400 text-[10px] font-medium transition"
+              title="Open VNC/Browser Login Modal"
+            >
+              <Maximize2 className="w-3 h-3" />
+              VNC Login
+            </button>
           </div>
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div>
