@@ -24,7 +24,7 @@ export async function GET() {
 
     // Railway TCP Proxy configuration
     // When you add a TCP Proxy in Railway settings for port 6080,
-    // Railway will provide a public address like: yourapp.railway.app:12345
+    // Railway will provide a public address like: interchange.proxy.rlwy.net:13575
     // Set this in the RAILWAY_TCP_PROXY_DOMAIN and RAILWAY_TCP_PROXY_PORT env vars
     const railwayTcpDomain = process.env.RAILWAY_TCP_PROXY_DOMAIN;
     const railwayTcpPort = process.env.RAILWAY_TCP_PROXY_PORT;

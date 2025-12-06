@@ -22,7 +22,7 @@ Railway supports exposing TCP ports (like VNC) using **TCP Proxy** feature.
 4. Scroll to **Public Networking** section
 5. Click **Add TCP Proxy**
 6. Enter port: `6080` (noVNC WebSocket port)
-7. Railway will generate a public address like: `yourapp.railway.app:34567`
+7. Railway will generate a public address like: `interchange.proxy.rlwy.net:13575`
 
 ### Step 2: Configure Environment Variables
 
@@ -34,11 +34,12 @@ ENABLE_VNC=true
 VNC_PORT=6080
 
 # Railway TCP Proxy configuration (get these from Railway dashboard)
-RAILWAY_TCP_PROXY_DOMAIN=yourapp.railway.app
-RAILWAY_TCP_PROXY_PORT=34567
+# Example: interchange.proxy.rlwy.net:13575
+RAILWAY_TCP_PROXY_DOMAIN=interchange.proxy.rlwy.net
+RAILWAY_TCP_PROXY_PORT=13575
 ```
 
-**Important**: Replace `yourapp.railway.app` and `34567` with the actual values from Railway's TCP Proxy settings.
+**Important**: Replace `interchange.proxy.rlwy.net` and `13575` with the actual values from Railway's TCP Proxy settings.
 
 ### Step 3: Deploy
 
@@ -59,7 +60,7 @@ Push your changes and Railway will redeploy with VNC enabled.
    - **TigerVNC**: https://tigervnc.org/
    - **TightVNC**: https://www.tightvnc.com/
 
-2. Connect to the address shown in the modal (e.g., `yourapp.railway.app:34567`)
+2. Connect to the address shown in the modal (e.g., `interchange.proxy.rlwy.net:13575`)
 
 3. No password required
 
@@ -137,7 +138,7 @@ The bot will use the saved session until it expires again.
 ```
 User's VNC Client
        ↓
-Railway TCP Proxy (yourapp.railway.app:34567)
+Railway TCP Proxy (interchange.proxy.rlwy.net:13575)
        ↓
 noVNC WebSocket Server (localhost:6080)
        ↓
@@ -152,7 +153,7 @@ Playwright Browser (Chromium)
 
 Railway supports **both HTTP and TCP** on the same service:
 - HTTP domain: `yourapp.railway.app` (Next.js dashboard)
-- TCP Proxy: `yourapp.railway.app:34567` (VNC)
+- TCP Proxy: `interchange.proxy.rlwy.net:13575` (VNC)
 
 Both work simultaneously without conflicts.
 
