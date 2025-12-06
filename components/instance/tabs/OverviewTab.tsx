@@ -87,7 +87,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
   const { logs, addLog, setLogs } = useBotState()
 
   // Connect to Socket.IO for real-time updates
-  const { socket } = useRealtime()
+  const { socket, wallet: liveWallet } = useRealtime()
 
   const [status, setStatus] = useState<BotStatus | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
@@ -314,19 +314,28 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         </div>
         {/* Account Summary - compact */}
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
-          <div className="text-xs text-slate-400 mb-1">Account</div>
+          <div className="text-xs text-slate-400 mb-1 flex items-center gap-2">
+            Account
+            {liveWallet && <span className="text-green-500 text-[10px]">● LIVE</span>}
+          </div>
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div>
               <span className="text-slate-500">Balance:</span>
-              <span className="text-white ml-1 font-mono">${status?.wallet?.balance_usdt?.toFixed(0) || '0'}</span>
+              <span className="text-white ml-1 font-mono">
+                ${liveWallet ? parseFloat(liveWallet.walletBalance).toFixed(0) : (status?.wallet?.balance_usdt?.toFixed(0) || '0')}
+              </span>
             </div>
             <div>
               <span className="text-slate-500">Equity:</span>
-              <span className="text-white ml-1 font-mono">${status?.wallet?.equity_usdt?.toFixed(0) || '0'}</span>
+              <span className="text-white ml-1 font-mono">
+                ${liveWallet ? parseFloat(liveWallet.equity).toFixed(0) : (status?.wallet?.equity_usdt?.toFixed(0) || '0')}
+              </span>
             </div>
             <div>
               <span className="text-slate-500">Available:</span>
-              <span className="text-green-400 ml-1 font-mono">${status?.wallet?.available_usdt?.toFixed(0) || '0'}</span>
+              <span className="text-green-400 ml-1 font-mono">
+                ${liveWallet ? parseFloat(liveWallet.availableToWithdraw).toFixed(0) : (status?.wallet?.available_usdt?.toFixed(0) || '0')}
+              </span>
             </div>
             <div>
               <span className="text-slate-500">Slots:</span>

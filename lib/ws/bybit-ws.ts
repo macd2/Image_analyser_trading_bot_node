@@ -32,6 +32,14 @@ export interface PositionData {
   liqPrice: string;
 }
 
+export interface WalletData {
+  coin: string;
+  walletBalance: string;
+  availableToWithdraw: string;
+  equity: string;
+  unrealisedPnl: string;
+}
+
 export class BybitWebSocket extends EventEmitter {
   private publicWs: WebSocket | null = null;
   private privateWs: WebSocket | null = null;

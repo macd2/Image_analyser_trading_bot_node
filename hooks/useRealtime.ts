@@ -27,6 +27,14 @@ export interface Position {
   liqPrice: string;
 }
 
+export interface Wallet {
+  coin: string;
+  walletBalance: string;
+  availableToWithdraw: string;
+  equity: string;
+  unrealisedPnl: string;
+}
+
 export interface InstanceStatusUpdate {
   instanceId: string;
   runId: string | null;
@@ -37,6 +45,7 @@ export interface InstanceStatusUpdate {
 interface RealtimeState {
   tickers: Record<string, Ticker>;
   positions: Position[];
+  wallet: Wallet | null;
   connected: boolean;
   lastUpdate: Date | null;
   runningInstances: string[];
@@ -63,6 +72,7 @@ export function useRealtime() {
   const [state, setState] = useState<RealtimeState>({
     tickers: {},
     positions: [],
+    wallet: null,
     connected: false,
     lastUpdate: null,
     runningInstances: []
@@ -86,7 +96,7 @@ export function useRealtime() {
       setState(prev => ({ ...prev, connected: false }));
     });
 
-    s.on('init', (data: { tickers: Record<string, Ticker>; positions: Position[]; runningInstances?: string[] }) => {
+    s.on('init', (data: { tickers: Record<string, Ticker>; positions: Position[]; wallet?: Wallet | null; runningInstances?: string[] }) => {
       Object.entries(data.tickers).forEach(([symbol, ticker]) => {
         tickersRef.current[symbol] = mergeTicker(tickersRef.current[symbol], ticker);
       });
@@ -94,6 +104,7 @@ export function useRealtime() {
         ...prev,
         tickers: { ...tickersRef.current },
         positions: data.positions,
+        wallet: data.wallet || null,
         runningInstances: data.runningInstances || [],
         lastUpdate: new Date()
       }));
@@ -112,6 +123,15 @@ export function useRealtime() {
       setState(prev => ({
         ...prev,
         positions: data,
+        lastUpdate: new Date()
+      }));
+    });
+
+    s.on('wallet', (data: Wallet) => {
+      console.log('[Realtime] Wallet update:', data);
+      setState(prev => ({
+        ...prev,
+        wallet: data,
         lastUpdate: new Date()
       }));
     });
@@ -157,7 +177,12 @@ export function useRealtime() {
   }, [state.runningInstances]);
 
   return {
-    ...state,
+    tickers: state.tickers,
+    positions: state.positions,
+    wallet: state.wallet,
+    connected: state.connected,
+    lastUpdate: state.lastUpdate,
+    runningInstances: state.runningInstances,
     socket,
     onInstanceStatus,
     isInstanceRunning,

@@ -1,6 +1,6 @@
 import { Server as HTTPServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
-import { BybitWebSocket, TickerData, PositionData } from './bybit-ws';
+import { BybitWebSocket, TickerData, PositionData, WalletData } from './bybit-ws';
 import { processMonitor, ProcessStatusUpdate } from './process-monitor';
 import { updateRunStatusByInstanceId, getRunningRuns, getRunningRunByInstanceId } from '../db/trading-db';
 import { restoreProcessStates } from '../process-state';
@@ -13,6 +13,7 @@ const WATCHLIST = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT'];
 // Store latest data
 const tickers: Record<string, TickerData> = {};
 const positions: PositionData[] = [];
+let wallet: WalletData | null = null;
 
 export function getSocketServer(): SocketIOServer | null {
   return io;
@@ -73,6 +74,31 @@ export function initSocketServer(httpServer: HTTPServer): SocketIOServer {
     bybit.on('order', (data: unknown) => {
       io?.emit('order', data);
     });
+
+    // Forward wallet updates
+    bybit.on('wallet', (data: any) => {
+      // Bybit sends wallet data as array with coin array inside
+      // Extract USDT wallet data
+      if (Array.isArray(data)) {
+        for (const walletData of data) {
+          const coins = walletData.coin || [];
+          for (const coinData of coins) {
+            if (coinData.coin === 'USDT') {
+              wallet = {
+                coin: coinData.coin,
+                walletBalance: coinData.walletBalance,
+                availableToWithdraw: coinData.availableToWithdraw,
+                equity: coinData.equity,
+                unrealisedPnl: coinData.unrealisedPnl || '0'
+              };
+              io?.emit('wallet', wallet);
+              console.log('[Socket.io] Wallet update:', wallet);
+              break;
+            }
+          }
+        }
+      }
+    });
   } catch (err) {
     console.error('[Socket.io] Failed to initialize Bybit WS:', err);
     // Continue without real-time data - dashboard will still work
@@ -86,6 +112,7 @@ export function initSocketServer(httpServer: HTTPServer): SocketIOServer {
     socket.emit('init', {
       tickers,
       positions,
+      wallet,
       runningInstances: processMonitor.getRunningInstanceIds()
     });
 
