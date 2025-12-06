@@ -41,6 +41,15 @@ export function initSocketServer(httpServer: HTTPServer): SocketIOServer {
 
   // Initialize Bybit WebSocket with error handling
   try {
+    const hasApiKey = !!process.env.BYBIT_API_KEY;
+    const hasApiSecret = !!process.env.BYBIT_API_SECRET;
+
+    console.log('[Socket.io] Bybit credentials check:', {
+      hasApiKey,
+      hasApiSecret,
+      testnet: process.env.BYBIT_TESTNET === 'true'
+    });
+
     bybit = new BybitWebSocket({
       apiKey: process.env.BYBIT_API_KEY,
       apiSecret: process.env.BYBIT_API_SECRET,
@@ -51,10 +60,13 @@ export function initSocketServer(httpServer: HTTPServer): SocketIOServer {
     bybit.connectPublic(WATCHLIST).catch(() => {
       // Silently catch - reconnect logic will handle it
     });
-    if (process.env.BYBIT_API_KEY) {
+    if (hasApiKey && hasApiSecret) {
+      console.log('[Socket.io] Connecting to Bybit private stream for wallet updates...');
       bybit.connectPrivate().catch(() => {
         // Silently catch - reconnect logic will handle it
       });
+    } else {
+      console.warn('[Socket.io] ⚠️ No Bybit API credentials - wallet updates will NOT be available via WebSocket');
     }
     // Forward ticker updates
     bybit.on('ticker', (data: TickerData) => {
@@ -77,6 +89,8 @@ export function initSocketServer(httpServer: HTTPServer): SocketIOServer {
 
     // Forward wallet updates
     bybit.on('wallet', (data: any) => {
+      console.log('[Socket.io] Received wallet event from Bybit:', JSON.stringify(data).substring(0, 200));
+
       // Bybit sends wallet data as array with coin array inside
       // Extract USDT wallet data
       if (Array.isArray(data)) {
@@ -92,11 +106,17 @@ export function initSocketServer(httpServer: HTTPServer): SocketIOServer {
                 unrealisedPnl: coinData.unrealisedPnl || '0'
               };
               io?.emit('wallet', wallet);
-              console.log('[Socket.io] Wallet update:', wallet);
+              console.log('[Socket.io] ✅ Wallet update emitted to clients:', {
+                balance: wallet.walletBalance,
+                available: wallet.availableToWithdraw,
+                equity: wallet.equity
+              });
               break;
             }
           }
         }
+      } else {
+        console.warn('[Socket.io] ⚠️ Unexpected wallet data format:', typeof data);
       }
     });
   } catch (err) {

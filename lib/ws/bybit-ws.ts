@@ -134,16 +134,43 @@ export class BybitWebSocket extends EventEmitter {
       this.privateWs.on('message', (data) => {
         try {
           const msg = JSON.parse(data.toString());
-          if (msg.op === 'auth' && msg.success) {
-            console.log('[Bybit WS] Authenticated');
-            this.privateWs!.send(JSON.stringify({
-              op: 'subscribe',
-              args: ['position', 'order', 'wallet']
-            }));
+
+          // Auth response
+          if (msg.op === 'auth') {
+            if (msg.success) {
+              console.log('[Bybit WS] ✅ Authenticated successfully');
+              console.log('[Bybit WS] Subscribing to private streams: position, order, wallet');
+              this.privateWs!.send(JSON.stringify({
+                op: 'subscribe',
+                args: ['position', 'order', 'wallet']
+              }));
+            } else {
+              console.error('[Bybit WS] ❌ Authentication failed:', msg.ret_msg || msg);
+            }
           }
-          if (msg.topic === 'position') this.emit('position', msg.data);
-          if (msg.topic === 'order') this.emit('order', msg.data);
-          if (msg.topic === 'wallet') this.emit('wallet', msg.data);
+
+          // Subscription response
+          if (msg.op === 'subscribe') {
+            if (msg.success) {
+              console.log('[Bybit WS] ✅ Subscribed to:', msg.req_id || 'private streams');
+            } else {
+              console.error('[Bybit WS] ❌ Subscription failed:', msg.ret_msg || msg);
+            }
+          }
+
+          // Data updates
+          if (msg.topic === 'position') {
+            console.log('[Bybit WS] Position update received');
+            this.emit('position', msg.data);
+          }
+          if (msg.topic === 'order') {
+            console.log('[Bybit WS] Order update received');
+            this.emit('order', msg.data);
+          }
+          if (msg.topic === 'wallet') {
+            console.log('[Bybit WS] Wallet update received');
+            this.emit('wallet', msg.data);
+          }
         } catch (e) {
           console.error('[Bybit WS] Parse error:', e);
         }
