@@ -10,6 +10,7 @@ export async function GET() {
   try {
     // Simple flag to enable/disable VNC (set in Railway environment)
     const enableVnc = process.env.ENABLE_VNC === 'true';
+    console.log(`[VNC Status] ENABLE_VNC=${process.env.ENABLE_VNC}, enableVnc=${enableVnc}`);
 
     // noVNC port (default 6080)
     const vncPort = process.env.VNC_PORT || '6080';
@@ -20,10 +21,14 @@ export async function GET() {
 
     // Try to detect if VNC server is actually running by checking if we can reach it
     let vncServerReachable = false;
+    let errorDetails = '';
+
     if (enableVnc) {
       try {
         // Try to fetch the noVNC index page (localhost since supervisor runs in same container)
         const vncCheckUrl = `http://${vncHost}:${vncPort}/vnc.html`;
+        console.log(`[VNC Status] Checking VNC server at: ${vncCheckUrl}`);
+
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout
 
@@ -34,11 +39,19 @@ export async function GET() {
         clearTimeout(timeoutId);
 
         vncServerReachable = response.ok;
-        console.log(`VNC server check: ${vncCheckUrl} - ${response.ok ? 'OK' : 'FAILED'}`);
+        console.log(`[VNC Status] VNC server check: ${vncCheckUrl} - Status: ${response.status} ${response.ok ? 'OK' : 'FAILED'}`);
+
+        if (!response.ok) {
+          errorDetails = `HTTP ${response.status} ${response.statusText}`;
+        }
       } catch (error) {
-        console.log(`VNC server not reachable at ${vncHost}:${vncPort}:`, error instanceof Error ? error.message : 'Unknown error');
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        errorDetails = errorMsg;
+        console.error(`[VNC Status] VNC server not reachable at ${vncHost}:${vncPort}:`, errorMsg);
         vncServerReachable = false;
       }
+    } else {
+      console.log(`[VNC Status] VNC disabled - ENABLE_VNC not set to 'true'`);
     }
 
     // Build VNC URL - use /vnc/ proxy path configured in next.config.js
@@ -47,19 +60,23 @@ export async function GET() {
     // VNC is available if enabled AND server is reachable
     const available = enableVnc && vncServerReachable;
 
-    return NextResponse.json({
+    const result = {
       available,
       enableVnc,
       vncServerReachable,
       vncPort,
       vncHost,
       vncUrl,
+      errorDetails: errorDetails || undefined,
       message: available
         ? 'VNC server available'
         : enableVnc
-          ? `VNC enabled but server not reachable at ${vncHost}:${vncPort}`
+          ? `VNC enabled but server not reachable at ${vncHost}:${vncPort}${errorDetails ? ` - ${errorDetails}` : ''}`
           : 'VNC not enabled (set ENABLE_VNC=true in environment)'
-    });
+    };
+
+    console.log(`[VNC Status] Result:`, result);
+    return NextResponse.json(result);
   } catch (error) {
     console.error('VNC status check error:', error);
     return NextResponse.json({
