@@ -9,12 +9,22 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
+    const instanceId = searchParams.get('id')
     const includeSummary = searchParams.get('summary') === 'true'
 
     // Get instances with optional summary data (stats + config)
     const instances = includeSummary
       ? await getInstancesWithSummary()
       : await getInstancesWithStatus()
+
+    // If specific instance requested, return single instance
+    if (instanceId) {
+      const instance = instances.find((i: { id: string }) => i.id === instanceId)
+      if (!instance) {
+        return NextResponse.json({ error: 'Instance not found' }, { status: 404 })
+      }
+      return NextResponse.json({ instance })
+    }
 
     return NextResponse.json({ instances })
   } catch (error) {

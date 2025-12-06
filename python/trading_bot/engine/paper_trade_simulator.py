@@ -16,7 +16,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
 
-from trading_bot.db.client import get_connection
+from trading_bot.db.client import get_connection, query, DB_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -54,18 +54,30 @@ class PaperTradeSimulator:
     def get_paper_trades(self) -> List[Dict[str, Any]]:
         """Get all paper trades that need simulation"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        
+
         # Get paper trades that are still open (status = 'paper_trade' or 'pending_fill')
-        cursor.execute("""
-            SELECT * FROM trades 
-            WHERE dry_run = 1 
+        # Use DB-specific dry_run comparison (boolean for PostgreSQL, integer for SQLite)
+        dry_run_value = 'true' if DB_TYPE == 'postgres' else '1'
+
+        rows = query(conn, f"""
+            SELECT * FROM trades
+            WHERE dry_run = {dry_run_value}
             AND status IN ('paper_trade', 'pending_fill', 'filled')
             AND pnl IS NULL
             ORDER BY created_at DESC
         """)
-        
-        trades = [dict(row) for row in cursor.fetchall()]
+
+        # Convert rows to list of dicts
+        trades = []
+        for row in rows:
+            if DB_TYPE == 'postgres':
+                # PostgreSQL returns Row objects with column names
+                trades.append(dict(row))
+            else:
+                # SQLite returns tuples - need to get column names from cursor description
+                # For now, just convert to dict assuming row is already dict-like
+                trades.append(dict(row) if hasattr(row, 'keys') else row)
+
         conn.close()
         return trades
     

@@ -78,6 +78,19 @@ function convertPlaceholders(sql: string): string {
   return sql.replace(/\?/g, () => `$${++idx}`);
 }
 
+/**
+ * Get SQL expression for dry_run comparison
+ * SQLite: dry_run = 0 or dry_run = 1
+ * PostgreSQL: dry_run = false or dry_run = true
+ */
+function getDryRunComparison(isLive: boolean): string {
+  if (DB_TYPE === 'postgres') {
+    return isLive ? 't.dry_run = false' : 't.dry_run = true';
+  } else {
+    return isLive ? 't.dry_run = 0' : 't.dry_run = 1';
+  }
+}
+
 // ============================================================
 // UNIFIED DATABASE INTERFACE
 // These async functions work with both SQLite and PostgreSQL
@@ -125,6 +138,22 @@ async function pgQueryWithRetry<T>(
 }
 
 /**
+ * Normalize database row - converts PostgreSQL types to match SQLite types
+ * Specifically handles dry_run: boolean -> number conversion
+ */
+function normalizeRow<T>(row: T): T {
+  if (row && typeof row === 'object' && 'dry_run' in row) {
+    const normalized = { ...row };
+    // Convert PostgreSQL boolean to number (true -> 1, false -> 0)
+    if (typeof (normalized as any).dry_run === 'boolean') {
+      (normalized as any).dry_run = (normalized as any).dry_run ? 1 : 0;
+    }
+    return normalized;
+  }
+  return row;
+}
+
+/**
  * Execute a SELECT query - returns all rows
  */
 export async function dbQuery<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
@@ -134,7 +163,9 @@ export async function dbQuery<T = Record<string, unknown>>(sql: string, params: 
   } else {
     const pool = getPgPool();
     const pgSql = convertPlaceholders(sql);
-    return pgQueryWithRetry<T>(pool, pgSql, params);
+    const rows = await pgQueryWithRetry<T>(pool, pgSql, params);
+    // Normalize PostgreSQL rows to match SQLite format
+    return rows.map(row => normalizeRow(row));
   }
 }
 
@@ -324,6 +355,10 @@ export async function getInstancesWithSummary(): Promise<InstanceSummary[]> {
   const results: InstanceSummary[] = [];
   for (const instance of instances) {
     // Get stats from actual trades table
+    // Use DB-specific dry_run comparison (boolean for PostgreSQL, integer for SQLite)
+    const liveComparison = getDryRunComparison(true);
+    const paperComparison = getDryRunComparison(false);
+
     const stats = await dbQueryOne<{
       live_trades: number;
       dry_run_trades: number;
@@ -332,11 +367,11 @@ export async function getInstancesWithSummary(): Promise<InstanceSummary[]> {
       live_losses: number;
     }>(`
       SELECT
-        COUNT(CASE WHEN t.dry_run = false THEN 1 END) as live_trades,
-        COUNT(CASE WHEN t.dry_run = true THEN 1 END) as dry_run_trades,
-        COALESCE(SUM(CASE WHEN t.dry_run = false AND t.pnl IS NOT NULL THEN t.pnl ELSE 0 END), 0) as live_pnl,
-        COUNT(CASE WHEN t.dry_run = false AND t.pnl > 0 THEN 1 END) as live_wins,
-        COUNT(CASE WHEN t.dry_run = false AND t.pnl < 0 THEN 1 END) as live_losses
+        COUNT(CASE WHEN ${liveComparison} THEN 1 END) as live_trades,
+        COUNT(CASE WHEN ${paperComparison} THEN 1 END) as dry_run_trades,
+        COALESCE(SUM(CASE WHEN ${liveComparison} AND t.pnl IS NOT NULL THEN t.pnl ELSE 0 END), 0) as live_pnl,
+        COUNT(CASE WHEN ${liveComparison} AND t.pnl > 0 THEN 1 END) as live_wins,
+        COUNT(CASE WHEN ${liveComparison} AND t.pnl < 0 THEN 1 END) as live_losses
       FROM trades t
       JOIN cycles c ON t.cycle_id = c.id
       JOIN runs r ON c.run_id = r.id

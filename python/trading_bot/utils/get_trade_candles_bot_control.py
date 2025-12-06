@@ -7,16 +7,19 @@ REASON: Bot-specific version with additional features:
   - Checks if candles are up-to-date for recent trades
   - Fetches missing/stale candles automatically
   - Returns fetch_status for loading indicators
+  - Uses centralized DB client for SQLite/PostgreSQL switching
 """
 import json
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
+from typing import List, Dict, Any
 
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from prompt_performance.core.database_utils import CandleStoreDatabase
+# Use centralized database client
+from trading_bot.db.client import get_connection, query, execute, DB_TYPE
 
 
 def _convert_timeframe_to_bybit(timeframe: str) -> str:
@@ -81,11 +84,110 @@ def _get_symbol_precision(symbol: str) -> dict:
     }
 
 
+def _get_candle_connection():
+    """Get connection to candle database. Uses centralized client for PostgreSQL,
+    separate candle_store.db for SQLite."""
+    if DB_TYPE == 'postgres':
+        return get_connection()
+    else:
+        # SQLite: use separate candle_store.db
+        import sqlite3
+        db_path = Path(__file__).parent.parent.parent.parent / "data" / "candle_store.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path))
+        # Ensure table exists
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS klines_store (
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                category TEXT NOT NULL,
+                start_time INTEGER NOT NULL,
+                open_price REAL NOT NULL,
+                high_price REAL NOT NULL,
+                low_price REAL NOT NULL,
+                close_price REAL NOT NULL,
+                volume REAL NOT NULL,
+                turnover REAL NOT NULL,
+                UNIQUE(symbol, timeframe, start_time)
+            )
+        """)
+        conn.commit()
+        return conn
+
+
+def _get_candles_from_db(symbol: str, timeframe: str, start_ts: int, end_ts: int) -> List[Dict[str, Any]]:
+    """Get candles from database using centralized client for PostgreSQL."""
+    conn = _get_candle_connection()
+    try:
+        # Normalize symbol (remove .P suffix if present)
+        norm_symbol = symbol[:-2] if symbol.endswith('.P') else symbol
+
+        # Table name differs: 'klines' for PostgreSQL, 'klines_store' for SQLite
+        table_name = 'klines' if DB_TYPE == 'postgres' else 'klines_store'
+
+        rows = query(conn, f"""
+            SELECT symbol, timeframe, category, start_time, open_price, high_price,
+                   low_price, close_price, volume, turnover
+            FROM {table_name}
+            WHERE symbol = ? AND timeframe = ? AND start_time >= ? AND start_time <= ?
+            ORDER BY start_time ASC
+            LIMIT 5000
+        """, (norm_symbol, timeframe, start_ts, end_ts))
+
+        candles = []
+        for row in rows:
+            candles.append({
+                'symbol': row[0],
+                'timeframe': row[1],
+                'category': row[2],
+                'start_time': row[3],
+                'open_price': row[4],
+                'high_price': row[5],
+                'low_price': row[6],
+                'close_price': row[7],
+                'volume': row[8],
+                'turnover': row[9]
+            })
+        return candles
+    finally:
+        conn.close()
+
+
+def _insert_candles_to_db(candles: List[Dict[str, Any]], symbol: str, timeframe: str, category: str):
+    """Insert candles into database using centralized client for PostgreSQL."""
+    conn = _get_candle_connection()
+    try:
+        # Normalize symbol
+        norm_symbol = symbol[:-2] if symbol.endswith('.P') else symbol
+
+        # Table name differs: 'klines' for PostgreSQL, 'klines_store' for SQLite
+        table_name = 'klines' if DB_TYPE == 'postgres' else 'klines_store'
+
+        for c in candles:
+            try:
+                execute(conn, f"""
+                    INSERT INTO {table_name} (symbol, timeframe, category, start_time, open_price,
+                                       high_price, low_price, close_price, volume, turnover)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (symbol, timeframe, start_time) DO NOTHING
+                """, (
+                    norm_symbol, timeframe, category, c['start_time'],
+                    c['open_price'], c['high_price'], c['low_price'], c['close_price'],
+                    c.get('volume', 0), c.get('turnover', 0)
+                ))
+            except Exception:
+                pass  # Ignore duplicates
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def get_candles_for_trade(symbol: str, timeframe: str, timestamp_ms: int,
                           candles_before: int = 50, candles_after: int = 150) -> dict:
     """Get candles around a trade timestamp for chart display.
 
     Auto-fetches missing candles from the exchange API if not in cache.
+    Uses centralized DB client for SQLite/PostgreSQL switching.
 
     Args:
         symbol: Trading pair (e.g., BTCUSDT)
@@ -97,8 +199,6 @@ def get_candles_for_trade(symbol: str, timeframe: str, timestamp_ms: int,
     Returns:
         Dict with candles array and metadata
     """
-    db = CandleStoreDatabase()
-
     # Calculate time range based on timeframe
     timeframe_ms = {
         '1m': 60 * 1000,
@@ -118,8 +218,8 @@ def get_candles_for_trade(symbol: str, timeframe: str, timestamp_ms: int,
     start_ts = timestamp_ms - (candles_before * timeframe_ms)
     end_ts = timestamp_ms + (candles_after * timeframe_ms)
 
-    # First try to get from cache
-    candles = db.get_candles_between_timestamps(symbol, timeframe, start_ts, end_ts)
+    # Get candles from database using centralized client
+    candles = _get_candles_from_db(symbol, timeframe, start_ts, end_ts)
 
     # Check if we have enough candles before and after the signal
     expected_candles_before = candles_before
@@ -184,11 +284,11 @@ def get_candles_for_trade(symbol: str, timeframe: str, timestamp_ms: int,
                         'turnover': float(kline[6]) if len(kline) > 6 else 0
                     })
 
-                # Cache these candles for future use
+                # Cache these candles for future use using centralized client
                 if fetched_candles:
                     try:
                         category = 'linear'
-                        db.insert_candles(fetched_candles, symbol, timeframe, category)
+                        _insert_candles_to_db(fetched_candles, symbol, timeframe, category)
                     except Exception as cache_err:
                         sys.stderr.write(f"Cache error (non-fatal): {cache_err}\n")
 

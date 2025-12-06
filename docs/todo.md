@@ -5,10 +5,7 @@
 [ ] is the confidence calulation from analysis actually used in the bot somewhere? 
 Confidence Calculation?
 
-[ ] simulator
-[ ] add a indicator on the sidebar for when the simulater is running use the same spinner but in samler
-[ ] make sure the simulator is started on server start
-[ ] simulator must start on start of the server
+
 
 [ ] instance
 [ ] overview tab on recent trades use the sahred tradechart  modal for none live trades
@@ -19,13 +16,9 @@ Confidence Calculation?
 [ ] make sure the fiters have th full word insted of E use Errors use propper color coding
 [ ] for manual login in sourcer add back the button in browser ui that says confimr sources waits as long as this confri button is clikced also the manual lonin must store the session
 
-[ ] make sure the app is ready or railway deploy includinng databse
 [ ] run production audit in terms of security, efficency and robustness (minal changes )
 
 
-----
-
-[ ] this indicator (wifisymbol) is not working in /instance page
 
 
 
