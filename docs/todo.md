@@ -7,7 +7,7 @@
 ------
 
 [ ] run production audit in terms of security, efficency and robustness (minal changes )
-[ ] are all operations that have todo with file operations on the charts using the a centralized place for pathes and also switch between local and s3 compatible
+
 
 --------------
 
@@ -39,4 +39,7 @@
 2025-12-06 12:19:07 | INFO | trading_bot.core.sourcer | 🔐 Manual login required - notifying dashboard
 2025-12-06 12:19:07 | INFO | trading_bot.core.sourcer | 🔄 Switching to visible browser mode for manual login
 
+
+[ ] After Railway redeploys, visit: https://imageanalysertradingbotnode-production.up.railway.app/api/vnc/test
+make sure to dissable the test endpoint
 

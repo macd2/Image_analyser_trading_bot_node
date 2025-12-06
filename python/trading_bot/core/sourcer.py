@@ -442,51 +442,21 @@ class ChartSourcer:
                         os.environ['DISPLAY'] = display
                         self.logger.info(f"📺 Using DISPLAY={display} for VNC")
 
-                        # VNC-specific browser arguments - optimized for Linux server environment
+                        # VNC-specific browser arguments - minimal flags to prevent crashes
                         vnc_args = [
                             f'--display={display}',
-                            '--disable-gpu',  # Disable GPU acceleration for VNC
-                            '--disable-software-rasterizer',  # Disable software rasterizer
-                            '--use-gl=swiftshader',  # Force software rendering
-                            '--disable-background-timer-throttling',
-                            '--disable-renderer-backgrounding',
-                            '--disable-backgrounding-occluded-windows',
                             f'--window-size={self.tv_config.browser.vnc_window_size}',
-                            '--start-maximized',  # Start browser maximized
-                            '--kiosk',  # Fullscreen mode for VNC
-                            '--app-window',  # App window mode
-                            '--window-position=0,0',  # Position at top-left
-                            # Critical flags for Linux server compatibility
-                            '--disable-dev-shm-usage',  # Overcome limited resource problems
-                            '--disable-accelerated-2d-canvas',  # Disable accelerated 2D canvas
-                            '--no-first-run',  # Skip first run experience
-                            '--disable-default-apps',  # Disable default apps
-                            '--disable-extensions',  # Disable extensions for stability
-                            '--disable-plugins',  # Disable plugins
-                            '--disable-images',  # Disable images to speed up loading
-                            '--disable-javascript-harmony',  # Disable experimental JS features
-                            '--disable-background-networking',  # Disable background networking
-                            '--disable-sync',  # Disable sync
-                            '--disable-translate',  # Disable translate
-                            '--hide-scrollbars',  # Hide scrollbars
-                            '--metrics-recording-only',  # Minimal metrics
-                            '--mute-audio',  # Mute audio
-                            '--no-default-browser-check',  # Skip default browser check
-                            '--disable-component-extensions-with-background-pages',  # Disable background extensions
-                            '--disable-features=VizDisplayCompositor',  # Disable display compositor
-                            '--disable-accelerated-video-decode',  # Disable accelerated video
-                            '--disable-gpu-compositing',  # Disable GPU compositing
-                            '--disable-gpu-rasterization',  # Disable GPU rasterization
-                            '--disable-background-media-download',  # Disable background media
-                            '--disable-print-preview',  # Disable print preview
-                            '--disable-component-update',  # Disable component updates
-                            # Add flags for better stability on Linux servers
-                            '--disable-web-security',  # Allow cross-origin requests
-                            '--allow-running-insecure-content',  # Allow insecure content
-                            '--ignore-certificate-errors',  # Ignore SSL errors
-                            '--ignore-ssl-errors',  # Ignore SSL errors
-                            '--ignore-certificate-errors-spki-list',  # Ignore SPKI list
-                            '--ignore-ssl-errors-ignore-untrusted',  # Ignore untrusted SSL
+                            '--window-position=0,0',
+                            '--start-maximized',
+                            # Essential stability flags for Railway
+                            '--disable-dev-shm-usage',  # Critical for limited /dev/shm
+                            '--disable-gpu',  # No GPU on Railway
+                            '--no-sandbox',  # Required for Docker
+                            '--disable-setuid-sandbox',
+                            '--no-first-run',
+                            '--no-default-browser-check',
+                            '--disable-infobars',
+                            '--disable-session-crashed-bubble',
                         ]
                         browser_args.extend(vnc_args)
 
@@ -3411,7 +3381,12 @@ class ChartSourcer:
             # Reset to idle state
             set_idle()
 
-            # Restore headless setting but keep browser open for this session
+            # Close browser to free resources (especially important on Railway)
+            # Session is already saved, browser will be reopened in headless mode when needed
+            self.logger.info("🔄 Closing browser to free resources...")
+            await self.cleanup_browser_session()
+
+            # Restore headless setting for next browser session
             self.tv_config.browser.headless = original_headless
             return True
 

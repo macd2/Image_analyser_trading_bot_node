@@ -8,6 +8,10 @@ import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  // Disable in production
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Test endpoint disabled in production' }, { status: 404 });
+  }
   const results: any = {
     timestamp: new Date().toISOString(),
     tests: []
