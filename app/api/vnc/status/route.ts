@@ -78,6 +78,7 @@ export async function GET() {
     }
 
     // VNC is available if enabled AND server is reachable
+    // Note: noVNC (web proxy) is disabled, so we only check x11vnc server
     const available = enableVnc && vncServerReachable;
 
     const result = {

@@ -2,14 +2,22 @@
 
 ## Overview
 
-This feature enables TradingView manual login on Railway (headless server) by embedding a web-based VNC viewer directly in the dashboard.
+This feature enables TradingView manual login on Railway (headless server) using a minimal VNC setup for browser access.
 
 ## How It Works
 
 1. **Railway Detection**: Bot automatically detects Railway environment and enables VNC mode
-2. **VNC Server**: Xvfb + x11vnc + noVNC run in Docker container
-3. **Dashboard Integration**: noVNC viewer embedded in modal for seamless UX
+2. **Minimal VNC Server**: Only Xvfb (virtual display) + x11vnc (VNC server) - no window manager or web proxy
+3. **Dashboard Integration**: Kill VNC button in modal for lifecycle management
 4. **Session Persistence**: Login session saved to PostgreSQL database
+
+## Why Minimal?
+
+The VNC setup is intentionally minimal to prevent browser crashes:
+- **No Fluxbox**: Window manager unnecessary for login-only use case
+- **No noVNC**: Web proxy disabled for security and stability
+- **Minimal browser flags**: Only 5 essential flags to prevent conflicts
+- **On-demand lifecycle**: VNC services can be stopped from dashboard when not needed
 
 ## Architecture
 
@@ -65,38 +73,38 @@ This feature enables TradingView manual login on Railway (headless server) by em
 ### Frontend (Next.js)
 
 - **`components/VncLoginModal.tsx`**
-  - Embedded noVNC viewer in modal
-  - Connection status checking
+  - VNC connection instructions
+  - Kill VNC button for lifecycle management
   - Login confirmation flow
 
 - **`app/api/vnc/status/route.ts`**
   - Check VNC availability
-  - Return connection info
+  - Return connection info (x11vnc only)
 
-- **`app/api/vnc/proxy/route.ts`**
-  - Proxy noVNC requests (avoid CORS)
-
-- **`next.config.js`**
-  - Rewrite `/vnc/*` to `http://localhost:6080/*`
+- **`app/api/vnc/control/route.ts`**
+  - Start/stop/restart VNC services via supervisorctl
+  - Used by Kill VNC button
 
 ### Infrastructure
 
 - **`Dockerfile`**
-  - Install VNC dependencies (Xvfb, x11vnc, fluxbox, noVNC)
-  - Expose port 6080 for noVNC
+  - Install minimal VNC dependencies (Xvfb, x11vnc only)
+  - No Fluxbox, no noVNC (removed for stability)
   - Set `DISPLAY=:99` environment variable
 
 - **`supervisord.conf`**
-  - Manage all services (Xvfb, fluxbox, x11vnc, noVNC, app)
+  - Manage minimal services (Xvfb, x11vnc, app)
   - Auto-restart on failure
+  - Fluxbox and noVNC removed
 
 ## Environment Variables
 
 - `RAILWAY_ENVIRONMENT` - Auto-set by Railway (triggers VNC mode)
 - `RAILWAY_SERVICE_NAME` - Auto-set by Railway (alternative detection)
 - `DISPLAY` - Set to `:99` for VNC display
-- `VNC_PORT` - noVNC port (default: 6080)
-- `VNC_ENABLED` - Enable/disable VNC (default: true)
+- `ENABLE_VNC` - Enable/disable VNC (set to `true` on Railway)
+- `RAILWAY_TCP_PROXY_DOMAIN` - Railway TCP proxy domain for x11vnc (port 5900)
+- `RAILWAY_TCP_PROXY_PORT` - Railway TCP proxy port for x11vnc
 
 ## Testing
 
@@ -107,13 +115,16 @@ VNC mode will NOT activate locally. Use the standard manual login flow (visible 
 ### Railway Testing
 
 1. Deploy to Railway
-2. Trigger TradingView login requirement (expire session or first run)
-3. Check dashboard for "Manual Login Required" banner
-4. Click "Open Browser Login"
-5. Verify noVNC viewer loads in modal
-6. Complete TradingView login
-7. Click "Confirm Login"
-8. Verify session saved and bot continues
+2. Set up Railway TCP Proxy for port 5900 (x11vnc)
+3. Set environment variables: `RAILWAY_TCP_PROXY_DOMAIN` and `RAILWAY_TCP_PROXY_PORT`
+4. Trigger TradingView login requirement (expire session or first run)
+5. Check dashboard for "Manual Login Required" banner
+6. Click "Open Browser Login"
+7. Use desktop VNC client to connect to the provided address
+8. Complete TradingView login in VNC window
+9. Click "Confirm Login" in dashboard
+10. Click "Kill VNC" to stop VNC services and free resources
+11. Verify session saved and bot continues
 
 ## Troubleshooting
 
@@ -124,18 +135,19 @@ VNC mode will NOT activate locally. Use the standard manual login flow (visible 
 **Causes**:
 - Not running on Railway (local development)
 - VNC services not started (check supervisor logs)
-- Port 6080 not exposed
+- `ENABLE_VNC` not set to `true`
 
 **Solution**:
 ```bash
 # Check supervisor status
 supervisorctl status
 
-# Check noVNC logs
-tail -f /var/log/supervisor/novnc-stdout.log
+# Check VNC logs
+tail -f /var/log/supervisor/xvfb.log
+tail -f /var/log/supervisor/x11vnc.log
 
-# Restart VNC services
-supervisorctl restart xvfb fluxbox x11vnc novnc
+# Restart VNC services (minimal)
+supervisorctl restart xvfb x11vnc
 ```
 
 ### Browser Not Visible in VNC
@@ -161,36 +173,59 @@ tail -f logs/bot.log | grep -i browser
 
 ### Connection Timeout
 
-**Symptom**: VNC viewer shows "Connection timeout"
+**Symptom**: Desktop VNC client shows "Connection timeout"
 
 **Causes**:
-- noVNC not running
-- Port 6080 not accessible
-- Next.js rewrite not working
+- Railway TCP Proxy not configured
+- x11vnc not running
+- Firewall blocking connection
 
 **Solution**:
 ```bash
-# Check noVNC is running
-curl http://localhost:6080/vnc.html
+# Check x11vnc is running
+supervisorctl status x11vnc
 
 # Check port is listening
-netstat -tulpn | grep 6080
+netstat -tulpn | grep 5900
 
-# Restart noVNC
-supervisorctl restart novnc
+# Restart x11vnc
+supervisorctl restart x11vnc
+
+# Verify Railway TCP Proxy settings in Railway dashboard
 ```
+
+### Browser Crashes
+
+**Symptom**: Browser crashes immediately or becomes unresponsive in VNC
+
+**Causes**:
+- Too many conflicting browser flags
+- Insufficient memory
+- VNC services consuming too much resources
+
+**Solution**:
+- Browser flags reduced to minimal (5 essential flags only)
+- Use "Kill VNC" button to stop services when not needed
+- Fluxbox window manager removed to reduce overhead
 
 ## Security Considerations
 
-- VNC server runs without password (internal only)
-- noVNC only accessible through Next.js proxy
+- VNC server runs without password (use Railway TCP Proxy for access control)
 - Railway provides network isolation
 - Session data encrypted in database
+- VNC services can be stopped from dashboard when not in use
 
-## Future Enhancements
+## Resource Management
 
-- [ ] Add VNC password authentication
-- [ ] Add session upload fallback (if VNC fails)
+**Image Size Savings**:
+- Removed noVNC: ~50MB
+- Removed Fluxbox: ~20MB
+- Total savings: ~70MB
+
+**Runtime Savings**:
+- 2 fewer processes (Fluxbox, noVNC)
+- Reduced browser flags = lower memory usage
+- On-demand lifecycle = VNC only runs when needed
 - [ ] Add VNC recording for debugging
 - [ ] Add multi-user support (separate VNC sessions)
 

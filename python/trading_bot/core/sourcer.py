@@ -442,21 +442,14 @@ class ChartSourcer:
                         os.environ['DISPLAY'] = display
                         self.logger.info(f"📺 Using DISPLAY={display} for VNC")
 
-                        # VNC-specific browser arguments - minimal flags to prevent crashes
+                        # VNC-specific browser arguments - MINIMAL flags for stability
+                        # Only essential flags - browser crashes with too many conflicting flags
                         vnc_args = [
                             f'--display={display}',
                             f'--window-size={self.tv_config.browser.vnc_window_size}',
-                            '--window-position=0,0',
-                            '--start-maximized',
-                            # Essential stability flags for Railway
-                            '--disable-dev-shm-usage',  # Critical for limited /dev/shm
-                            '--disable-gpu',  # No GPU on Railway
+                            '--disable-dev-shm-usage',  # Critical for limited /dev/shm in Docker
                             '--no-sandbox',  # Required for Docker
-                            '--disable-setuid-sandbox',
-                            '--no-first-run',
-                            '--no-default-browser-check',
-                            '--disable-infobars',
-                            '--disable-session-crashed-bubble',
+                            '--disable-gpu',  # No GPU on Railway
                         ]
                         browser_args.extend(vnc_args)
 

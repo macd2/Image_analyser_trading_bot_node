@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, CheckCircle, RefreshCw, AlertTriangle, Info } from 'lucide-react'
+import { X, CheckCircle, RefreshCw, AlertTriangle, Info, Power } from 'lucide-react'
 
 interface VncLoginModalProps {
   isOpen: boolean
@@ -19,6 +19,7 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm, loginState }
   const [vncUrl, setVncUrl] = useState('')
   const [loading, setLoading] = useState(true)
   const [confirming, setConfirming] = useState(false)
+  const [killingVnc, setKillingVnc] = useState(false)
 
   // Check VNC availability when modal opens
   useEffect(() => {
@@ -49,6 +50,30 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm, loginState }
       await onConfirm()
     } finally {
       setConfirming(false)
+    }
+  }
+
+  const handleKillVnc = async () => {
+    setKillingVnc(true)
+    try {
+      const response = await fetch('/api/vnc/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'stop' })
+      })
+      const data = await response.json()
+
+      if (data.success) {
+        alert('VNC services stopped successfully. Browser session closed.')
+        setVncAvailable(false)
+      } else {
+        alert(`Failed to stop VNC: ${data.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Failed to kill VNC:', error)
+      alert('Failed to stop VNC services. Check console for details.')
+    } finally {
+      setKillingVnc(false)
     }
   }
 
@@ -107,7 +132,7 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm, loginState }
                   <div className="text-sm text-blue-100">
                     <strong className="text-base block mb-2">Connect with VNC Client</strong>
                     <p className="mb-3">
-                      Use a VNC client (RealVNC, TigerVNC, TightVNC, or noVNC web client) to connect to the browser.
+                      Use a VNC client (RealVNC, TigerVNC, TightVNC) to connect to the browser.
                     </p>
 
                     <div className="bg-slate-900/50 rounded-lg p-3 mb-3">
@@ -133,6 +158,12 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm, loginState }
                       </ol>
                     </div>
 
+                     <div className="space-y-2">
+                       <p className="font-semibold">Option 2: Web Browser (noVNC) - Disabled</p>
+                       <p className="text-sm text-slate-400 italic">
+                         noVNC web proxy has been disabled for security reasons. Please use a desktop VNC client.
+                       </p>
+                     </div>
                     <div className="space-y-2">
                       <p className="font-semibold">Option 2: Web Browser (noVNC)</p>
                       <ol className="list-decimal list-inside space-y-1 ml-2">
@@ -161,13 +192,35 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm, loginState }
 
         {/* Footer */}
         <div className="flex items-center justify-between p-4 border-t border-slate-600">
-          <div className="text-sm text-slate-400">
-            {loginState.browser_opened && (
-              <span className="flex items-center gap-2 text-green-400">
-                <CheckCircle className="w-4 h-4" />
-                Browser opened - complete login above
-              </span>
+          <div className="flex items-center gap-3">
+            {vncAvailable && (
+              <button
+                onClick={handleKillVnc}
+                disabled={killingVnc || confirming}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+                title="Stop VNC services and close browser session"
+              >
+                {killingVnc ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Stopping...
+                  </>
+                ) : (
+                  <>
+                    <Power className="w-4 h-4" />
+                    Kill VNC
+                  </>
+                )}
+              </button>
             )}
+            <div className="text-sm text-slate-400">
+              {loginState.browser_opened && (
+                <span className="flex items-center gap-2 text-green-400">
+                  <CheckCircle className="w-4 h-4" />
+                  Browser opened - complete login above
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button

@@ -39,10 +39,9 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     libu2f-udev \
     libvulkan1 \
-    # VNC server dependencies
+    # VNC server dependencies (minimal - only Xvfb + x11vnc for login)
     xvfb \
     x11vnc \
-    fluxbox \
     supervisor \
     net-tools \
     && rm -rf /var/lib/apt/lists/* \
@@ -68,13 +67,6 @@ RUN python3 -m pip install --break-system-packages -r python/requirements.txt
 ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/playwright
 RUN python3 -m playwright install chromium --with-deps
 
-# Install noVNC for web-based VNC access
-RUN wget -qO- https://github.com/novnc/noVNC/archive/v1.4.0.tar.gz | tar xz -C /opt && \
-    mv /opt/noVNC-1.4.0 /opt/noVNC && \
-    ln -s /opt/noVNC/vnc.html /opt/noVNC/index.html && \
-    wget -qO- https://github.com/novnc/websockify/archive/v0.11.0.tar.gz | tar xz -C /opt && \
-    mv /opt/websockify-0.11.0 /opt/websockify
-
 # Copy all source code
 COPY . .
 
@@ -89,7 +81,7 @@ COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Expose ports
 EXPOSE 3000
-EXPOSE 6080
+# Note: Port 5900 (x11vnc) exposed via Railway TCP Proxy, not Docker EXPOSE
 
 # Set environment variables
 ENV NODE_ENV=production
