@@ -163,11 +163,19 @@ class ChartSourcer:
         return str(base_path / filename)
     
     def get_local_chart(self, symbol: str, timeframe: str = "1d") -> Optional[str]:
-        """Get chart image from local storage."""
-        pattern = f"{symbol}_{timeframe}_*.png"
-        matches = list(self.config_dir.glob(pattern))
+        """Get chart image from storage (local or cloud)."""
+        from trading_bot.core.storage import list_files, get_storage_type
+
+        # List all chart files
+        all_files = list_files('charts')
+
+        # Filter for matching pattern: SYMBOL_TIMEFRAME_*.png
+        pattern_prefix = f"{symbol}_{timeframe}_"
+        matches = [f for f in all_files if f.startswith(pattern_prefix) and f.endswith('.png')]
+
         if matches:
-            return str(matches[-1])  # Return most recent
+            # Return most recent (sorted by filename which includes timestamp)
+            return sorted(matches)[-1]
         return None
     
     def save_chart(self, image_data: bytes, symbol: str, timeframe: str) -> str:
@@ -236,8 +244,12 @@ class ChartSourcer:
         return self.save_chart(response.content, symbol, timeframe)
     
     def list_available_charts(self) -> List[str]:
-        """List all available chart images."""
-        return [str(p) for p in self.config_dir.glob("*.png")]
+        """List all available chart images from storage (local or cloud)."""
+        from trading_bot.core.storage import list_files
+
+        # List all PNG files in charts directory
+        all_files = list_files('charts')
+        return [f for f in all_files if f.endswith('.png')]
 
     def get_charts_for_current_boundary(self, timeframe: str) -> Dict[str, str]:
         """
@@ -251,6 +263,7 @@ class ChartSourcer:
             Dict mapping symbol names to chart paths for current boundary, or empty dict if none exist
         """
         from trading_bot.core.utils import align_timestamp_to_boundary
+        from trading_bot.core.storage import list_files
         from datetime import datetime, timezone
 
         try:
@@ -260,16 +273,22 @@ class ChartSourcer:
             boundary_timestamp = boundary_aligned_time.strftime("%Y%m%d_%H%M%S")
 
             # Look for charts with this boundary timestamp
-            pattern = f"*_{timeframe}_{boundary_timestamp}.png"
+            # Pattern: *_TIMEFRAME_TIMESTAMP.png
+            suffix = f"_{timeframe}_{boundary_timestamp}.png"
             matching_charts = {}
 
-            for chart_path in self.config_dir.glob(pattern):
-                # Extract symbol from filename (format: SYMBOL_TIMEFRAME_TIMESTAMP.png)
-                filename = chart_path.stem  # Remove .png
-                parts = filename.rsplit('_', 2)  # Split from right: symbol, timeframe, timestamp
-                if len(parts) >= 1:
-                    symbol = parts[0]
-                    matching_charts[symbol] = str(chart_path)
+            # List all chart files from storage
+            all_files = list_files('charts')
+
+            for filename in all_files:
+                if filename.endswith(suffix):
+                    # Extract symbol from filename (format: SYMBOL_TIMEFRAME_TIMESTAMP.png)
+                    # Remove .png extension
+                    name_without_ext = filename[:-4]
+                    parts = name_without_ext.rsplit('_', 2)  # Split from right: symbol, timeframe, timestamp
+                    if len(parts) >= 1:
+                        symbol = parts[0]
+                        matching_charts[symbol] = filename
 
             if matching_charts:
                 self.logger.info(f"✅ Found {len(matching_charts)} charts for current {timeframe} boundary ({boundary_timestamp})")

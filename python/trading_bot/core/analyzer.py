@@ -657,20 +657,27 @@ class ChartAnalyzer:
                 )
                 if not validation_result.is_valid:
                     from pathlib import Path
-                    import os
+                    from trading_bot.core.storage import delete_file, get_storage_type
+
                     symbol = Path(image_path).stem.split('_')[0].upper()
                     print(f"🗑️  DELETING {symbol}: Timestamp validation failed - recommendation expired")
                     print(f"   Extracted timestamp: {extracted_timestamp}")
                     print(f"   Timeframe: {normalized_timeframe}")
                     print(f"   Validation error: {validation_result.error_message}")
 
-                    # Delete the expired file
+                    # Delete the expired file using centralized storage layer
                     try:
-                        if os.path.exists(image_path):
-                            os.remove(image_path)
-                            print(f"✅ Deleted expired file: {Path(image_path).name}")
+                        # Extract filename from path for storage layer
+                        filename = Path(image_path).name
+                        storage_type = get_storage_type()
+
+                        # Use centralized delete_file function
+                        result = delete_file(filename)
+
+                        if result.get('success'):
+                            print(f"✅ Deleted expired file: {filename} (storage: {storage_type})")
                         else:
-                            print(f"⚠️  File already deleted: {Path(image_path).name}")
+                            print(f"❌ Failed to delete {filename}: {result.get('error', 'Unknown error')}")
                     except Exception as delete_error:
                         print(f"❌ Failed to delete {Path(image_path).name}: {delete_error}")
 

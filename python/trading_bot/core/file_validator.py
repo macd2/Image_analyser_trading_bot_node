@@ -325,7 +325,21 @@ class FileValidator:
                 result["destination"] = destination
                 
             elif operation == 'delete':
-                os.remove(file_path)
+                # Check if this is a chart file (in data/charts directory)
+                # If so, use centralized storage layer
+                file_path_obj = Path(file_path)
+                if 'charts' in file_path_obj.parts:
+                    from trading_bot.core.storage import delete_file, get_storage_type
+
+                    # Extract filename for storage layer
+                    filename = file_path_obj.name
+                    storage_result = delete_file(filename)
+
+                    if not storage_result.get('success'):
+                        raise Exception(storage_result.get('error', 'Delete failed'))
+                else:
+                    # For non-chart files, use direct file system operation
+                    os.remove(file_path)
             
             else:
                 result["error"] = f"Unknown operation: {operation}"

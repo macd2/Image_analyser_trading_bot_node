@@ -1,10 +1,10 @@
 /**
- * Chart Image API - Serves chart images from charts folder or .backup folder
+ * Chart Image API - Serves chart images from storage (local or Supabase)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
 import path from 'path';
+import { readFile, fileExists, getStorageType } from '@/lib/storage';
 
 export async function GET(req: NextRequest) {
   try {
@@ -15,47 +15,53 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Chart path required' }, { status: 400 });
     }
 
-    // Base directory - chart_path in DB is like "data/charts/SYMBOL_1h_DATE.png"
-    const dataDir = path.join(process.cwd(), 'data');
+    const storageType = getStorageType();
+    console.log(`[Chart Image API] Fetching chart: ${chartPath} (storage: ${storageType})`);
 
-    // Remove leading "trading_bot/" or "data/" if present, then build full path
-    const normalizedPath = chartPath.replace(/^(trading_bot\/data|data)\//, '');
-    const fullPath = path.join(dataDir, normalizedPath);
+    // Normalize path - remove leading "trading_bot/data/" or "data/" if present
+    let normalizedPath = chartPath.replace(/^(trading_bot\/data\/|data\/)/, '');
 
-    // Extract just the filename for .backup lookup
+    // Extract just the filename
     const filename = path.basename(chartPath);
-    const chartsDir = path.join(dataDir, 'charts');
 
-    // Try multiple possible paths
+    // Try multiple possible paths (in order of preference)
     const possiblePaths = [
-      // Original path from database
-      fullPath,
-      // .backup folder (direct)
-      path.join(chartsDir, '.backup', filename),
-      // Current charts folder
-      path.join(chartsDir, filename),
+      // Original path (e.g., "charts/SYMBOL_1h_DATE.png")
+      normalizedPath,
+      // Just filename in charts folder
+      `charts/${filename}`,
+      // .backup folder
+      `charts/.backup/${filename}`,
     ];
 
-    let imagePath: string | null = null;
+    let imageBuffer: Buffer | null = null;
+    let foundPath: string | null = null;
+
+    // Try each path until we find the file
     for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        imagePath = p;
-        break;
+      const exists = await fileExists(p);
+      if (exists) {
+        imageBuffer = await readFile(p);
+        if (imageBuffer) {
+          foundPath = p;
+          break;
+        }
       }
     }
 
-    if (!imagePath) {
+    if (!imageBuffer || !foundPath) {
+      console.error(`[Chart Image API] Chart not found: ${chartPath}`);
       return NextResponse.json({
         error: 'Chart image not found',
-        tried: possiblePaths.map(p => p.replace(dataDir, ''))
+        tried: possiblePaths,
+        storageType
       }, { status: 404 });
     }
 
-    // Read the image file
-    const imageBuffer = fs.readFileSync(imagePath);
-    
+    console.log(`[Chart Image API] Found chart at: ${foundPath}`);
+
     // Determine content type based on extension
-    const ext = path.extname(imagePath).toLowerCase();
+    const ext = path.extname(foundPath).toLowerCase();
     const contentType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
 
     // Return image with proper headers
