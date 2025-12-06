@@ -3322,9 +3322,13 @@ class ChartSourcer:
             await self.page.goto(tv_url, timeout=30000)
             await self.page.wait_for_load_state('domcontentloaded')
 
-            # Mark browser as opened
-            set_browser_opened()
-            self.logger.info("📺 Browser opened for manual login - waiting for dashboard confirmation")
+            # Mark browser as opened ONLY if NOT in VNC mode
+            # In VNC mode, browser is not visible to user - they need to click "Open Browser Login" in dashboard
+            if not self.tv_config.browser.use_vnc:
+                set_browser_opened()
+                self.logger.info("📺 Browser opened for manual login - waiting for dashboard confirmation")
+            else:
+                self.logger.info("🖥️ VNC mode: Browser ready - user must click 'Open Browser Login' in dashboard")
 
             # Poll for dashboard confirmation (max 5 minutes)
             max_wait_seconds = 300
