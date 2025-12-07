@@ -25,6 +25,23 @@ export async function POST(request: NextRequest) {
     // Note: Fluxbox and noVNC removed - only essential services
     switch (action) {
       case 'start':
+        // Generate VNC password file if VNC_PASSWORD is set
+        const vncPassword = process.env.VNC_PASSWORD;
+        if (vncPassword) {
+          try {
+            // Use x11vnc's storepasswd to create encrypted password file
+            // Format: echo "password" | x11vnc -storepasswd /tmp/vnc_passwd -
+            execSync(`echo "${vncPassword}" | x11vnc -storepasswd /tmp/vnc_passwd -`, {
+              stdio: 'pipe'
+            });
+            console.log('[VNC] Password file created at /tmp/vnc_passwd');
+          } catch (e) {
+            console.warn('[VNC] Failed to create password file:', e);
+            // Continue anyway - VNC will start without password
+          }
+        } else {
+          console.log('[VNC] VNC_PASSWORD not set - VNC will start without password');
+        }
         command = 'supervisorctl start xvfb x11vnc';
         successMessage = 'VNC services started successfully';
         break;

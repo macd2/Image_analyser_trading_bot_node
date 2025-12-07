@@ -173,8 +173,14 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
                 <p className="font-mono text-base text-white">
                   Check Railway TCP Proxy settings for connection details
                 </p>
-                <p className="font-mono text-xs text-slate-400 mt-1">
+                <p className="font-mono text-xs text-slate-400 mt-2">
                   Default port: 5900 (x11vnc)
+                </p>
+                <p className="font-mono text-xs text-amber-400 mt-3 font-semibold">
+                  ⚠️ VNC Password: Check your environment VNC_PASSWORD setting
+                </p>
+                <p className="font-mono text-xs text-slate-300 mt-1">
+                  If VNC_PASSWORD is set in .env, use it to connect. Otherwise, no password is required.
                 </p>
               </div>
             )}
