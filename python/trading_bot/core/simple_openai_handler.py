@@ -76,7 +76,7 @@ class SimpleOpenAIAssistantHandler:
         """Upload an image file to OpenAI and return the file ID.
 
         Args:
-            image_path: Path to image file
+            image_path: Path to image file (can be storage path or local temp file)
 
         Returns:
             File ID string
@@ -84,18 +84,33 @@ class SimpleOpenAIAssistantHandler:
         try:
             from trading_bot.core.storage import read_file
             import io
+            from pathlib import Path
 
-            # Read file from storage (supports both local and Supabase)
-            image_data = read_file(image_path)
-            if image_data is None:
-                raise FileNotFoundError(f"Image not found: {image_path}")
+            # Check if this is a temporary file (starts with /tmp or contains tempfile pattern)
+            is_temp_file = image_path.startswith('/tmp') or 'tmp' in image_path.lower()
 
-            # Create a file-like object from bytes
+            if is_temp_file:
+                # For temporary files, read directly from filesystem
+                with open(image_path, 'rb') as f:
+                    image_data = f.read()
+            else:
+                # For storage paths, use centralized storage layer
+                image_data = read_file(image_path)
+                if image_data is None:
+                    raise FileNotFoundError(f"Image not found in storage: {image_path}")
+
+            # Extract filename from path to preserve extension
+            filename = Path(image_path).name
+
+            # Create a file-like object from bytes with a name attribute
+            file_like = io.BytesIO(image_data)
+            file_like.name = filename  # OpenAI needs this to detect file type
+
             file_obj = self.client.files.create(
-                file=io.BytesIO(image_data),
+                file=file_like,
                 purpose="vision"
             )
-            self.logger.debug(f"Uploaded file: {file_obj.id}")
+            self.logger.debug(f"Uploaded file: {file_obj.id} (filename: {filename})")
             return file_obj.id
         except Exception as e:
             self.logger.error(f"Failed to upload file {image_path}: {e}")
