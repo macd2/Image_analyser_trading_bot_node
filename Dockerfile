@@ -85,7 +85,7 @@ EXPOSE 3000
 
 # Set environment variables
 ENV NODE_ENV=production
-ENV PORT=3000
+# PORT is set by Railway - don't hardcode it here
 ENV DISPLAY=:99
 
 # Start all services via supervisor
