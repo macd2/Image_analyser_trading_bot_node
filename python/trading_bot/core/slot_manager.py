@@ -12,6 +12,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional, Tuple
 from trading_bot.core.utils import count_open_positions_and_orders
+from trading_bot.db.client import query, get_connection
 
 
 class SlotManager:
@@ -25,7 +26,7 @@ class SlotManager:
     - Available slots: max_concurrent_trades - occupied_slots
     """
 
-    def __init__(self, trader, data_agent, config):
+    def __init__(self, trader, data_agent, config, paper_trading: bool = False, instance_id: Optional[str] = None):
         """
         Initialize SlotManager with required dependencies.
 
@@ -33,10 +34,14 @@ class SlotManager:
             trader: TradeExecutor instance for API access
             data_agent: DataAgent instance for database access
             config: Configuration object with trading settings
+            paper_trading: Whether in paper trading mode (uses database for position checks)
+            instance_id: Instance ID for filtering database queries in paper trading mode
         """
         self.trader = trader
         self.data_agent = data_agent
         self.config = config
+        self.paper_trading = paper_trading
+        self.instance_id = instance_id
         self.logger = logging.getLogger(__name__)
 
         # Get max concurrent trades from config
@@ -45,11 +50,16 @@ class SlotManager:
         self.max_concurrent_trades = getattr(config.trading, 'max_concurrent_trades')
         if self.max_concurrent_trades is None:
             raise ValueError("max_concurrent_trades is None in config.trading - check config.yaml")
-        self.logger.info(f"Initialized SlotManager with max_concurrent_trades: {self.max_concurrent_trades}")
+
+        mode_str = "paper trading (DB-based)" if paper_trading else "live trading (API-based)"
+        self.logger.info(f"Initialized SlotManager with max_concurrent_trades: {self.max_concurrent_trades} ({mode_str})")
 
     def get_current_slot_status(self) -> Dict[str, Any]:
         """
         Get comprehensive current slot status using unified counting logic.
+
+        In paper trading mode: Uses database to count open positions for this instance.
+        In live trading mode: Uses API to count open positions.
 
         Returns:
             Dict with detailed slot status:
@@ -62,13 +72,19 @@ class SlotManager:
             - slot_breakdown: Detailed breakdown of slot usage
         """
         try:
-            # Use the centralized counting function for consistency
-            count_result = count_open_positions_and_orders(trader=self.trader)
-
-            # Extract counts
-            open_positions = count_result.get('active_positions_count',0)
-            entry_orders = count_result.get('open_entry_orders_count',0)
-            tp_sl_orders = count_result.get('take_profit_orders',0) + count_result.get('stop_loss_orders',0)
+            if self.paper_trading:
+                # Paper trading mode: Use database to count open positions
+                open_positions = self._get_db_open_positions_count()
+                entry_orders = 0  # In paper trading, we don't have pending orders
+                tp_sl_orders = 0
+                self.logger.debug(f"[Paper Trading] DB-based position count: {open_positions}")
+            else:
+                # Live trading mode: Use API to count positions and orders
+                count_result = count_open_positions_and_orders(trader=self.trader)
+                open_positions = count_result.get('active_positions_count', 0)
+                entry_orders = count_result.get('open_entry_orders_count', 0)
+                tp_sl_orders = count_result.get('take_profit_orders', 0) + count_result.get('stop_loss_orders', 0)
+                self.logger.debug(f"[Live Trading] API-based counts: positions={open_positions}, orders={entry_orders}")
 
             # Calculate slot usage - BOTH positions AND entry orders consume slots
             occupied_slots = open_positions + entry_orders
@@ -244,6 +260,9 @@ class SlotManager:
         """
         Check if a symbol already has an open position.
 
+        In paper trading mode: Checks database for open positions for this instance.
+        In live trading mode: Checks API for open positions.
+
         Args:
             symbol: Trading symbol to check
 
@@ -251,8 +270,17 @@ class SlotManager:
             True if symbol has open position, False otherwise
         """
         try:
-            # Use the trader's position checking method
-            return self.trader.has_open_position(symbol)
+            if self.paper_trading:
+                # Paper trading mode: Check database
+                positions = self._get_db_open_positions()
+                has_position = any(p['symbol'] == symbol for p in positions)
+                self.logger.debug(f"[Paper Trading] DB check for {symbol}: {has_position}")
+                return has_position
+            else:
+                # Live trading mode: Check API
+                has_position = self.trader.has_open_position(symbol)
+                self.logger.debug(f"[Live Trading] API check for {symbol}: {has_position}")
+                return has_position
         except Exception as e:
             self.logger.error(f"Error checking position for {symbol}: {e}")
             return False
@@ -320,3 +348,52 @@ class SlotManager:
                 "slot_pressure": "unknown",
                 "error": str(e)
             }
+
+    def _get_db_open_positions(self) -> List[Dict[str, Any]]:
+        """
+        Query database for open positions for this instance (paper trading only).
+        Uses centralized database layer to respect DB_TYPE environment variable.
+
+        Returns:
+            List of open position records with symbol, side, status
+        """
+        if not self.instance_id:
+            self.logger.warning("No instance_id provided - cannot query database positions")
+            return []
+
+        try:
+            conn = get_connection()
+
+            # Query for open dry-run positions for this instance
+            # Open positions: status IN ('filled', 'partially_filled', 'paper_trade') AND pnl IS NULL
+            results = query(conn, """
+                SELECT DISTINCT t.symbol, t.side, t.status, t.id
+                FROM trades t
+                JOIN cycles c ON t.cycle_id = c.id
+                JOIN runs r ON c.run_id = r.id
+                WHERE r.instance_id = ?
+                  AND t.dry_run = 1
+                  AND t.status IN ('filled', 'partially_filled', 'paper_trade')
+                  AND t.pnl IS NULL
+            """, (self.instance_id,))
+
+            positions = [dict(row.items()) for row in results]
+            self.logger.debug(f"[DB Query] Found {len(positions)} open positions for instance {self.instance_id}")
+
+            conn.close()
+            return positions
+
+        except Exception as e:
+            self.logger.error(f"Error querying database for open positions: {e}")
+            return []
+
+    def _get_db_open_positions_count(self) -> int:
+        """
+        Get count of open positions from database (paper trading only).
+        Uses centralized database layer to respect DB_TYPE environment variable.
+
+        Returns:
+            Number of open positions for this instance
+        """
+        positions = self._get_db_open_positions()
+        return len(positions)

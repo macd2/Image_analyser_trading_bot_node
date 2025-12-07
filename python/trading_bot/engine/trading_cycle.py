@@ -66,6 +66,8 @@ class TradingCycle:
         testnet: bool = False,
         run_id: Optional[str] = None,
         prompt_name: Optional[str] = None,
+        paper_trading: bool = False,
+        instance_id: Optional[str] = None,
     ):
         """
         Initialize trading cycle.
@@ -76,12 +78,16 @@ class TradingCycle:
             testnet: Use testnet if True
             run_id: Parent run UUID for audit trail
             prompt_name: Name of the prompt function to use for analysis
+            paper_trading: Whether in paper trading mode (for database-based position checks)
+            instance_id: Instance ID for filtering database queries in paper trading mode
         """
         self.config = config or Config.load()
         self.testnet = testnet
         self.execute_signal = execute_signal_callback
         self.run_id = run_id  # Track parent run for audit trail
         self.prompt_name = prompt_name  # Instance-level prompt selection
+        self.paper_trading = paper_trading
+        self.instance_id = instance_id
 
         # Database
         self._db = get_connection()
@@ -464,7 +470,9 @@ class TradingCycle:
                 slot_manager = SlotManager(
                     trader=order_executor,  # OrderExecutor has get_positions() and get_open_orders()
                     data_agent=self._db,    # Use database connection for data access
-                    config=self.config
+                    config=self.config,
+                    paper_trading=self.paper_trading,
+                    instance_id=self.instance_id
                 )
                 available_slots, slot_details = slot_manager.get_available_order_slots()
                 logger.info(f"📊 SlotManager integration: {available_slots}/{max_trades} slots available")

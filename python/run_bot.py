@@ -129,6 +129,8 @@ class TradingBot:
             testnet=self.testnet,
             run_id=self.run_id,  # Pass run_id for audit trail
             prompt_name=self.instance_prompt_name,  # Pass instance prompt
+            paper_trading=self.paper_trading,  # Pass paper trading mode
+            instance_id=self.instance_id,  # Pass instance ID for DB queries
         )
 
         # Enhanced position monitor for stop-loss tightening, TP proximity, age-based features
