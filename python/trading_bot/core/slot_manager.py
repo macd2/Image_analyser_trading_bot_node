@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional, Tuple
 from trading_bot.core.utils import count_open_positions_and_orders
-from trading_bot.db.client import query, get_connection, DB_TYPE
+from trading_bot.db.client import query, get_connection, DB_TYPE, get_boolean_comparison
 
 
 class SlotManager:
@@ -366,13 +366,16 @@ class SlotManager:
 
             # Query for open dry-run positions for this instance
             # Open positions: status IN ('filled', 'partially_filled', 'paper_trade') AND pnl IS NULL
-            results = query(conn, """
+            # Use database-agnostic boolean comparison
+            dry_run_check = get_boolean_comparison('t.dry_run', True)
+
+            results = query(conn, f"""
                 SELECT DISTINCT t.symbol, t.side, t.status, t.id
                 FROM trades t
                 JOIN cycles c ON t.cycle_id = c.id
                 JOIN runs r ON c.run_id = r.id
                 WHERE r.instance_id = ?
-                  AND (t.dry_run = TRUE OR t.dry_run = 1)
+                  AND {dry_run_check}
                   AND t.status IN ('filled', 'partially_filled', 'paper_trade')
                   AND t.pnl IS NULL
             """, (self.instance_id,))

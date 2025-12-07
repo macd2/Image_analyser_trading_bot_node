@@ -57,7 +57,7 @@ import json
 
 from trading_bot.engine.order_executor import OrderExecutor
 from trading_bot.config.settings_v2 import ConfigV2
-from trading_bot.db.client import get_connection, query_one, query, DB_TYPE
+from trading_bot.db.client import get_connection, query_one, query, DB_TYPE, get_boolean_comparison
 
 try:
     import sys
@@ -73,10 +73,8 @@ try:
     else:
         # Try to get first active instance
         conn = get_connection()
-        if DB_TYPE == 'postgres':
-            first_instance = query_one(conn, "SELECT id, settings FROM instances WHERE is_active = 1 LIMIT 1", ())
-        else:
-            first_instance = query_one(conn, "SELECT id, settings FROM instances WHERE is_active = 1 LIMIT 1", ())
+        is_active_check = get_boolean_comparison('is_active', True)
+        first_instance = query_one(conn, f"SELECT id, settings FROM instances WHERE {is_active_check} LIMIT 1", ())
         conn.close()
 
         if first_instance:
@@ -98,17 +96,19 @@ try:
     if is_paper_trading:
         # In paper trading mode, get positions from database
         conn = get_connection()
+        dry_run_check = get_boolean_comparison('dry_run', True)
+
         if DB_TYPE == 'postgres':
-            positions_rows = query(conn, """
+            positions_rows = query(conn, f"""
                 SELECT symbol, side, entry_price, stop_loss, take_profit, quantity
                 FROM trades
-                WHERE instance_id = %s AND status = 'open' AND dry_run = 1
+                WHERE instance_id = %s AND status = 'open' AND {dry_run_check}
             """, (instance_id,))
         else:
-            positions_rows = query(conn, """
+            positions_rows = query(conn, f"""
                 SELECT symbol, side, entry_price, stop_loss, take_profit, quantity
                 FROM trades
-                WHERE instance_id = ? AND status = 'open' AND dry_run = 1
+                WHERE instance_id = ? AND status = 'open' AND {dry_run_check}
             """, (instance_id,))
         conn.close()
 

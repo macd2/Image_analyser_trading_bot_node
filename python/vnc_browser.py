@@ -16,7 +16,7 @@ from datetime import datetime
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from trading_bot.db.client import get_connection, execute
+from trading_bot.db.client import get_connection, execute, query_one, get_boolean_comparison, get_boolean_value, DB_TYPE
 
 
 class InteractiveBrowser:
@@ -39,15 +39,12 @@ class InteractiveBrowser:
         print("="*60 + "\n")
 
         from trading_bot.config.settings_v2 import ConfigV2
-        from trading_bot.db.client import get_connection, query_one, DB_TYPE
         from playwright.async_api import async_playwright
 
         # Get first active instance
         conn = get_connection()
-        if DB_TYPE == 'postgres':
-            first_instance = query_one(conn, "SELECT id FROM instances WHERE is_active = 1 LIMIT 1", ())
-        else:
-            first_instance = query_one(conn, "SELECT id FROM instances WHERE is_active = 1 LIMIT 1", ())
+        is_active_check = get_boolean_comparison('is_active', True)
+        first_instance = query_one(conn, f"SELECT id FROM instances WHERE {is_active_check} LIMIT 1", ())
         conn.close()
 
         if not first_instance:
@@ -239,12 +236,14 @@ class InteractiveBrowser:
             """)
 
             # Invalidate old sessions for this user
-            execute(conn, "UPDATE sessions SET is_valid = 0 WHERE username = ?", (username,))
+            is_valid_false = get_boolean_value(False)
+            is_valid_true = get_boolean_value(True)
+            execute(conn, f"UPDATE sessions SET is_valid = {is_valid_false} WHERE username = ?", (username,))
 
             # Insert new session
-            execute(conn, """
+            execute(conn, f"""
                 INSERT INTO sessions (username, encrypted_data, is_valid)
-                VALUES (?, ?, 1)
+                VALUES (?, ?, {is_valid_true})
             """, (username, encrypted))
 
             conn.commit()

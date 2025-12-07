@@ -18,6 +18,8 @@ sys.path.insert(0, str(project_root / 'python'))
 from dotenv import load_dotenv
 load_dotenv('.env.local')
 
+from trading_bot.db.client import get_boolean_comparison
+
 from trading_bot.db.client import get_connection, query_one, query, DB_TYPE
 from trading_bot.core.secrets_manager import SecretsManager
 
@@ -117,18 +119,20 @@ async def test_session_loading():
     # Query for specific user's session
     print(f"\n5. Query for User '{username}':")
     try:
+        is_valid_check = get_boolean_comparison('is_valid', True)
+
         if DB_TYPE == 'postgres':
-            row = query_one(conn, """
+            row = query_one(conn, f"""
                 SELECT id, username, created_at, is_valid, encrypted_data
                 FROM tradingview_sessions
-                WHERE username = ? AND is_valid = true
+                WHERE username = ? AND {is_valid_check}
                 ORDER BY created_at DESC LIMIT 1
             """, (username,))
         else:
-            row = query_one(conn, """
+            row = query_one(conn, f"""
                 SELECT id, username, created_at, is_valid, encrypted_data
                 FROM sessions
-                WHERE username = ? AND is_valid = 1
+                WHERE username = ? AND {is_valid_check}
                 ORDER BY created_at DESC LIMIT 1
             """, (username,))
         

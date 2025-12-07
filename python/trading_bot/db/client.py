@@ -94,6 +94,50 @@ class UnifiedRow:
         return bool(self._dict)
 
 
+def get_boolean_value(value: bool) -> Union[bool, int]:
+    """
+    Get the correct boolean value for the current database type.
+
+    SQLite: Returns 1 for True, 0 for False
+    PostgreSQL: Returns True/False
+
+    Args:
+        value: Boolean value to convert
+
+    Returns:
+        Database-appropriate boolean value
+    """
+    if DB_TYPE == 'postgres':
+        return value
+    else:
+        return 1 if value else 0
+
+
+def get_boolean_comparison(column: str, value: bool) -> str:
+    """
+    Get SQL expression for boolean comparison that works with both SQLite and PostgreSQL.
+
+    SQLite: column = 0 or column = 1
+    PostgreSQL: column = false or column = true
+
+    Args:
+        column: Column name to compare
+        value: Boolean value to compare against
+
+    Returns:
+        SQL comparison expression
+
+    Example:
+        get_boolean_comparison('dry_run', True) returns:
+        - PostgreSQL: "dry_run = true"
+        - SQLite: "dry_run = 1"
+    """
+    if DB_TYPE == 'postgres':
+        return f"{column} = {str(value).lower()}"
+    else:
+        return f"{column} = {1 if value else 0}"
+
+
 def get_db_path() -> Path:
     """Get the path to trading.db, creating directory if needed."""
     db_path = Path(DB_PATH) if isinstance(DB_PATH, str) else DB_PATH

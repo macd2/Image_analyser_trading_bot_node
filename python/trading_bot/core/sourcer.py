@@ -12,7 +12,7 @@ from typing import List, Optional, Dict, Any
 
 import requests
 from trading_bot.core.secrets_manager import get_tradingview_email
-from trading_bot.db.client import get_connection, query_one, execute, DB_TYPE
+from trading_bot.db.client import get_connection, query_one, execute, DB_TYPE, get_boolean_comparison, get_boolean_value
 
 # Realistic user agents for stealth - rotated randomly
 # These match real Chrome on Windows 10/11 installations
@@ -1447,10 +1447,11 @@ class ChartSourcer:
                     return None
 
                 # Get most recent valid session
-                self.logger.debug(f"🔍 Querying for session: username={username}, is_valid=1")
-                row = query_one(conn, """
+                is_valid_check = get_boolean_comparison('is_valid', True)
+                self.logger.debug(f"🔍 Querying for session: username={username}, is_valid=true")
+                row = query_one(conn, f"""
                     SELECT encrypted_data FROM sessions
-                    WHERE username = ? AND is_valid = 1
+                    WHERE username = ? AND {is_valid_check}
                     ORDER BY created_at DESC LIMIT 1
                 """, (username,))
 
@@ -1546,12 +1547,14 @@ class ChartSourcer:
                 """)
 
                 # Invalidate old sessions for this user
-                execute(conn, "UPDATE sessions SET is_valid = 0 WHERE username = ?", (username,))
+                is_valid_false = get_boolean_value(False)
+                is_valid_true = get_boolean_value(True)
+                execute(conn, f"UPDATE sessions SET is_valid = {is_valid_false} WHERE username = ?", (username,))
 
                 # Insert new session
-                execute(conn, """
+                execute(conn, f"""
                     INSERT INTO sessions (username, encrypted_data, is_valid)
-                    VALUES (?, ?, 1)
+                    VALUES (?, ?, {is_valid_true})
                 """, (username, encrypted))
 
             conn.commit()
