@@ -21,27 +21,27 @@ _sync_interval = 3  # Default sync every 1 second (more aggressive)
 def calculate_risk_reward_ratio(entry_price: float, take_profit: float, stop_loss: float, direction: str) -> float:
     """
     Calculate risk-reward ratio for a trade.
-    
+
     Args:
         entry_price: Entry price for the trade
         take_profit: Take profit price
         stop_loss: Stop loss price
         direction: Trade direction ('LONG', 'BUY', 'SHORT', 'SELL')
-        
+
     Returns:
         Risk-reward ratio (profit distance / loss distance)
     """
     if entry_price <= 0 or take_profit <= 0 or stop_loss <= 0:
         return 0.0
-    
+
     direction_upper = direction.upper()
-    
+
     if direction_upper in ['LONG', 'BUY']:
         profit_distance = abs(take_profit - entry_price)
         loss_distance = abs(entry_price - stop_loss)
     else:  # SHORT/SELL
         profit_distance = abs(entry_price - take_profit)
-        loss_distance = abs(take_profit - entry_price)
+        loss_distance = abs(stop_loss - entry_price)  # Fixed: was using take_profit instead of stop_loss
     
     if loss_distance <= 0:
         return 0.0
