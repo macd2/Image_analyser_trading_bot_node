@@ -280,12 +280,12 @@ class ChartSourcer:
 
             for filename in all_files:
                 if filename.endswith(suffix):
-                    # Extract symbol from filename (format: SYMBOL_TIMEFRAME_TIMESTAMP.png)
+                    # Extract symbol from filename (format: SYMBOL_TIMEFRAME_YYYYMMDD_HHMMSS.png)
                     # Remove .png extension
                     name_without_ext = filename[:-4]
-                    parts = name_without_ext.rsplit('_', 2)  # Split from right: symbol, timeframe, timestamp
-                    if len(parts) >= 1:
-                        symbol = parts[0]
+                    parts = name_without_ext.rsplit('_', 3)  # Split from right: symbol, timeframe, date, time
+                    if len(parts) >= 4:
+                        symbol = parts[0]  # First part is the symbol (e.g., CAKEUSDT)
                         # Return full path with charts/ prefix for consistency with storage layer
                         matching_charts[symbol] = f"charts/{filename}"
 
