@@ -2861,6 +2861,12 @@ class ChartSourcer:
                     self.logger.warning("🔒 Login required - switching to manual login")
                     if await self._handle_manual_login():
                         self.logger.info("✅ Manual login successful - retrying watchlist")
+
+                        # Browser was closed after manual login to free resources
+                        # Reinitialize browser session in headless mode with saved session
+                        self.logger.info("🔄 Reinitializing browser session in headless mode...")
+                        await self.setup_browser_session()
+
                         # Navigate back to chart and retry
                         chart_url = target_chart or "https://www.tradingview.com/chart/"
                         await self.page.goto(chart_url, timeout=30000)

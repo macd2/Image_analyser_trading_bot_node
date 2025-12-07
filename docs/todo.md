@@ -40,6 +40,42 @@
 2025-12-06 12:19:07 | INFO | trading_bot.core.sourcer | 🔄 Switching to visible browser mode for manual login
 
 
-[ ] After Railway redeploys, visit: https://imageanalysertradingbotnode-production.up.railway.app/api/vnc/test
-make sure to dissable the test endpoint
+[ ]   restore sourcer vnc settings 
+
+                        '--start-maximized',  # Start browser maximized
+                            '--kiosk',  # Fullscreen mode for VNC
+                            '--app-window',  # App window mode
+                            '--window-position=0,0',  # Position at top-left
+                            # Critical flags for Linux server compatibility
+                            '--disable-dev-shm-usage',  # Overcome limited resource problems
+                            '--disable-accelerated-2d-canvas',  # Disable accelerated 2D canvas
+                            '--no-first-run',  # Skip first run experience
+                            '--disable-default-apps',  # Disable default apps
+                            '--disable-extensions',  # Disable extensions for stability
+                            '--disable-plugins',  # Disable plugins
+                            '--disable-images',  # Disable images to speed up loading
+                            '--disable-javascript-harmony',  # Disable experimental JS features
+                            '--disable-background-networking',  # Disable background networking
+                            '--disable-sync',  # Disable sync
+                            '--disable-translate',  # Disable translate
+                            '--hide-scrollbars',  # Hide scrollbars
+                            '--metrics-recording-only',  # Minimal metrics
+                            '--mute-audio',  # Mute audio
+                            '--no-default-browser-check',  # Skip default browser check
+                            '--disable-component-extensions-with-background-pages',  # Disable background extensions
+                            '--disable-features=VizDisplayCompositor',  # Disable display compositor
+                            '--disable-accelerated-video-decode',  # Disable accelerated video
+                            '--disable-gpu-compositing',  # Disable GPU compositing
+                            '--disable-gpu-rasterization',  # Disable GPU rasterization
+                            '--disable-background-media-download',  # Disable background media
+                            '--disable-print-preview',  # Disable print preview
+                            '--disable-component-update',  # Disable component updates
+                            # Add flags for better stability on Linux servers
+                            '--disable-web-security',  # Allow cross-origin requests
+                            '--allow-running-insecure-content',  # Allow insecure content
+                            '--ignore-certificate-errors',  # Ignore SSL errors
+                            '--ignore-ssl-errors',  # Ignore SSL errors
+                            '--ignore-certificate-errors-spki-list',  # Ignore SPKI list
+                            '--ignore-ssl-errors-ignore-untrusted',  # Ignore untrusted SSL
+
 
