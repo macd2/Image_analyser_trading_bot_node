@@ -38,10 +38,23 @@ class InteractiveBrowser:
         print("   - NO screenshots are taken (browser is visible)")
         print("="*60 + "\n")
 
-        from trading_bot.config.settings_v2 import load_config
+        from trading_bot.config.settings_v2 import ConfigV2
+        from trading_bot.db.client import get_connection, query_one, DB_TYPE
         from playwright.async_api import async_playwright
 
-        config = load_config()
+        # Get first active instance
+        conn = get_connection()
+        if DB_TYPE == 'postgres':
+            first_instance = query_one(conn, "SELECT id FROM instances WHERE is_active = 1 LIMIT 1", ())
+        else:
+            first_instance = query_one(conn, "SELECT id FROM instances WHERE is_active = 1 LIMIT 1", ())
+        conn.close()
+
+        if not first_instance:
+            raise Exception("No active instance found. Please create and activate an instance in the dashboard.")
+
+        instance_id = first_instance.get('id') if isinstance(first_instance, dict) else first_instance[0]
+        config = ConfigV2.from_instance(instance_id)
         self.tv_config = config.tradingview
 
         try:
