@@ -37,12 +37,18 @@ from trading_bot.db.init_trading_db import init_database, get_connection
 from trading_bot.db.client import execute, query, query_one
 
 # Configure logging
+# Force unbuffered output to ensure logs appear immediately in Railway/Docker
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stderr,  # Explicitly use stderr
+    force=True,  # Override any existing configuration
 )
 logger = logging.getLogger(__name__)
+
+# Ensure stderr is unbuffered for immediate log visibility
+sys.stderr.reconfigure(line_buffering=True)
 
 
 class TradingBot:
@@ -375,8 +381,12 @@ class TradingBot:
                     logger.info(f"⏳ Waiting for next cycle: {progress_percent:.0f}% | Remaining: {remaining_minutes:.1f} minutes ({wait_seconds:.0f}s)")
                     last_progress_milestone = current_milestone
 
+            # Log why we exited the wait loop
             if not self._running:
+                logger.info("⏹️ Bot stopped during wait - exiting loop")
                 break
+            else:
+                logger.info(f"✅ Wait loop completed - wait_seconds={wait_seconds:.2f}, _running={self._running}")
 
             # Emit waiting end event
             emitter.emit_waiting_end(total_wait_seconds)
@@ -385,14 +395,22 @@ class TradingBot:
             logger.info(f"\n{'='*60}")
             logger.info(f"⏰ BOUNDARY REACHED - WAKING UP!")
             logger.info(f"   Current time: {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC")
+            logger.info(f"   Timeframe: {timeframe}")
             logger.info(f"   Starting trading cycle...")
             logger.info(f"{'='*60}\n")
 
+            # Flush logs to ensure they appear immediately
+            sys.stderr.flush()
+
             # Run trading cycle
             try:
+                logger.info("🔄 Calling trading_cycle.run_cycle_async()...")
                 await self.trading_cycle.run_cycle_async()
+                logger.info("✅ Trading cycle completed successfully")
             except Exception as e:
-                logger.error(f"Cycle error: {e}")
+                logger.error(f"❌ Cycle error: {e}", exc_info=True)
+                logger.error(f"   Error type: {type(e).__name__}")
+                logger.error(f"   Continuing to next cycle...")
                 # Continue to next cycle
 
             # Small buffer before next wait calculation
@@ -413,6 +431,12 @@ class TradingBot:
 
 def main():
     """Main entry point."""
+    # Print startup banner to stderr immediately
+    print("=" * 70, file=sys.stderr, flush=True)
+    print("🤖 TRADING BOT STARTING UP", file=sys.stderr, flush=True)
+    print(f"   Time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC", file=sys.stderr, flush=True)
+    print("=" * 70, file=sys.stderr, flush=True)
+
     parser = argparse.ArgumentParser(description="Trading Bot")
     parser.add_argument(
         "--live",
@@ -434,17 +458,17 @@ def main():
 
     # Validate instance_id is provided
     if not args.instance:
-        print("❌ ERROR: --instance is required. The bot must be started with a specific instance.")
-        print("   Example: python run_bot.py --instance <instance_id>")
+        print("❌ ERROR: --instance is required. The bot must be started with a specific instance.", file=sys.stderr, flush=True)
+        print("   Example: python run_bot.py --instance <instance_id>", file=sys.stderr, flush=True)
         return
 
     # Safety check for live trading
     if args.live and not args.testnet:
-        print("\n⚠️  WARNING: You are about to start LIVE TRADING on MAINNET!")
-        print("   This will use REAL MONEY.")
+        print("\n⚠️  WARNING: You are about to start LIVE TRADING on MAINNET!", file=sys.stderr, flush=True)
+        print("   This will use REAL MONEY.", file=sys.stderr, flush=True)
         confirm = input("   Type 'CONFIRM' to proceed: ")
         if confirm != "CONFIRM":
-            print("Aborted.")
+            print("Aborted.", file=sys.stderr, flush=True)
             return
 
     bot = TradingBot(

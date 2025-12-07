@@ -362,13 +362,13 @@ class ChartSourcer:
         """Initialize Playwright browser with anti-detection measures and resource management."""
         if not TRADINGVIEW_AVAILABLE:
             return False
-        
+
         try:
             # Check system resources before starting
             # if not await self._check_system_resources():
             #     self.logger.warning("Insufficient system resources for browser automation")
             #     return False
-            
+
             if self.browser is None:
                 try:
                     playwright = await async_playwright().start()

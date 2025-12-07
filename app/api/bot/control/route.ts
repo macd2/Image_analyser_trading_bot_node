@@ -151,6 +151,10 @@ function startBot(paperTrading: boolean, testnet: boolean, instanceId?: string):
   botStartedAt = Date.now();
 
   try {
+    // Log the command being executed for debugging
+    console.log(`[BOT CONTROL] Starting bot with command: python3 ${args.join(' ')}`);
+    console.log(`[BOT CONTROL] Working directory: ${pythonDir}`);
+
     botProcess = spawn('python3', args, {
       cwd: pythonDir,
       env: { ...process.env },
@@ -159,8 +163,9 @@ function startBot(paperTrading: boolean, testnet: boolean, instanceId?: string):
     });
 
     botPid = botProcess.pid || null;
-    console.log(`[BOT CONTROL] Bot process started with PID: ${botPid}`);
-    botLogs.push(`[${new Date().toISOString()}] Bot process started with PID: ${botPid}`);
+    const startMessage = `Bot process started with PID: ${botPid}`;
+    console.log(`[BOT CONTROL] ${startMessage}`);
+    botLogs.push(`[${new Date().toISOString()}] ${startMessage}`);
 
     // Register with process monitor for status tracking
     if (botPid && instanceId) {
@@ -178,7 +183,10 @@ function startBot(paperTrading: boolean, testnet: boolean, instanceId?: string):
 
     botProcess.stdout?.on('data', (data) => {
       const lines: string[] = data.toString().split('\n').filter((l: string) => l.trim());
-      console.log('[BOT STDOUT]', lines.join('\n'));
+      // Log each line individually to Railway logs for better visibility
+      lines.forEach((line: string) => {
+        console.log(`[BOT STDOUT] ${line}`);
+      });
       botLogs.push(...lines);
       // Emit logs to connected clients in real-time
       lines.forEach((line: string) => emitLog(line, instanceId));
@@ -191,7 +199,10 @@ function startBot(paperTrading: boolean, testnet: boolean, instanceId?: string):
     // Note: Python logging outputs to stderr by default, so don't prefix with [ERR]
     botProcess.stderr?.on('data', (data) => {
       const lines: string[] = data.toString().split('\n').filter((l: string) => l.trim());
-      console.log('[BOT STDERR]', lines.join('\n'));
+      // Log each line individually to Railway logs for better visibility
+      lines.forEach((line: string) => {
+        console.log(`[BOT STDERR] ${line}`);
+      });
       // Don't prefix - the log level is already in the message (| INFO |, | WARNING |, etc)
       botLogs.push(...lines);
       // Emit logs to connected clients in real-time
@@ -202,18 +213,20 @@ function startBot(paperTrading: boolean, testnet: boolean, instanceId?: string):
     });
 
     botProcess.on('error', (err) => {
-      console.error('[BOT CONTROL] Process error:', err);
-      botLogs.push(`[ERROR] Process error: ${err.message}`);
+      const errorMsg = `Process error: ${err.message}`;
+      console.error(`[BOT CONTROL] ${errorMsg}`);
+      botLogs.push(`[ERROR] ${errorMsg}`);
     });
 
     botProcess.on('close', (code, signal) => {
       const timestamp = new Date().toISOString();
-      const msg = `[${timestamp}] Bot process exited with code ${code}, signal ${signal}`;
-      console.log('[BOT CONTROL]', msg);
-      botLogs.push(msg);
+      const msg = `Bot process exited with code ${code}, signal ${signal}`;
+      console.log(`[BOT CONTROL] [${timestamp}] ${msg}`);
+      botLogs.push(`[${timestamp}] ${msg}`);
 
       // Remove from persistent state
       if (currentInstanceId) {
+        console.log(`[BOT CONTROL] Removing process state for instance: ${currentInstanceId}`);
         removeProcessState(currentInstanceId);
       }
 
@@ -391,6 +404,12 @@ function getBotStatus(): Response {
         instanceId = state.instanceId;
         startedAt = state.startedAt;
         console.log(`[BOT CONTROL] Detected running process from persistent state: instance=${instanceId}, PID=${pid}`);
+
+        // Add a note to logs that we recovered the process
+        if (botLogs.length === 0) {
+          botLogs.push(`[${new Date().toISOString()}] ℹ️ Bot process recovered after server restart (PID: ${pid})`);
+          botLogs.push(`[${new Date().toISOString()}] ℹ️ Previous logs are not available. New logs will appear as the bot runs.`);
+        }
       }
     }
   }
