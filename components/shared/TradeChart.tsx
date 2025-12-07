@@ -91,6 +91,7 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
     const fetchCandles = async () => {
       const tradeTimestamp = trade.submitted_at || trade.filled_at || trade.created_at
       if (!tradeTimestamp) {
+        console.error('[TradeChart] No timestamp available')
         setError('No timestamp available')
         setLoading(false)
         return
@@ -102,10 +103,10 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
       try {
         const timestamp = new Date(tradeTimestamp).getTime()
         const timeframe = trade.timeframe || '1h'
-        
+
         // For historical mode (closed trades), fetch candles up to closed_at
-        const endTimestamp = mode === 'historical' && trade.closed_at 
-          ? new Date(trade.closed_at).getTime() 
+        const endTimestamp = mode === 'historical' && trade.closed_at
+          ? new Date(trade.closed_at).getTime()
           : undefined
 
         let url = `/api/bot/trade-candles?symbol=${trade.symbol}&timeframe=${timeframe}&timestamp=${timestamp}&before=50&after=20`
@@ -113,12 +114,16 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
           url += `&endTimestamp=${endTimestamp}`
         }
 
+        console.log('[TradeChart] Fetching candles:', url)
         const res = await fetch(url)
         const data = await res.json()
+        console.log('[TradeChart] Response:', data)
 
         if (data.error) {
+          console.error('[TradeChart] API error:', data.error)
           setError(data.error)
         } else if (data.candles && data.candles.length > 0) {
+          console.log('[TradeChart] Setting candles:', data.candles.length)
           setCandles(data.candles)
           // Use max of API precision and trade price precision
           const apiDecimals = data.precision?.priceDecimals ?? 4
@@ -126,9 +131,11 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
           // Enable WebSocket only in live mode
           if (mode === 'live') setWsEnabled(true)
         } else {
+          console.error('[TradeChart] No candles in response')
           setError('No candles found')
         }
       } catch (err) {
+        console.error('[TradeChart] Fetch error:', err)
         setError('Failed to fetch candles')
       } finally {
         setLoading(false)
@@ -145,6 +152,7 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
 
     const timer = setTimeout(() => {
       if (!chartContainerRef.current) return
+      console.log('[TradeChart] Creating chart')
       const chart = createChart(chartContainerRef.current, {
         layout: { background: { color: '#0f172a' }, textColor: '#94a3b8' },
         grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
@@ -162,6 +170,7 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
         localization: { priceFormatter: (price: number) => price.toFixed(priceDecimals) },
       })
       chartRef.current = chart
+      console.log('[TradeChart] Chart created')
 
       const handleResize = () => {
         if (chartContainerRef.current && chartRef.current) {
@@ -181,9 +190,17 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
 
   // Set data and add price lines/markers
   useEffect(() => {
+    console.log('[TradeChart] Data effect - chartRef:', !!chartRef.current, 'candles:', candles.length)
     if (!chartRef.current || candles.length === 0) return
-    if (candleSeriesRef.current) return // Already set
 
+    // Remove old series if it exists
+    if (candleSeriesRef.current) {
+      console.log('[TradeChart] Removing old series')
+      chartRef.current.removeSeries(candleSeriesRef.current)
+      candleSeriesRef.current = null
+    }
+
+    console.log('[TradeChart] Adding new series with', candles.length, 'candles')
     const series = chartRef.current.addSeries(CandlestickSeries, {
       upColor: '#22c55e', downColor: '#ef4444',
       borderUpColor: '#22c55e', borderDownColor: '#ef4444',
@@ -191,6 +208,7 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
     })
     candleSeriesRef.current = series
     series.setData(candles)
+    console.log('[TradeChart] Data set on series')
 
     const formatPrice = (p: number) => p.toFixed(priceDecimals)
 
