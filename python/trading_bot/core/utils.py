@@ -1848,10 +1848,17 @@ def count_open_positions_and_orders(orders: Optional[List[Dict[str, Any]]] = Non
                 if positions_response.get("retCode") == 0:
                     positions = positions_response.get("result", {}).get("list", [])
                 else:
-                    error_msg = positions_response.get('retMsg', 'API error')
-                    logger.warning(f"Could not fetch positions: {error_msg}")
+                    # Enhanced error logging with full response details
+                    ret_code = positions_response.get('retCode', 'N/A')
+                    error_msg = positions_response.get('retMsg', 'Unknown API error')
+                    error_detail = positions_response.get('error', '')
+
+                    # Log full response for debugging
+                    logger.error(f"Failed to fetch positions - retCode: {ret_code}, retMsg: {error_msg}, error: {error_detail}")
+                    logger.debug(f"Full API response: {positions_response}")
+
                     # Raise exception to trigger RiskManager fallback
-                    raise Exception(f"Failed to fetch positions from API: {error_msg}")
+                    raise Exception(f"Failed to fetch positions from API: retCode={ret_code}, retMsg={error_msg}")
 
         if orders is None:
             # Check if trader is available
@@ -1868,10 +1875,17 @@ def count_open_positions_and_orders(orders: Optional[List[Dict[str, Any]]] = Non
                     orders_data = orders_response.get("result", {})
                     orders = orders_data.get("list", [])
                 else:
-                    error_msg = orders_response.get('retMsg', orders_response.get('error', 'API error'))
-                    logger.warning(f"Could not fetch orders: {error_msg}")
+                    # Enhanced error logging with full response details
+                    ret_code = orders_response.get('retCode', 'N/A')
+                    error_msg = orders_response.get('retMsg', 'Unknown API error')
+                    error_detail = orders_response.get('error', '')
+
+                    # Log full response for debugging
+                    logger.error(f"Failed to fetch orders - retCode: {ret_code}, retMsg: {error_msg}, error: {error_detail}")
+                    logger.debug(f"Full API response: {orders_response}")
+
                     # Raise exception to trigger RiskManager fallback
-                    raise Exception(f"Failed to fetch orders from API: {error_msg}")
+                    raise Exception(f"Failed to fetch orders from API: retCode={ret_code}, retMsg={error_msg}")
 
         # Ensure we have data to work with
         if orders is None:

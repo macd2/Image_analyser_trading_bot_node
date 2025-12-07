@@ -74,7 +74,26 @@ class BybitAPIManager:
             # Use a higher default recv_window to mitigate timestamp errors
             # This overrides the config value if it's lower, ensuring robustness
             recv_window_ms = max(self.config.bybit.recv_window, 600000) # Ensure at least 600000ms (10 minutes)
-            api_key, api_secret = get_bybit_credentials()
+
+            # Get API credentials with enhanced error handling
+            try:
+                api_key, api_secret = get_bybit_credentials()
+
+                # Validate credentials are not empty
+                if not api_key or not api_secret:
+                    logger.error("❌ Bybit API credentials are empty! Check BYBIT_API_KEY and BYBIT_API_SECRET environment variables.")
+                    self.session = None
+                    return
+
+                # Log credential status (masked for security)
+                key_preview = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
+                logger.info(f"🔑 Loaded Bybit API credentials (key: {key_preview})")
+
+            except ValueError as e:
+                logger.error(f"❌ Failed to load Bybit API credentials: {e}")
+                logger.error("Please set BYBIT_API_KEY and BYBIT_API_SECRET environment variables in Railway dashboard")
+                self.session = None
+                return
 
             self.session = HTTP(
                 testnet=self.use_testnet,
@@ -93,7 +112,7 @@ class BybitAPIManager:
                 logger.info("ℹ️ Initial timestamp sync unavailable - using local time (this is normal if API is rate-limited)")
 
         except Exception as e:
-            logger.error(f"Failed to initialize Bybit client: {e}")
+            logger.error(f"❌ Failed to initialize Bybit client: {e}", exc_info=True)
             self.session = None
 
     def _get_current_recv_window(self) -> int:
@@ -172,8 +191,9 @@ class BybitAPIManager:
         Execute a Bybit API call with circuit breaker, retry, and server time sync.
         """
         if not self.session:
-            logger.error("Bybit API manager not initialized. Session is None.")
-            return {"error": "Bybit API manager not initialized."}
+            error_msg = "Bybit API manager not initialized. Check that BYBIT_API_KEY and BYBIT_API_SECRET are set in Railway environment variables."
+            logger.error(f"❌ {error_msg}")
+            return {"retCode": -1, "retMsg": error_msg, "error": error_msg}
         
         # Explicitly cast self.session to HTTP to satisfy Pylance
         session_http = cast(HTTP, self.session)
