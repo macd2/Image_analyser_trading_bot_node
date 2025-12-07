@@ -435,7 +435,7 @@ class ChartSourcer:
 
                     # Add window sizing arguments for both VNC and host system
                     if self.tv_config.browser.use_vnc and not self.tv_config.browser.headless:
-                        self.logger.info("🔧 Enabling VNC integration mode with Firefox (low memory)")
+                        self.logger.info("🔧 Enabling VNC integration mode with Chromium (minimal args)")
 
                         # Set DISPLAY environment variable for VNC
                         display = os.environ.get('DISPLAY', self.tv_config.browser.vnc_display)
@@ -446,34 +446,55 @@ class ChartSourcer:
                         # TradingView detects --disable-web-security and crashes the browser
                         browser_args = []
 
-                        # VNC-specific browser arguments - Firefox uses 30-40% less memory than Chromium
-                        # Firefox preferences for low memory usage
-                        firefox_prefs = {
-                            # Memory management
-                            'browser.cache.disk.enable': False,
-                            'browser.cache.memory.enable': True,
-                            'browser.cache.memory.capacity': 32768,  # 32MB cache
-                            'browser.sessionhistory.max_total_viewers': 0,
-                            'browser.sessionstore.interval': 60000,
-                            # Disable unnecessary features
-                            'media.peerconnection.enabled': False,
-                            'geo.enabled': False,
-                            'browser.safebrowsing.malware.enabled': False,
-                            'browser.safebrowsing.phishing.enabled': False,
-                            # Performance
-                            'gfx.webrender.all': False,
-                            'layers.acceleration.disabled': True,
-                        }
+                        # VNC-specific browser arguments - ULTRA MINIMAL for Railway/Docker compatibility
+                        # Railway has limited /dev/shm (64MB) - avoid multi-process issues
+                        vnc_args = [
+                            f'--display={display}',
+                            f'--window-size={self.tv_config.browser.vnc_window_size}',
+                            '--disable-dev-shm-usage',  # Critical for limited /dev/shm in Docker
+                            '--no-sandbox',  # Required for Docker
+                            '--disable-gpu',  # Disable GPU to reduce memory
+                            '--disable-software-rasterizer',  # Disable software rasterizer
+                            '--disable-extensions',  # No extensions
+                            '--disable-plugins',  # No plugins
+                            '--disable-sync',  # No sync
+                            '--disable-translate',  # No translate
+                            '--disable-default-apps',  # No default apps
+                            '--no-first-run',  # Skip first run
+                            '--disable-background-networking',  # No background network
+                            '--disable-background-timer-throttling',  # No background throttling
+                            '--disable-backgrounding-occluded-windows',  # No backgrounding
+                            '--disable-breakpad',  # No crash reporting
+                            '--disable-client-side-phishing-detection',  # No phishing detection
+                            '--disable-component-extensions-with-background-pages',  # No component extensions
+                            '--disable-default-apps',  # No default apps
+                            '--disable-hang-monitor',  # No hang monitor
+                            '--disable-popup-blocking',  # Allow popups (TradingView needs them)
+                            '--disable-prompt-on-repost',  # No repost prompt
+                            '--disable-renderer-backgrounding',  # No renderer backgrounding
+                            '--enable-automation',  # Enable automation
+                            '--enable-features=NetworkService,NetworkServiceInProcess',  # Network features
+                            '--metrics-recording-only',  # Metrics only
+                            '--mute-audio',  # Mute audio
+                            '--no-default-browser-check',  # No browser check
+                            '--no-service-autorun',  # No service autorun
+                            '--password-store=basic',  # Basic password store
+                            '--use-mock-keychain',  # Mock keychain
+                            # DO NOT add --disable-web-security (causes TradingView to crash)
+                            # DO NOT add --single-process (causes crashes in Docker)
+                        ]
+                        browser_args.extend(vnc_args)
+                        self.logger.info(f"🔧 VNC browser args: {len(vnc_args)} flags set")
 
                         # Verify VNC connection
                         if not await self._verify_vnc_connection():
                             self.logger.warning("⚠️ VNC connection not detected, but continuing...")
 
-                        # Launch Firefox for VNC mode (low memory usage)
-                        self.logger.info("🦊 Launching Firefox browser for VNC (low memory mode)")
-                        self.browser = await playwright.firefox.launch(
+                        # Launch Chromium for VNC mode with minimal args
+                        self.logger.info("🚀 Launching Chromium browser for VNC (minimal memory mode)")
+                        self.browser = await playwright.chromium.launch(
                             headless=False,  # VNC mode is always visual
-                            firefox_user_prefs=firefox_prefs
+                            args=browser_args
                         )
                     else:
                         self.logger.info("🔧 Using standard browser mode (no VNC)")
