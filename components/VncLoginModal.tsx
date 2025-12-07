@@ -251,14 +251,13 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
           </div>
         </div>
 
-        {/* Footer - 4 Action Buttons (ALWAYS ACTIVE AND FUNCTIONAL) */}
+        {/* Footer - 4 Action Buttons (ALWAYS ACTIVE AND FUNCTIONAL - NO DISABLED STATE) */}
         <div className="p-4 border-t border-slate-600">
           <div className="grid grid-cols-2 gap-3 mb-3">
             {/* Button 1: Start VNC - ALWAYS ACTIVE */}
             <button
               onClick={handleStartVnc}
-              disabled={startingVnc}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition text-white font-medium"
               title="Start VNC services (Xvfb + x11vnc)"
             >
               {startingVnc ? (
@@ -277,8 +276,7 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
             {/* Button 2: Start Browser - ALWAYS ACTIVE */}
             <button
               onClick={handleStartBrowser}
-              disabled={startingBrowser}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg transition text-white font-medium"
               title="Open browser in VNC session"
             >
               {startingBrowser ? (
@@ -297,8 +295,7 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
             {/* Button 3: Confirm Login - ALWAYS ACTIVE */}
             <button
               onClick={handleConfirm}
-              disabled={confirming}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 rounded-lg transition text-white font-medium"
               title="Confirm login completed"
             >
               {confirming ? (
@@ -317,8 +314,7 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
             {/* Button 4: Kill VNC - ALWAYS ACTIVE */}
             <button
               onClick={handleKillVnc}
-              disabled={killingVnc}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-red-600 hover:bg-red-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-red-600 hover:bg-red-700 rounded-lg transition text-white font-medium"
               title="Stop VNC services and cleanup"
             >
               {killingVnc ? (
