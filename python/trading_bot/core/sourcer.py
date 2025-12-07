@@ -1424,7 +1424,9 @@ class ChartSourcer:
                         WHERE table_name = 'tradingview_sessions'
                     )
                 """)
-                if not table_check or not table_check[0]:
+                # PostgreSQL returns RealDictRow, access by key name
+                table_exists = table_check and table_check.get('exists', False)
+                if not table_exists:
                     self.logger.warning("❌ tradingview_sessions table does not exist")
                     conn.close()
                     return None
