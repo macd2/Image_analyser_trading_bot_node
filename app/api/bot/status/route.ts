@@ -61,8 +61,35 @@ from trading_bot.db.client import get_connection, query_one, query, DB_TYPE
 
 try:
     import sys
-    config = ConfigV2.load()
-    print(f"[DEBUG] Config loaded: paper_trading={config.trading.paper_trading}", file=sys.stderr)
+
+    # Get instance_id from query params
+    instance_id = '${instanceId}'
+    config = None
+
+    if instance_id:
+        # Load config from specific instance
+        config = ConfigV2.from_instance(instance_id)
+        print(f"[DEBUG] Config loaded from instance {instance_id}: paper_trading={config.trading.paper_trading}", file=sys.stderr)
+    else:
+        # Try to get first active instance
+        conn = get_connection()
+        if DB_TYPE == 'postgres':
+            first_instance = query_one(conn, "SELECT id, settings FROM instances WHERE is_active = 1 LIMIT 1", ())
+        else:
+            first_instance = query_one(conn, "SELECT id, settings FROM instances WHERE is_active = 1 LIMIT 1", ())
+        conn.close()
+
+        if first_instance:
+            instance_id = first_instance.get('id') if isinstance(first_instance, dict) else first_instance[0]
+            config = ConfigV2.from_instance(instance_id)
+            print(f"[DEBUG] Config loaded from first active instance {instance_id}", file=sys.stderr)
+        else:
+            print(f"[ERROR] No active instance found", file=sys.stderr)
+            raise Exception("No active instance found. Please create and activate an instance in the dashboard.")
+
+    # Get max_concurrent_trades from config (REQUIRED - no defaults for trading settings)
+    max_trades = config.trading.max_concurrent_trades
+    print(f"[DEBUG] Max concurrent trades from config: {max_trades}", file=sys.stderr)
 
     executor = OrderExecutor(testnet=False)
     print(f"[DEBUG] OrderExecutor initialized", file=sys.stderr)
@@ -75,26 +102,6 @@ try:
 
     # Get positions
     positions_result = executor.get_positions()
-
-    # Get max_concurrent_trades from instance settings (respects DB_TYPE)
-    instance_id = '${instanceId}'
-    max_trades = 3  # default
-
-    if instance_id:
-        conn = get_connection()
-        # Query instance settings JSON - works with both SQLite and PostgreSQL
-        if DB_TYPE == 'postgres':
-            row = query_one(conn, "SELECT settings FROM instances WHERE id = %s", (instance_id,))
-        else:
-            row = query_one(conn, "SELECT settings FROM instances WHERE id = ?", (instance_id,))
-
-        if row:
-            settings = row.get('settings') if isinstance(row, dict) else row[0]
-            if settings:
-                import json as json_mod
-                settings_dict = json_mod.loads(settings) if isinstance(settings, str) else settings
-                max_trades = int(settings_dict.get('trading.max_concurrent_trades', 3))
-        conn.close()
 
     # Get last cycle using centralized client
     conn = get_connection()
