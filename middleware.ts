@@ -108,8 +108,16 @@ export function middleware(request: NextRequest) {
   try {
     const base64Credentials = authHeader.split(' ')[1]
     const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8')
-    const [, password] = credentials.split(':')  // Username is ignored
-    
+
+    // Split only on the first colon to handle passwords containing colons
+    // Format is "username:password" but username is ignored
+    const colonIndex = credentials.indexOf(':')
+    if (colonIndex === -1) {
+      return unauthorized()
+    }
+
+    const password = credentials.substring(colonIndex + 1)
+
     if (password === expectedPassword) {
       return NextResponse.next()
     }

@@ -24,6 +24,7 @@ let botProcess: ChildProcess | null = null;
 let botStartedAt: number | null = null;
 let botLogs: string[] = [];
 let botPid: number | null = null;
+let forceKillTimeout: NodeJS.Timeout | null = null;
 
 export interface ControlRequest {
   action: 'start' | 'stop' | 'kill' | 'status';
@@ -253,6 +254,12 @@ function stopBot(): Response {
     botPid = null;
     currentInstanceId = null;
 
+    // Clear any pending force kill timeout
+    if (forceKillTimeout) {
+      clearTimeout(forceKillTimeout);
+      forceKillTimeout = null;
+    }
+
     return NextResponse.json({
       success: true,
       running: false,
@@ -282,13 +289,29 @@ function stopBot(): Response {
   botPid = null;
   currentInstanceId = null;
 
+  // Clear any existing force kill timeout
+  if (forceKillTimeout) {
+    clearTimeout(forceKillTimeout);
+    forceKillTimeout = null;
+  }
+
+  // Set up cleanup handler for graceful exit
+  const exitHandler = () => {
+    if (forceKillTimeout) {
+      clearTimeout(forceKillTimeout);
+      forceKillTimeout = null;
+    }
+  };
+  processRef.once('exit', exitHandler);
+
   // Force kill after 10 seconds if process still running
-  setTimeout(() => {
+  forceKillTimeout = setTimeout(() => {
     if (processRef && !processRef.killed) {
       console.log('[BOT CONTROL] Force killing bot with SIGKILL');
       botLogs.push(`[${new Date().toISOString()}] Force killing bot (SIGKILL)...`);
       processRef.kill('SIGKILL');
     }
+    forceKillTimeout = null;
   }, 10000);
 
   return NextResponse.json({
@@ -302,6 +325,12 @@ function stopBot(): Response {
 
 function killBot(): Response {
   if (!botProcess || botProcess.killed) {
+    // Clear any pending force kill timeout
+    if (forceKillTimeout) {
+      clearTimeout(forceKillTimeout);
+      forceKillTimeout = null;
+    }
+
     return NextResponse.json({
       success: true,
       running: false,
@@ -328,6 +357,12 @@ function killBot(): Response {
   botStartedAt = null;
   botPid = null;
   currentInstanceId = null;
+
+  // Clear any pending force kill timeout
+  if (forceKillTimeout) {
+    clearTimeout(forceKillTimeout);
+    forceKillTimeout = null;
+  }
 
   return NextResponse.json({
     success: true,
