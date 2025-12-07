@@ -38,6 +38,7 @@ class TradingEngine:
         testnet: bool = False,
         paper_trading: bool = True,
         run_id: Optional[str] = None,
+        instance_id: Optional[str] = None,
     ):
         """
         Initialize trading engine.
@@ -47,8 +48,14 @@ class TradingEngine:
             testnet: Use testnet if True
             paper_trading: Paper trading mode if True
             run_id: Parent run ID for audit trail
+            instance_id: Instance ID to load config from (required if config is None)
         """
-        self.config = config or ConfigV2.load()
+        if config:
+            self.config = config
+        elif instance_id:
+            self.config = ConfigV2.from_instance(instance_id)
+        else:
+            raise ValueError("Either config or instance_id must be provided")
         self.testnet = testnet
         self.paper_trading = paper_trading
         self.run_id = run_id  # Track parent run for audit trail

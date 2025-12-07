@@ -18,11 +18,16 @@ else:
     load_dotenv()
 
 class TimeframeExtractor:
-    def __init__(self, config: Optional[ConfigV2] = None):
+    def __init__(self, config: Optional[ConfigV2] = None, instance_id: Optional[str] = None):
         self.api_key = get_openai_api_key()
         self.logger = logging.getLogger(__name__)
         # Use provided config or load from database
-        cfg = config or ConfigV2.load()
+        if config:
+            cfg = config
+        elif instance_id:
+            cfg = ConfigV2.from_instance(instance_id)
+        else:
+            raise ValueError("Either config or instance_id must be provided")
         self.model = cfg.openai.model
         self.max_tokens = cfg.openai.max_tokens
         self.temperature = cfg.openai.temperature

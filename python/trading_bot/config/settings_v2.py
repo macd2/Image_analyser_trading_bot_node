@@ -425,7 +425,7 @@ class ConfigV2:
             max_loss_usd=cls._require(db_config, 'trading.max_loss_usd', "Set via dashboard."),
             leverage=cls._require(db_config, 'trading.leverage', "Set via dashboard."),
             max_concurrent_trades=cls._require(db_config, 'trading.max_concurrent_trades', "Set via dashboard."),
-            timeframe=db_config.get('trading.timeframe', '1h'),  # Default to 1h if not set
+            timeframe=cls._require(db_config, 'trading.timeframe', "Set via dashboard. (e.g., '1h', '4h', '1d')"),
             enable_position_tightening=cls._require(db_config, 'trading.enable_position_tightening', "Set via dashboard."),
             enable_sl_tightening=cls._require(db_config, 'trading.enable_sl_tightening', "Set via dashboard."),
             rr_tightening_steps=rr_steps,
@@ -505,9 +505,16 @@ class ConfigV2:
 
 
 # Convenience function
-def load_config(config_yaml_path: Optional[str] = None) -> ConfigV2:
-    """Load configuration from database and YAML."""
-    return ConfigV2.load(config_yaml_path)
+def load_config(config_yaml_path: Optional[str] = None, instance_id: Optional[str] = None) -> ConfigV2:
+    """Load configuration from database and YAML.
+
+    Args:
+        config_yaml_path: Path to YAML config file
+        instance_id: Instance ID to load config from (required)
+    """
+    if not instance_id:
+        raise ConfigurationError("instance_id is required. Use ConfigV2.from_instance(instance_id) instead.")
+    return ConfigV2.load(config_yaml_path, instance_id=instance_id)
 
 
 # Backward compatibility aliases
