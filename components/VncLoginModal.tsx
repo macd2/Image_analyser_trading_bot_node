@@ -21,7 +21,6 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
   const [killingVnc, setKillingVnc] = useState(false)
   const [vncEnabled, setVncEnabled] = useState<boolean | null>(null)
   const [vncRunning, setVncRunning] = useState<boolean>(false)
-  const [browserStarted, setBrowserStarted] = useState<boolean>(false)
 
   // Check VNC status when modal opens
   useEffect(() => {
@@ -33,13 +32,6 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
     }
     return () => {} // Return empty cleanup function for non-open case
   }, [isOpen])
-
-  // Reset state when modal closes
-  useEffect(() => {
-    if (!isOpen && browserStarted) {
-      setBrowserStarted(false)
-    }
-  }, [isOpen, browserStarted])
 
   const checkVncStatus = async () => {
     try {
@@ -94,7 +86,7 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
       }
 
       console.log('[VNC Modal] ✅ Browser open signal sent')
-      setBrowserStarted(true)
+      // Don't set browserStarted - allow multiple clicks if browser crashes
     } catch (error) {
       console.error('[VNC Modal] Error starting browser:', error)
       alert(`Failed to start browser: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -124,7 +116,6 @@ export default function VncLoginModal({ isOpen, onClose, onConfirm }: VncLoginMo
 
       if (data.success) {
         alert('VNC services stopped successfully. Browser session closed.')
-        setBrowserStarted(false) // Reset state so browser can be reopened if needed
       } else {
         alert(`Failed to stop VNC: ${data.error || 'Unknown error'}`)
       }
