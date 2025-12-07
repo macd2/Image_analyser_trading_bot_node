@@ -34,6 +34,12 @@ function InstanceCardForNewDesign({ instance, onAction }: { instance: InstanceCa
   const pnl = instance.total_pnl
   const pnlPercent = totalTrades > 0 ? (pnl / totalTrades) * 10 : 0 // Rough estimate
 
+  // Calculate Expected Value (EV) = (Win Rate × Avg Win) - (Loss Rate × Avg Loss)
+  const avgWin = wins > 0 ? (pnl > 0 ? pnl / wins : 0) : 0
+  const avgLoss = losses > 0 ? (pnl < 0 ? Math.abs(pnl) / losses : 0) : 0
+  const lossRate = totalTrades > 0 ? losses / totalTrades : 0
+  const expectedValue = totalTrades > 0 ? (winRate * avgWin) - (lossRate * avgLoss) : 0
+
   return (
     <Link href={`/instances/${instance.id}`} className="block">
       <div className="bg-slate-800 rounded-xl border border-slate-700 hover:border-slate-600 hover:shadow-lg hover:shadow-slate-900/50 hover:-translate-y-0.5 transition-all duration-200 overflow-hidden">
@@ -60,7 +66,7 @@ function InstanceCardForNewDesign({ instance, onAction }: { instance: InstanceCa
 
         {/* Stats */}
         <div className="p-5 space-y-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             {/* Trades */}
             <div>
               <div className="flex items-center gap-1.5 text-slate-400 text-xs mb-1.5">
@@ -104,6 +110,22 @@ function InstanceCardForNewDesign({ instance, onAction }: { instance: InstanceCa
                     <TrendingDown className="w-3 h-3" />
                   )}
                   <span>{pnl >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%</span>
+                </div>
+              )}
+            </div>
+
+            {/* Expected Value (EV) */}
+            <div>
+              <div className="flex items-center gap-1.5 text-slate-400 text-xs mb-1.5">
+                <Flame className="w-3.5 h-3.5" />
+                <span>EV</span>
+              </div>
+              <div className={`text-2xl font-bold ${expectedValue >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {expectedValue >= 0 ? '+' : ''}${expectedValue.toFixed(2)}
+              </div>
+              {totalTrades > 0 && (
+                <div className="text-slate-400 text-xs mt-1">
+                  per trade
                 </div>
               )}
             </div>
@@ -309,7 +331,7 @@ export default function InstancesPage() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-2 gap-4">
           {instancesWithRealtimeStatus.map((instance) => (
             <InstanceCardForNewDesign
               key={instance.id}
