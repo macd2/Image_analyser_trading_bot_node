@@ -334,8 +334,8 @@ class TradingBot:
 
         while self._running:
             # Calculate time until next boundary
-            wait_seconds = seconds_until_next_boundary(timeframe)
             next_boundary = get_next_cycle_boundary(timeframe)
+            wait_seconds = (next_boundary - datetime.now(timezone.utc)).total_seconds()
             total_wait_seconds = wait_seconds
             initial_wait_seconds = wait_seconds
 
@@ -351,10 +351,17 @@ class TradingBot:
             last_progress_milestone = 0
 
             # Wait until next boundary (with periodic checks)
-            while wait_seconds > 0 and self._running:
+            # Use the SAME target boundary throughout the wait, don't recalculate
+            while self._running:
+                now = datetime.now(timezone.utc)
+                wait_seconds = (next_boundary - now).total_seconds()
+
+                # Exit if we've reached or passed the boundary
+                if wait_seconds <= 0:
+                    break
+
                 sleep_time = min(wait_seconds, 30)  # Check every 30s
                 await asyncio.sleep(sleep_time)
-                wait_seconds = seconds_until_next_boundary(timeframe)
 
                 # Calculate elapsed time and progress
                 elapsed_seconds = initial_wait_seconds - wait_seconds
