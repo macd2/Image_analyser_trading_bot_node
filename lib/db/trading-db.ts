@@ -501,10 +501,16 @@ export async function updateInstanceSettings(instanceId: string, updates: Array<
   const instance = await getInstanceById(instanceId);
   if (!instance) return false;
 
-  // Parse existing settings
+  // Parse existing settings - handle both string (SQLite) and object (PostgreSQL JSONB) formats
   let settings: Record<string, string> = {};
   try {
-    settings = instance.settings ? JSON.parse(instance.settings) : {};
+    if (instance.settings) {
+      if (typeof instance.settings === 'string') {
+        settings = JSON.parse(instance.settings);
+      } else if (typeof instance.settings === 'object') {
+        settings = instance.settings as Record<string, string>;
+      }
+    }
   } catch {
     settings = {};
   }

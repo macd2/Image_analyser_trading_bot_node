@@ -19,13 +19,13 @@ DEFAULT_RR_TIGHTENING_STEPS = {
 # Format: (key, value, type, category, description)
 DEFAULT_CONFIG: List[Tuple[str, Any, str, str, str]] = [
     # Trading Core (8 settings)
-    ("trading.paper_trading", False, "boolean", "trading", 
+    ("trading.paper_trading", False, "boolean", "trading",
      "Enable paper trading mode (no real trades)"),
     ("trading.auto_approve_trades", True, "boolean", "trading",
      "Skip Telegram confirmation for trades"),
     ("trading.min_confidence_threshold", 0.75, "number", "trading",
      "Minimum confidence score required for trades (0.0-1.0)"),
-    ("trading.min_rr", 1.5, "number", "trading",
+    ("trading.min_rr", 1.7, "number", "trading",
      "Minimum risk-reward ratio required for trades"),
     ("trading.risk_percentage", 0.01, "number", "trading",
      "Risk per trade as decimal (0.01 = 1% of account)"),
@@ -35,27 +35,27 @@ DEFAULT_CONFIG: List[Tuple[str, Any, str, str, str]] = [
      "Trading leverage multiplier"),
     ("trading.max_concurrent_trades", 3, "number", "trading",
      "Maximum number of concurrent positions/orders"),
-    
+
     # Tightening (3 settings)
     ("trading.enable_position_tightening", True, "boolean", "tightening",
      "Enable stop-loss tightening based on profit"),
-    ("trading.enable_sl_tightening", True, "boolean", "tightening",
+    ("trading.enable_sl_tightening", False, "boolean", "tightening",
      "Enable RR-based stop-loss tightening"),
     ("trading.rr_tightening_steps", DEFAULT_RR_TIGHTENING_STEPS, "json", "tightening",
      "RR levels and SL positions for tightening"),
-    
+
     # Position Sizing (2 settings)
     ("trading.use_enhanced_position_sizing", True, "boolean", "sizing",
      "Use confidence/volatility weighting for position sizing"),
     ("trading.min_position_value_usd", 50.0, "number", "sizing",
      "Minimum position size in USD"),
-    
+
     # Order Replacement (2 settings)
     ("trading.enable_intelligent_replacement", True, "boolean", "replacement",
      "Enable intelligent order replacement based on score"),
     ("trading.min_score_improvement_threshold", 0.15, "number", "replacement",
      "Minimum score improvement required to replace an order"),
-    
+
     # Exchange (3 settings)
     ("bybit.use_testnet", False, "boolean", "exchange",
      "Use Bybit testnet instead of mainnet"),
@@ -63,11 +63,11 @@ DEFAULT_CONFIG: List[Tuple[str, Any, str, str, str]] = [
      "API receive window in milliseconds"),
     ("bybit.max_retries", 5, "number", "exchange",
      "Maximum API retry attempts"),
-    
+
     # AI (2 settings)
     ("openai.model", "gpt-4.1-mini", "string", "ai",
      "OpenAI model for chart analysis"),
-    ("openai.assistant_id", "", "string", "ai",
+    ("openai.assistant_id", "asst_m11ds7XhdYfN7voO0pRvgbul", "string", "ai",
      "OpenAI Assistant ID for analysis (empty = use direct API)"),
 ]
 
