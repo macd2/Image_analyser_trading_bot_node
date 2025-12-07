@@ -32,6 +32,7 @@ from trading_bot.engine.enhanced_position_monitor import EnhancedPositionMonitor
 from trading_bot.engine.trade_tracker import TradeTracker
 from trading_bot.core.utils import seconds_until_next_boundary, get_current_cycle_boundary
 from trading_bot.core.error_logger import setup_error_logging, set_run_id, set_cycle_id, clear_cycle_id
+from trading_bot.core.event_emitter import get_event_emitter, BotEvent
 from trading_bot.db.init_trading_db import init_database, get_connection
 from trading_bot.db.client import execute, query, query_one
 
@@ -333,18 +334,62 @@ class TradingBot:
             # Calculate time until next boundary
             wait_seconds = seconds_until_next_boundary(timeframe)
             next_boundary = get_current_cycle_boundary(timeframe)
+            total_wait_seconds = wait_seconds
+            initial_wait_seconds = wait_seconds
 
             logger.info(f"\n⏰ Next cycle at {next_boundary.strftime('%H:%M:%S')} UTC")
             logger.info(f"   Waiting {wait_seconds:.0f} seconds...")
 
+            # Emit waiting start event
+            emitter = get_event_emitter()
+            emitter.emit_waiting_start(total_wait_seconds, next_boundary, timeframe)
+
+            # Calculate 10% interval for progress updates
+            progress_interval = total_wait_seconds / 10.0
+            last_progress_milestone = 0
+
             # Wait until next boundary (with periodic checks)
+            # Track last heartbeat time for Railway health monitoring
+            last_heartbeat = datetime.now(timezone.utc)
+            heartbeat_interval = 60  # Heartbeat every 60 seconds
+
             while wait_seconds > 0 and self._running:
                 sleep_time = min(wait_seconds, 30)  # Check every 30s
                 await asyncio.sleep(sleep_time)
                 wait_seconds = seconds_until_next_boundary(timeframe)
 
+                # Calculate elapsed time and progress
+                elapsed_seconds = initial_wait_seconds - wait_seconds
+                progress_percent = (elapsed_seconds / initial_wait_seconds) * 100 if initial_wait_seconds > 0 else 0
+
+                # Emit progress update every 10%
+                current_milestone = int(progress_percent / 10)
+                if current_milestone > last_progress_milestone and current_milestone <= 10:
+                    emitter.emit_waiting_progress(elapsed_seconds, initial_wait_seconds, progress_percent)
+                    remaining_minutes = wait_seconds / 60
+                    logger.info(f"⏳ Progress: {progress_percent:.0f}% | Remaining: {remaining_minutes:.1f} minutes ({wait_seconds:.0f}s)")
+                    last_progress_milestone = current_milestone
+
+                # Heartbeat log every 60 seconds (even if no progress milestone)
+                # This ensures Railway knows the bot is alive during long waits
+                now = datetime.now(timezone.utc)
+                if (now - last_heartbeat).total_seconds() >= heartbeat_interval:
+                    remaining_minutes = wait_seconds / 60
+                    logger.info(f"💓 Heartbeat: Bot alive | Waiting for next cycle | {remaining_minutes:.1f} min remaining")
+                    last_heartbeat = now
+
             if not self._running:
                 break
+
+            # Emit waiting end event
+            emitter.emit_waiting_end(total_wait_seconds)
+
+            # Log wake-up and cycle start
+            logger.info(f"\n{'='*60}")
+            logger.info(f"⏰ BOUNDARY REACHED - WAKING UP!")
+            logger.info(f"   Current time: {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC")
+            logger.info(f"   Starting trading cycle...")
+            logger.info(f"{'='*60}\n")
 
             # Run trading cycle
             try:

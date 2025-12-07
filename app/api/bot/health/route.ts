@@ -59,34 +59,20 @@ async function checkEndpoint(
 }
 
 export async function GET() {
-  const checks: Promise<HealthCheckResult>[] = [
-    // TradingView - Required for chart capture
-    checkEndpoint('TradingView', 'https://www.tradingview.com/', 10000),
-    // Bybit Mainnet - Required for trading
-    checkEndpoint('Bybit Mainnet', 'https://api.bybit.com/v5/market/time', 5000),
-    // Bybit Testnet - Optional, for paper trading
-    checkEndpoint('Bybit Testnet', 'https://api-testnet.bybit.com/v5/market/time', 5000),
-    // OpenAI - Required for analysis
-    checkEndpoint('OpenAI', 'https://api.openai.com/v1/models', 5000),
-  ]
+  // For Railway health checks, we need a FAST response (< 5 seconds)
+  // Don't check external services - just verify the app is alive
 
-  const results = await Promise.all(checks)
-
-  // Critical services that affect trading capability
-  const criticalServices = ['TradingView', 'Bybit Mainnet', 'OpenAI']
-  const criticalOk = results
-    .filter(r => criticalServices.includes(r.service))
-    .every(r => r.status === 'ok')
-
+  // Simple health check: if we can respond, we're healthy
   const summary = {
-    overall: criticalOk ? 'healthy' : 'degraded',
+    overall: 'healthy',
     timestamp: new Date().toISOString(),
-    checks: results
+    uptime: process.uptime(),
+    message: 'Application is running'
   }
 
-  // Return 200 if critical services are up, 503 if any critical service is down
+  // Always return 200 - Railway just needs to know the app is alive
   return NextResponse.json(summary, {
-    status: criticalOk ? 200 : 503
+    status: 200
   })
 }
 
