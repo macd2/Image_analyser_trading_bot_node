@@ -62,10 +62,10 @@ RUN pnpm install --frozen-lockfile
 COPY python/requirements.txt ./python/
 RUN python3 -m pip install --break-system-packages -r python/requirements.txt
 
-# Install Playwright browsers (Chromium) with dependencies
+# Install Playwright browsers (Chromium for headless, Firefox for VNC manual login)
 # Set PLAYWRIGHT_BROWSERS_PATH to cache location
 ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/playwright
-RUN python3 -m playwright install chromium --with-deps
+RUN python3 -m playwright install chromium firefox --with-deps
 
 # Copy all source code
 COPY . .

@@ -435,7 +435,7 @@ class ChartSourcer:
 
                     # Add window sizing arguments for both VNC and host system
                     if self.tv_config.browser.use_vnc and not self.tv_config.browser.headless:
-                        self.logger.info("🔧 Enabling VNC integration mode")
+                        self.logger.info("🔧 Enabling VNC integration mode with Firefox (low memory)")
 
                         # Set DISPLAY environment variable for VNC
                         display = os.environ.get('DISPLAY', self.tv_config.browser.vnc_display)
@@ -446,24 +446,35 @@ class ChartSourcer:
                         # TradingView detects --disable-web-security and crashes the browser
                         browser_args = []
 
-                        # VNC-specific browser arguments - ULTRA MINIMAL for Railway/Docker compatibility
-                        # Railway has limited /dev/shm (64MB) - use single-process mode to avoid OOM crashes
-                        vnc_args = [
-                            f'--display={display}',
-                            f'--window-size={self.tv_config.browser.vnc_window_size}',
-                            '--disable-dev-shm-usage',  # Critical for limited /dev/shm in Docker
-                            '--no-sandbox',  # Required for Docker (no choice)
-                            '--single-process',  # CRITICAL: Run in single process to avoid /dev/shm exhaustion
-                            # DO NOT add --disable-web-security (causes TradingView to crash)
-                            # DO NOT add --disable-gpu (let browser decide)
-                            # DO NOT add --disable-features (causes detection)
-                        ]
-                        browser_args.extend(vnc_args)
-                        self.logger.info(f"🔧 VNC browser args: {vnc_args}")
+                        # VNC-specific browser arguments - Firefox uses 30-40% less memory than Chromium
+                        # Firefox preferences for low memory usage
+                        firefox_prefs = {
+                            # Memory management
+                            'browser.cache.disk.enable': False,
+                            'browser.cache.memory.enable': True,
+                            'browser.cache.memory.capacity': 32768,  # 32MB cache
+                            'browser.sessionhistory.max_total_viewers': 0,
+                            'browser.sessionstore.interval': 60000,
+                            # Disable unnecessary features
+                            'media.peerconnection.enabled': False,
+                            'geo.enabled': False,
+                            'browser.safebrowsing.malware.enabled': False,
+                            'browser.safebrowsing.phishing.enabled': False,
+                            # Performance
+                            'gfx.webrender.all': False,
+                            'layers.acceleration.disabled': True,
+                        }
 
                         # Verify VNC connection
                         if not await self._verify_vnc_connection():
                             self.logger.warning("⚠️ VNC connection not detected, but continuing...")
+
+                        # Launch Firefox for VNC mode (low memory usage)
+                        self.logger.info("🦊 Launching Firefox browser for VNC (low memory mode)")
+                        self.browser = await playwright.firefox.launch(
+                            headless=False,  # VNC mode is always visual
+                            firefox_user_prefs=firefox_prefs
+                        )
                     else:
                         self.logger.info("🔧 Using standard browser mode (no VNC)")
 
@@ -481,12 +492,12 @@ class ChartSourcer:
                             ]
                             browser_args.extend(host_args)
 
-                    # Launch Chromium browser (more compatible for local testing)
-                    self.logger.info("🚀 Launching Chromium browser")
-                    self.browser = await playwright.chromium.launch(
-                        headless=self.tv_config.browser.headless,
-                        args=browser_args
-                    )
+                        # Launch Chromium browser for headless/local mode
+                        self.logger.info("🚀 Launching Chromium browser")
+                        self.browser = await playwright.chromium.launch(
+                            headless=self.tv_config.browser.headless,
+                            args=browser_args
+                        )
                 except Exception as e:
                     self.logger.error(f"Failed to launch browser: {str(e)}")
                     try:
