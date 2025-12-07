@@ -13,7 +13,8 @@ from trading_bot.db.client import (
     get_table_columns,
     add_column_if_missing,
     get_timestamp_type,
-    normalize_sql
+    normalize_sql,
+    query_one
 )
 
 
@@ -774,24 +775,21 @@ class DataAgent:
         """Check if an analysis for a given image_path already exists."""
         conn = self.get_connection()
         try:
-            cursor = conn.cursor()
-            
             # Normalize the path to handle different formats (with/without ./ prefix)
             normalized_path = image_path
             if normalized_path.startswith('./'):
                 normalized_path = normalized_path[2:]  # Remove './' prefix
-            
-            cursor.execute('''
+
+            # Use centralized query_one to handle SQLite/PostgreSQL placeholder conversion
+            row = query_one(conn, '''
                 SELECT 1 FROM analysis_results
                 WHERE image_path = ?
                 LIMIT 1
             ''', (normalized_path,))
-            
-            row = cursor.fetchone()
-            
+
             return row is not None
-            
-        except sqlite3.Error as e:
+
+        except Exception as e:
             print(f"Database error in analysis_exists: {e}")
             return False
         finally:
@@ -1153,20 +1151,20 @@ class DataAgent:
         """Get a trade by its order ID."""
         try:
             conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT * FROM trades WHERE order_id = ?", (order_id,))
-            row = cursor.fetchone()
-            
+
+            # Use centralized query_one to handle SQLite/PostgreSQL placeholder conversion
+            row = query_one(conn, "SELECT * FROM trades WHERE order_id = ?", (order_id,))
+
             if row:
-                trade = self._row_to_dict(cursor, row)
+                # Convert UnifiedRow to dict
+                trade = dict(row.items())
                 conn.close()
                 return trade
-            
+
             conn.close()
             return None
-            
-        except sqlite3.Error as e:
+
+        except Exception as e:
             print(f"Database error in get_trade_by_order_id: {e}")
             return None
 
