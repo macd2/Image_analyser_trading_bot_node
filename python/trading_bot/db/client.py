@@ -130,14 +130,20 @@ def get_connection():
 def convert_placeholders(sql: str, params: Tuple) -> Tuple[str, Tuple]:
     """
     Convert SQLite placeholders (?) to PostgreSQL placeholders (%s).
-    
+
     Args:
         sql: SQL query with ? placeholders
         params: Query parameters
-        
+
     Returns:
         Tuple of (converted_sql, params)
     """
+    # Validate input types
+    if not isinstance(sql, str):
+        raise TypeError(f"sql must be a string, got {type(sql).__name__}: {sql}")
+    if not isinstance(params, (tuple, list)):
+        raise TypeError(f"params must be a tuple or list, got {type(params).__name__}: {params}")
+
     if DB_TYPE == 'postgres':
         # Replace ? with %s for PostgreSQL
         converted_sql = sql.replace('?', '%s')
@@ -146,27 +152,37 @@ def convert_placeholders(sql: str, params: Tuple) -> Tuple[str, Tuple]:
         return (sql, params)
 
 
-def execute(conn, sql: str, params: Tuple = ()) -> int:
+def execute(conn, sql: str, params: Tuple = (), auto_commit: bool = True) -> int:
     """
     Execute an INSERT/UPDATE/DELETE query.
-    Automatically handles parameter placeholder conversion.
-    
+    Automatically handles parameter placeholder conversion and transaction management.
+
     Args:
         conn: Database connection
         sql: SQL query with ? placeholders
         params: Query parameters
-        
+        auto_commit: If True, automatically commit on success and rollback on error
+
     Returns:
         Number of affected rows
     """
     converted_sql, converted_params = convert_placeholders(sql, params)
     cursor = conn.cursor()
-    cursor.execute(converted_sql, converted_params)
-    
-    if DB_TYPE == 'postgres':
-        return cursor.rowcount
-    else:
-        return cursor.rowcount
+
+    try:
+        cursor.execute(converted_sql, converted_params)
+
+        if auto_commit:
+            conn.commit()
+
+        if DB_TYPE == 'postgres':
+            return cursor.rowcount
+        else:
+            return cursor.rowcount
+    except Exception as e:
+        if auto_commit:
+            conn.rollback()
+        raise  # Re-raise the exception after rollback
 
 
 def query(conn, sql: str, params: Tuple = ()) -> List[UnifiedRow]:

@@ -705,7 +705,6 @@ class TradingCycle:
                 get_current_cycle_boundary(self.timeframe).isoformat(),  # cycle_boundary
                 now_iso,  # created_at - explicit to match format with other tables
             ))
-            self._db.commit()
             logger.info(f"📝 Recorded recommendation {rec_id} with full audit trail (prompt: {prompt_name}, model: {model_name})")
         except Exception as e:
             logger.error(f"Failed to record recommendation: {e}", exc_info=True)
@@ -714,10 +713,9 @@ class TradingCycle:
     def _record_cycle_start(self, cycle_id: str, cycle_start: datetime) -> None:
         """Record cycle start to database (so recommendations can reference it)."""
         try:
-            from trading_bot.db.client import execute as db_execute
             now_iso = datetime.now(timezone.utc).isoformat()
 
-            db_execute("""
+            execute(self._db, """
                 INSERT INTO cycles
                 (id, run_id, timeframe, cycle_number, boundary_time, status,
                  charts_captured, analyses_completed, recommendations_generated,
@@ -743,11 +741,10 @@ class TradingCycle:
     def _record_cycle(self, results: Dict[str, Any]) -> None:
         """Update cycle in database with final results."""
         try:
-            from trading_bot.db.client import execute as db_execute
             # Match the actual cycles table schema
             status = "completed" if not results["errors"] else "failed"
 
-            db_execute("""
+            execute(self._db, """
                 UPDATE cycles SET
                     status = ?,
                     charts_captured = ?,
@@ -786,7 +783,6 @@ class TradingCycle:
                 len(results["trades_executed"]),
                 self.run_id,
             ))
-            self._db.commit()
         except Exception as e:
             logger.error(f"Failed to update run aggregates: {e}")
 
