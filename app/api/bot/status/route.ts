@@ -91,17 +91,59 @@ try:
     max_trades = config.trading.max_concurrent_trades
     print(f"[DEBUG] Max concurrent trades from config: {max_trades}", file=sys.stderr)
 
-    executor = OrderExecutor(testnet=False)
-    print(f"[DEBUG] OrderExecutor initialized", file=sys.stderr)
+    # Check if paper trading mode
+    is_paper_trading = config.trading.paper_trading
+    print(f"[DEBUG] Paper trading mode: {is_paper_trading}", file=sys.stderr)
 
-    # Get wallet balance
-    wallet = executor.get_wallet_balance()
+    if is_paper_trading:
+        # In paper trading mode, get positions from database
+        conn = get_connection()
+        if DB_TYPE == 'postgres':
+            positions_rows = query(conn, """
+                SELECT symbol, side, entry_price, stop_loss, take_profit, quantity
+                FROM trades
+                WHERE instance_id = %s AND status = 'open' AND dry_run = 1
+            """, (instance_id,))
+        else:
+            positions_rows = query(conn, """
+                SELECT symbol, side, entry_price, stop_loss, take_profit, quantity
+                FROM trades
+                WHERE instance_id = ? AND status = 'open' AND dry_run = 1
+            """, (instance_id,))
+        conn.close()
 
-    # Log wallet response for debugging
-    print(f"[DEBUG] Wallet response: {wallet}", file=sys.stderr)
+        # Format positions like API response
+        positions = []
+        for row in positions_rows:
+            positions.append({
+                "symbol": row.get('symbol') if isinstance(row, dict) else row[0],
+                "side": row.get('side') if isinstance(row, dict) else row[1],
+                "size": row.get('quantity', 0) if isinstance(row, dict) else (row[5] if len(row) > 5 else 0),
+                "entry_price": row.get('entry_price', 0) if isinstance(row, dict) else (row[2] if len(row) > 2 else 0),
+                "mark_price": row.get('entry_price', 0) if isinstance(row, dict) else (row[2] if len(row) > 2 else 0),  # Use entry as mark for paper
+                "pnl": 0,  # TODO: Calculate from current price
+                "leverage": "1x",
+            })
 
-    # Get positions
-    positions_result = executor.get_positions()
+        wallet = {
+            "wallet_balance": 10000,  # Mock wallet for paper trading
+            "available": 10000,
+            "equity": 10000,
+        }
+        positions_result = {"positions": positions}
+    else:
+        # In live mode, call Bybit API
+        executor = OrderExecutor(testnet=False)
+        print(f"[DEBUG] OrderExecutor initialized", file=sys.stderr)
+
+        # Get wallet balance
+        wallet = executor.get_wallet_balance()
+
+        # Log wallet response for debugging
+        print(f"[DEBUG] Wallet response: {wallet}", file=sys.stderr)
+
+        # Get positions
+        positions_result = executor.get_positions()
 
     # Get last cycle using centralized client
     conn = get_connection()
@@ -155,6 +197,19 @@ except Exception as e:
 
     let output = '';
     let errorOutput = '';
+    let resolved = false;
+
+    // Set timeout to prevent hanging (8 seconds to stay under 10s Railway timeout)
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        pythonProcess.kill();
+        resolve(NextResponse.json(
+          { error: 'Request timeout - API call took too long' },
+          { status: 504 }
+        ));
+      }
+    }, 8000);
 
     pythonProcess.stdout.on('data', (data) => {
       output += data.toString();
@@ -165,6 +220,10 @@ except Exception as e:
     });
 
     pythonProcess.on('close', (code) => {
+      if (resolved) return; // Already timed out
+      clearTimeout(timeout);
+      resolved = true;
+
       if (code !== 0) {
         resolve(NextResponse.json(
           { error: `Python process failed: ${errorOutput}` },
