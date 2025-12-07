@@ -11,10 +11,12 @@ export async function GET() {
 
   // Simple health check: if we can respond, we're healthy
   const summary = {
-    overall: 'healthy',
+    overall: 'healthy' as const,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    message: 'Application is running'
+    message: 'Application is running',
+    // Include empty checks array for UI compatibility
+    checks: []
   }
 
   // Always return 200 - Railway just needs to know the app is alive
