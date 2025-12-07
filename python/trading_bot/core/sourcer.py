@@ -1424,9 +1424,8 @@ class ChartSourcer:
                         WHERE table_name = 'tradingview_sessions'
                     )
                 """)
-                # PostgreSQL returns RealDictRow, access by key name
-                table_exists = table_check and table_check.get('exists', False)
-                if not table_exists:
+                # UnifiedRow supports both index and key access
+                if not table_check or not table_check['exists']:
                     self.logger.warning("❌ tradingview_sessions table does not exist")
                     conn.close()
                     return None
@@ -1464,7 +1463,8 @@ class ChartSourcer:
 
             # Decrypt session data
             secrets = SecretsManager()
-            encrypted_data = row[0] if isinstance(row, tuple) else row.get('encrypted_data')
+            # UnifiedRow supports both index and key access
+            encrypted_data = row['encrypted_data']
             decrypted = secrets.decrypt(encrypted_data)
             session_data = json.loads(decrypted)
             cookie_count = len(session_data.get('cookies', []))

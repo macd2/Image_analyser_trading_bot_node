@@ -195,7 +195,8 @@ class FileValidator:
             ''', (file_path,))
 
             if row:
-                timeframe = row[0] if isinstance(row, tuple) else row.get('timeframe')
+                # UnifiedRow supports both index and key access
+                timeframe = row['timeframe']
                 if timeframe:
                     conn.close()
                     return timeframe
@@ -211,7 +212,8 @@ class FileValidator:
             conn.close()
 
             if row:
-                return row[0] if isinstance(row, tuple) else row.get('timeframe')
+                # UnifiedRow supports both index and key access
+                return row['timeframe']
 
             return None
 
@@ -381,32 +383,34 @@ class FileValidator:
 
             # Check for exact path match
             row = query_one(conn, '''
-                SELECT COUNT(*), MAX(timestamp), timeframe, symbol
+                SELECT COUNT(*) as count, MAX(timestamp) as max_ts, timeframe, symbol
                 FROM analysis_results
                 WHERE image_path = ?
             ''', (file_path,))
 
-            if row and row[0] > 0:
+            # UnifiedRow supports both index and key access
+            if row and row['count'] > 0:
                 result["exists_in_db"] = True
-                result["record_count"] = row[0]
-                result["latest_timestamp"] = row[1]
-                result["timeframe"] = row[2]
-                result["symbol"] = row[3]
+                result["record_count"] = row['count']
+                result["latest_timestamp"] = row['max_ts']
+                result["timeframe"] = row['timeframe']
+                result["symbol"] = row['symbol']
             else:
                 # Try filename match
                 filename = Path(file_path).name
                 row = query_one(conn, '''
-                    SELECT COUNT(*), MAX(timestamp), timeframe, symbol
+                    SELECT COUNT(*) as count, MAX(timestamp) as max_ts, timeframe, symbol
                     FROM analysis_results
                     WHERE image_path LIKE ?
                 ''', (f'%{filename}',))
 
-                if row and row[0] > 0:
+                # UnifiedRow supports both index and key access
+                if row and row['count'] > 0:
                     result["exists_in_db"] = True
-                    result["record_count"] = row[0]
-                    result["latest_timestamp"] = row[1]
-                    result["timeframe"] = row[2]
-                    result["symbol"] = row[3]
+                    result["record_count"] = row['count']
+                    result["latest_timestamp"] = row['max_ts']
+                    result["timeframe"] = row['timeframe']
+                    result["symbol"] = row['symbol']
 
             conn.close()
 

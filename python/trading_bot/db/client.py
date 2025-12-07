@@ -21,6 +21,7 @@ import os
 import sqlite3
 from pathlib import Path
 from typing import Any, List, Tuple, Optional, Union
+from collections.abc import Mapping
 
 # Database configuration
 DB_TYPE = os.getenv('DB_TYPE', 'sqlite')
@@ -35,6 +36,62 @@ if not Path(DB_PATH).is_absolute():
     DB_PATH = Path(__file__).parent.parent.parent.parent / DB_PATH
 else:
     DB_PATH = Path(DB_PATH)
+
+
+class UnifiedRow:
+    """
+    Unified row wrapper that supports both index and key access.
+    Works consistently for both SQLite (sqlite3.Row) and PostgreSQL (RealDictRow).
+
+    This allows code to use either row[0] or row['column_name'] syntax.
+    """
+    def __init__(self, row):
+        self._row = row
+        # Convert to dict for consistent access
+        if isinstance(row, Mapping):
+            self._dict = dict(row)
+        else:
+            # Fallback for tuple/list
+            self._dict = {}
+            self._tuple = tuple(row) if not isinstance(row, tuple) else row
+
+    def __getitem__(self, key):
+        """Support both index and key access."""
+        if isinstance(key, int):
+            # Index access: row[0], row[1], etc.
+            if hasattr(self, '_tuple'):
+                return self._tuple[key]
+            # Convert dict to tuple for index access
+            return list(self._dict.values())[key]
+        else:
+            # Key access: row['column_name']
+            return self._dict[key]
+
+    def __contains__(self, key):
+        return key in self._dict
+
+    def get(self, key, default=None):
+        """Dict-like get method."""
+        return self._dict.get(key, default)
+
+    def keys(self):
+        """Return column names."""
+        return self._dict.keys()
+
+    def values(self):
+        """Return column values."""
+        return self._dict.values()
+
+    def items(self):
+        """Return (column, value) pairs."""
+        return self._dict.items()
+
+    def __repr__(self):
+        return f"UnifiedRow({self._dict})"
+
+    def __bool__(self):
+        """Allow truthiness check."""
+        return bool(self._dict)
 
 
 def get_db_path() -> Path:
@@ -112,26 +169,27 @@ def execute(conn, sql: str, params: Tuple = ()) -> int:
         return cursor.rowcount
 
 
-def query(conn, sql: str, params: Tuple = ()) -> List[Any]:
+def query(conn, sql: str, params: Tuple = ()) -> List[UnifiedRow]:
     """
     Execute a SELECT query and return all rows.
     Automatically handles parameter placeholder conversion.
-    
+
     Args:
         conn: Database connection
         sql: SQL query with ? placeholders
         params: Query parameters
-        
+
     Returns:
-        List of rows (as dicts or sqlite3.Row objects)
+        List of UnifiedRow objects (support both index and key access)
     """
     converted_sql, converted_params = convert_placeholders(sql, params)
     cursor = conn.cursor()
     cursor.execute(converted_sql, converted_params)
-    return cursor.fetchall()
+    rows = cursor.fetchall()
+    return [UnifiedRow(row) for row in rows] if rows else []
 
 
-def query_one(conn, sql: str, params: Tuple = ()) -> Optional[Any]:
+def query_one(conn, sql: str, params: Tuple = ()) -> Optional[UnifiedRow]:
     """
     Execute a SELECT query and return one row.
     Automatically handles parameter placeholder conversion.
@@ -142,12 +200,13 @@ def query_one(conn, sql: str, params: Tuple = ()) -> Optional[Any]:
         params: Query parameters
 
     Returns:
-        Single row (as dict or sqlite3.Row object) or None
+        UnifiedRow object (supports both index and key access) or None
     """
     converted_sql, converted_params = convert_placeholders(sql, params)
     cursor = conn.cursor()
     cursor.execute(converted_sql, converted_params)
-    return cursor.fetchone()
+    row = cursor.fetchone()
+    return UnifiedRow(row) if row else None
 
 
 def get_table_columns(conn, table_name: str) -> set:
