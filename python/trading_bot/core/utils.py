@@ -1300,13 +1300,23 @@ def normalize_symbol_for_bybit(symbol: str) -> str:
     """
     Normalize symbol names to Bybit's expected format.
     Moved from trader.py to utils.py for reuse across modules.
+
+    Handles:
+    - Exchange prefixes (BINANCE:BTCUSDT -> BTCUSDT)
+    - Perpetual suffixes (.P, -PERP, etc.)
+    - Quote currency addition (BTC -> BTCUSDT)
+    - Special tokens requiring 1000 prefix (PEPE -> 1000PEPEUSDT)
     """
     if not symbol:
         return symbol
-    
+
     # Convert to uppercase
     normalized = symbol.upper()
-    
+
+    # Remove exchange prefix if present (e.g., BINANCE:BTCUSDT -> BTCUSDT, BYBIT:SOLUSDT.P -> SOLUSDT.P)
+    if ':' in normalized:
+        normalized = normalized.split(':')[-1]
+
     # Remove common suffixes that aren't used in Bybit
     suffixes_to_remove = ['-PERP', '_PERP', 'PERP', '.D', '.P']
     suffix_removed = False
@@ -1315,22 +1325,56 @@ def normalize_symbol_for_bybit(symbol: str) -> str:
             normalized = normalized[:-len(suffix)]
             suffix_removed = True
             break
-    
+
     # After removing suffix (if any), check if it already ends with a quote currency
     quote_currencies = ['USDT', 'USDC', 'BTC', 'ETH']
     has_quote = any(normalized.endswith(quote) for quote in quote_currencies)
-    
+
     # Only add USDT if no quote currency is present
     if not has_quote:
         normalized += 'USDT'
-    
-    # Handle tokens that require 1000 prefix on Bybit
-    tokens_needing_1000_prefix = [
-        'PEPEUSDT', 'SHIBUSDT', 'FLOKIUSDT', 'BONKUSDT', 'RATSUSDT',
-        'BABYDOGEUSDT', 'XECUSDT', 'WIFUSDT', 'BOMEUSDT'
+
+    # Handle tokens that require numeric prefixes on Bybit
+    # These are low-priced tokens where Bybit uses multipliers (1000, 10000, 1000000) as the base
+    # List fetched from Bybit API on 2025-12-07
+
+    # Tokens requiring 1000000 prefix (ultra low-priced)
+    tokens_needing_1000000_prefix = [
+        'BABYDOGEUSDT',
+        'CHEEMSUSDT',
+        'MOGUSDT',
     ]
-    
-    if normalized in tokens_needing_1000_prefix and not normalized.startswith('1000'):
+
+    # Tokens requiring 10000 prefix (very low-priced)
+    tokens_needing_10000_prefix = [
+        'ELONUSDT',
+        'QUBICUSDT',
+        'SATSUSDT',
+    ]
+
+    # Tokens requiring 1000 prefix (low-priced)
+    tokens_needing_1000_prefix = [
+        'BONKUSDT',
+        'BTTUSDT',
+        'CATUSDT',
+        'FLOKIUSDT',
+        'LUNCUSDT',
+        'NEIROCTOUSDT',
+        'PEPEUSDT',
+        'RATSUSDT',
+        'TAGUSDT',
+        'TOSHIUSDT',
+        'TURBOUSDT',
+        'XECUSDT',
+        'XUSDT',
+    ]
+
+    # Apply prefixes in order (check largest first to avoid conflicts)
+    if normalized in tokens_needing_1000000_prefix and not normalized.startswith('1000000'):
+        normalized = '1000000' + normalized
+    elif normalized in tokens_needing_10000_prefix and not normalized.startswith('10000'):
+        normalized = '10000' + normalized
+    elif normalized in tokens_needing_1000_prefix and not normalized.startswith('1000'):
         normalized = '1000' + normalized
 
     # Remove redundant 'USD' if it appears before 'USDT' or 'USDC'
@@ -1338,7 +1382,7 @@ def normalize_symbol_for_bybit(symbol: str) -> str:
         normalized = normalized.replace('USDUSDT', 'USDT')
     elif normalized.endswith('USDC') and normalized.endswith('USDUSDC'):
         normalized = normalized.replace('USDUSDC', 'USDC')
-    
+
     return normalized
 
 

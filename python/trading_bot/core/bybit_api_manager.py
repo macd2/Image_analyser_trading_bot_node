@@ -262,6 +262,9 @@ class BybitAPIManager:
                 last_error = e
                 error_str = str(e).lower()
 
+                # Enhanced error logging with exception type
+                logger.error(f"❌ Exception during API call: {type(e).__name__}: {e}")
+
                 # Check for network/request errors that might indicate a temporary issue
                 if "connection" in error_str or "timeout" in error_str or "read timed out" in error_str:
                     logger.warning(f"🌐 Network/Timeout error: {e}")
@@ -271,20 +274,21 @@ class BybitAPIManager:
                     if self._consecutive_errors >= self.error_threshold:
                         self._circuit_breaker_state = CircuitBreakerState.OPEN
                         logger.error(f"Circuit breaker OPEN due to {self._consecutive_errors} consecutive network errors.")
-                        return {"error": "Circuit breaker OPEN. API calls suspended."}
+                        return {"retCode": -1, "retMsg": "Circuit breaker OPEN. API calls suspended.", "error": "Circuit breaker OPEN"}
                     continue # Retry network errors
 
                 # For other exceptions, treat as critical and don't retry
-                logger.error(f"❌ Unexpected exception during API call: {e}")
+                logger.error(f"❌ Unexpected exception during API call: {type(e).__name__}: {e}")
                 self._consecutive_errors = 0
                 self._circuit_breaker_state = CircuitBreakerState.CLOSED # Close circuit
-                return {"error": str(e)}
+                return {"retCode": -1, "retMsg": f"{type(e).__name__}: {str(e)}", "error": str(e)}
 
         # If all retries fail
         if last_error:
             logger.error(f"All API call retries failed. Last error: {last_error}")
-            return {"error": f"All retries failed: {str(last_error)}"}
-        return {"error": "Unknown error after retries."}
+            error_msg = f"All retries failed: {str(last_error)}"
+            return {"retCode": -1, "retMsg": error_msg, "error": error_msg}
+        return {"retCode": -1, "retMsg": "Unknown error after retries", "error": "Unknown error after retries"}
 
     # --- Unified API Methods ---
 
