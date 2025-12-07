@@ -16,7 +16,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
 
-from trading_bot.db.client import get_connection, query
+from trading_bot.db.client import get_connection, query, execute as db_execute
 
 logger = logging.getLogger(__name__)
 
@@ -74,23 +74,23 @@ class PaperTradeSimulator:
     def update_trade_status(self, trade_id: str, updates: Dict[str, Any]) -> bool:
         """Update trade with simulation results"""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        
+
         try:
             set_clauses = []
             values = []
-            
+
             for key, value in updates.items():
                 set_clauses.append(f"{key} = ?")
                 values.append(value)
-            
+
             values.append(trade_id)
-            query = f"UPDATE trades SET {', '.join(set_clauses)} WHERE id = ?"
-            
-            cursor.execute(query, values)
+            query_str = f"UPDATE trades SET {', '.join(set_clauses)} WHERE id = ?"
+
+            # Use centralized db_execute to handle SQLite/PostgreSQL placeholder conversion
+            rows_affected = db_execute(conn, query_str, tuple(values))
             conn.commit()
-            
-            return cursor.rowcount > 0
+
+            return rows_affected > 0
         finally:
             conn.close()
     

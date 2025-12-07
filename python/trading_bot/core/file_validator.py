@@ -73,17 +73,27 @@ class FileValidator:
                 return result
             
             result["file_info"]["extension"] = extension
-            
+
             # Try to open and validate image
             try:
-                with Image.open(file_path) as img:
+                from trading_bot.core.storage import read_file
+                import io
+
+                # Read image from storage (supports both local and Supabase)
+                image_data = read_file(file_path)
+                if image_data is None:
+                    result["is_valid"] = False
+                    result["errors"].append(f"Image not found in storage: {file_path}")
+                    return result
+
+                with Image.open(io.BytesIO(image_data)) as img:
                     result["file_info"]["format"] = img.format
                     result["file_info"]["size"] = img.size
                     result["file_info"]["mode"] = img.mode
-                    
+
                     # Basic corruption check - try to load image data
                     img.load()
-                    
+
             except Exception as e:
                 result["is_valid"] = False
                 result["errors"].append(f"Image corruption or invalid format: {str(e)}")

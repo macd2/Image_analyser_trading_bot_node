@@ -93,19 +93,28 @@ def insert_default_config(conn) -> int:
     """
     Insert default config values into the database.
     Uses INSERT OR IGNORE to avoid overwriting existing values.
-    
+
     Returns the number of rows inserted.
     """
+    from trading_bot.db.client import execute as db_execute
+
     rows = get_default_config_rows()
-    cursor = conn.executemany(
-        """
-        INSERT OR IGNORE INTO config (key, value, type, category, description)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        rows
-    )
+    total_inserted = 0
+
+    # Execute each insert individually since executemany doesn't work with placeholder conversion
+    for row in rows:
+        count = db_execute(
+            conn,
+            """
+            INSERT OR IGNORE INTO config (key, value, type, category, description)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            row
+        )
+        total_inserted += count
+
     conn.commit()
-    return cursor.rowcount
+    return total_inserted
 
 
 def reset_config_to_defaults(conn) -> int:
@@ -113,31 +122,40 @@ def reset_config_to_defaults(conn) -> int:
     Reset all config values to defaults.
     This REPLACES existing values.
     """
+    from trading_bot.db.client import execute as db_execute
+
     rows = get_default_config_rows()
-    cursor = conn.executemany(
-        """
-        INSERT OR REPLACE INTO config (key, value, type, category, description, updated_at)
-        VALUES (?, ?, ?, ?, ?, datetime('now'))
-        """,
-        rows
-    )
+    total_replaced = 0
+
+    # Execute each insert individually since executemany doesn't work with placeholder conversion
+    for row in rows:
+        count = db_execute(
+            conn,
+            """
+            INSERT OR REPLACE INTO config (key, value, type, category, description, updated_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            """,
+            row
+        )
+        total_replaced += count
+
     conn.commit()
-    return cursor.rowcount
+    return total_replaced
 
 
 if __name__ == "__main__":
-    from trading_bot.db import get_connection
-    
+    from trading_bot.db import get_connection, query
+
     print("Inserting default config values...")
     conn = get_connection()
     count = insert_default_config(conn)
     print(f"✅ Inserted {count} config rows")
-    
-    # Show all config
-    cursor = conn.execute("SELECT key, value, category FROM config ORDER BY category, key")
+
+    # Show all config using centralized query function
+    rows = query(conn, "SELECT key, value, category FROM config ORDER BY category, key", ())
     print("\n📊 Current config:")
-    for row in cursor:
+    for row in rows:
         print(f"  [{row['category']}] {row['key']} = {row['value']}")
-    
+
     conn.close()
 

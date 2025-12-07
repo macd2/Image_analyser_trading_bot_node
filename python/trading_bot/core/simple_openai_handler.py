@@ -49,8 +49,14 @@ class SimpleOpenAIAssistantHandler:
         Returns:
             Base64 encoded image string
         """
-        with open(image_path, "rb") as f:
-            return base64.b64encode(f.read()).decode("utf-8")
+        from trading_bot.core.storage import read_file
+
+        # Read file from storage (supports both local and Supabase)
+        image_data = read_file(image_path)
+        if image_data is None:
+            raise FileNotFoundError(f"Image not found: {image_path}")
+
+        return base64.b64encode(image_data).decode("utf-8")
 
     def create_thread(self) -> str:
         """Create a new conversation thread.
@@ -76,11 +82,19 @@ class SimpleOpenAIAssistantHandler:
             File ID string
         """
         try:
-            with open(image_path, "rb") as f:
-                file_obj = self.client.files.create(
-                    file=f,
-                    purpose="vision"
-                )
+            from trading_bot.core.storage import read_file
+            import io
+
+            # Read file from storage (supports both local and Supabase)
+            image_data = read_file(image_path)
+            if image_data is None:
+                raise FileNotFoundError(f"Image not found: {image_path}")
+
+            # Create a file-like object from bytes
+            file_obj = self.client.files.create(
+                file=io.BytesIO(image_data),
+                purpose="vision"
+            )
             self.logger.debug(f"Uploaded file: {file_obj.id}")
             return file_obj.id
         except Exception as e:

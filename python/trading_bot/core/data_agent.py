@@ -14,7 +14,10 @@ from trading_bot.db.client import (
     add_column_if_missing,
     get_timestamp_type,
     normalize_sql,
-    query_one
+    query_one,
+    query,
+    execute as db_execute,
+    convert_placeholders
 )
 
 
@@ -737,11 +740,10 @@ class DataAgent:
         """Get all distinct symbol/timeframe pairs from the database."""
         conn = self.get_connection()
         try:
-            cursor = conn.cursor()
-            cursor.execute('SELECT DISTINCT symbol, timeframe FROM analysis_results')
-            rows = cursor.fetchall()
+            # Use centralized query for consistency
+            rows = query(conn, 'SELECT DISTINCT symbol, timeframe FROM analysis_results', ())
             return [{"symbol": row[0], "timeframe": row[1]} for row in rows]
-        except sqlite3.Error as e:
+        except Exception as e:
             print(f"Database error in get_distinct_symbol_timeframes: {e}")
             return []
         finally:
@@ -751,21 +753,18 @@ class DataAgent:
         """Get the most recent analysis for a symbol/timeframe."""
         conn = self._get_pooled_connection()
         try:
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                SELECT * FROM analysis_results 
+            # Use centralized query_one to handle SQLite/PostgreSQL placeholder conversion
+            row = query_one(conn, '''
+                SELECT * FROM analysis_results
                 WHERE symbol = ? AND timeframe = ?
                 ORDER BY timestamp DESC LIMIT 1
             ''', (symbol, timeframe))
-            
-            row = cursor.fetchone()
-            
+
             if row:
-                return self._row_to_dict(cursor, row)
+                return dict(row.items())
             return None
-            
-        except sqlite3.Error as e:
+
+        except Exception as e:
             print(f"Database error in get_latest_analysis: {e}")
             return None
         finally:
@@ -815,28 +814,26 @@ class DataAgent:
         """Get analysis history with optional filtering."""
         conn = self.get_connection()
         try:
-            cursor = conn.cursor()
-            
-            query = "SELECT * FROM analysis_results WHERE 1=1"
+            query_str = "SELECT * FROM analysis_results WHERE 1=1"
             params = []
-            
+
             if symbol:
-                query += " AND symbol = ?"
+                query_str += " AND symbol = ?"
                 params.append(symbol)
-            
+
             if timeframe:
-                query += " AND timeframe = ?"
+                query_str += " AND timeframe = ?"
                 params.append(timeframe)
-            
-            query += " ORDER BY timestamp DESC LIMIT ?"
+
+            query_str += " ORDER BY timestamp DESC LIMIT ?"
             params.append(limit)
-            
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-            
-            return [self._row_to_dict(cursor, row) for row in rows]
-            
-        except sqlite3.Error as e:
+
+            # Use centralized query to handle SQLite/PostgreSQL placeholder conversion
+            rows = query(conn, query_str, tuple(params))
+
+            return [dict(row.items()) for row in rows]
+
+        except Exception as e:
             print(f"Database error in get_analysis_history: {e}")
             return []
         finally:
@@ -846,37 +843,38 @@ class DataAgent:
         """Get performance statistics for stored analyses."""
         conn = self.get_connection()
         try:
-            cursor = conn.cursor()
-            
-            query = "SELECT COUNT(*), AVG(confidence), recommendation FROM analysis_results"
+            query_str = "SELECT COUNT(*), AVG(confidence), recommendation FROM analysis_results"
             params = []
-            
+
             if symbol:
-                query += " WHERE symbol = ?"
+                query_str += " WHERE symbol = ?"
                 params.append(symbol)
-            
-            query += " GROUP BY recommendation"
-            
-            cursor.execute(query, params)
-            results = cursor.fetchall()
-            
+
+            query_str += " GROUP BY recommendation"
+
+            # Use centralized query to handle SQLite/PostgreSQL placeholder conversion
+            results = query(conn, query_str, tuple(params))
+
             stats = {
                 'total_analyses': 0,
                 'average_confidence': 0.0,
                 'recommendations': {'buy': 0, 'sell': 0, 'hold': 0}
             }
-            
-            for count, avg_conf, rec in results:
+
+            for row in results:
+                count = row[0]
+                avg_conf = row[1]
+                rec = row[2]
                 stats['total_analyses'] += count
                 if rec in ['buy', 'sell', 'hold']:
                     stats['recommendations'][rec] = count
-            
+
             if results:
                 stats['average_confidence'] = sum(r[1] * r[0] for r in results) / sum(r[0] for r in results)
-            
+
             return stats
-            
-        except sqlite3.Error as e:
+
+        except Exception as e:
             print(f"Database error in get_performance_stats: {e}")
             return {
                 'total_analyses': 0,
@@ -990,15 +988,14 @@ class DataAgent:
         """Update a trade record with new data."""
         try:
             conn = self.get_connection()
-            cursor = conn.cursor()
-            
+
             # DEBUG: Log the update attempt
             # print(f"DEBUG: Attempting to update trade {trade_id} with data: {kwargs}")
-            
+
             # Build dynamic update query
             set_clauses = []
             values = []
-            
+
             for key, value in kwargs.items():
                 if key in ['pnl', 'status', 'state', 'avg_exit_price', 'closed_size', 'placed_by', 'last_tightened_milestone', 'alteration_details', 'entry_price', 'quantity', 'order_id', 'orderLinkId', 'updated_at']:
                     set_clauses.append(f"{key} = ?")
@@ -1010,29 +1007,29 @@ class DataAgent:
             if not set_clauses:
                 # print(f"DEBUG: No valid fields to update for trade {trade_id}")
                 return False
-                
+
             # Always update the updated_at timestamp
             set_clauses.append("updated_at = CURRENT_TIMESTAMP")
             values.append(trade_id)
-            
-            query = f"UPDATE trades SET {', '.join(set_clauses)} WHERE id = ?"
-            # print(f"DEBUG: Executing query: {query}")
+
+            query_str = f"UPDATE trades SET {', '.join(set_clauses)} WHERE id = ?"
+            # print(f"DEBUG: Executing query: {query_str}")
             # print(f"DEBUG: Query values: {values}")
-            
-            cursor.execute(query, values)
-            
+
+            # Use centralized db_execute to handle SQLite/PostgreSQL placeholder conversion
+            rows_affected = db_execute(conn, query_str, tuple(values))
+
             conn.commit()
-            rows_affected = cursor.rowcount
             # print(f"DEBUG: Rows affected: {rows_affected}")
             conn.close()
-            
+
             if rows_affected == 0:
                 # print(f"DEBUG: No rows updated for trade_id {trade_id} - trade may not exist")
                 pass
 
             return rows_affected > 0
-            
-        except sqlite3.Error as e:
+
+        except Exception as e:
             print(f"Database error in update_trade: {e}")
             return False
 
@@ -1040,12 +1037,11 @@ class DataAgent:
         """Update a trade record by order_id with new data."""
         try:
             conn = self.get_connection()
-            cursor = conn.cursor()
-            
+
             # Build dynamic update query
             set_clauses = []
             values = []
-            
+
             for key, value in kwargs.items():
                 if key in ['pnl', 'status', 'state', 'avg_exit_price', 'closed_size', 'placed_by', 'last_tightened_milestone', 'alteration_details']:
                     set_clauses.append(f"{key} = ?")
@@ -1055,22 +1051,22 @@ class DataAgent:
 
             if not set_clauses:
                 return False
-                
+
             # Always update the updated_at timestamp
             set_clauses.append("updated_at = CURRENT_TIMESTAMP")
             values.append(order_id)
-            
-            query = f"UPDATE trades SET {', '.join(set_clauses)} WHERE order_id = ?"
-            
-            cursor.execute(query, values)
-            
+
+            query_str = f"UPDATE trades SET {', '.join(set_clauses)} WHERE order_id = ?"
+
+            # Use centralized db_execute to handle SQLite/PostgreSQL placeholder conversion
+            rows_affected = db_execute(conn, query_str, tuple(values))
+
             conn.commit()
-            rows_affected = cursor.rowcount
             conn.close()
-            
+
             return rows_affected > 0
-            
-        except sqlite3.Error as e:
+
+        except Exception as e:
             print(f"Database error in update_trade_by_order_id: {e}")
             return False
 
@@ -1113,37 +1109,33 @@ class DataAgent:
         """Get trades from database with optional filtering."""
         try:
             conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            query = "SELECT * FROM trades"
+
+            query_str = "SELECT * FROM trades"
             params = []
             conditions = []
-            
+
             if symbol:
                 conditions.append("symbol = ?")
                 params.append(symbol)
-            
+
             if status:
                 conditions.append("status = ?")
                 params.append(status)
-            
+
             if conditions:
-                query += " WHERE " + " AND ".join(conditions)
-            
-            query += " ORDER BY created_at DESC"
-            
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-            
-            trades = []
-            for row in rows:
-                trade = self._row_to_dict(cursor, row)
-                trades.append(trade)
-            
+                query_str += " WHERE " + " AND ".join(conditions)
+
+            query_str += " ORDER BY created_at DESC"
+
+            # Use centralized query to handle SQLite/PostgreSQL placeholder conversion
+            rows = query(conn, query_str, tuple(params))
+
+            trades = [dict(row.items()) for row in rows]
+
             conn.close()
             return trades
-            
-        except sqlite3.Error as e:
+
+        except Exception as e:
             print(f"Database error in get_trades: {e}")
             return []
 
@@ -1308,11 +1300,10 @@ class DataAgent:
         """Get trading statistics with optional filtering."""
         try:
             conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            query = "SELECT * FROM trading_stats"
+
+            query_str = "SELECT * FROM trading_stats"
             params = []
-            
+
             if symbol or timeframe:
                 conditions = []
                 if symbol:
@@ -1321,17 +1312,17 @@ class DataAgent:
                 if timeframe:
                     conditions.append("timeframe = ?")
                     params.append(timeframe)
-                query += " WHERE " + " AND ".join(conditions)
-            
-            query += " ORDER BY symbol, timeframe"
-            
-            cursor.execute(query, params)
-            results = cursor.fetchall()
+                query_str += " WHERE " + " AND ".join(conditions)
+
+            query_str += " ORDER BY symbol, timeframe"
+
+            # Use centralized query to handle SQLite/PostgreSQL placeholder conversion
+            results = query(conn, query_str, tuple(params))
             conn.close()
-            
-            return [self._row_to_dict(cursor, row) for row in results]
-            
-        except sqlite3.Error as e:
+
+            return [dict(row.items()) for row in results]
+
+        except Exception as e:
             print(f"Error getting trading stats: {e}")
             return []
     
@@ -1425,14 +1416,13 @@ class DataAgent:
             next_boundary_iso = next_boundary.isoformat()
             
             conn = self.get_connection()
-            cursor = conn.cursor()
-            
+
             # Query for recommendations within the current boundary period
             # Use >= current_boundary and < next_boundary to ensure exact period matching
             if symbol == "all":
-                query = '''
-                    SELECT * FROM analysis_results 
-                    WHERE timeframe = ? 
+                query_str = '''
+                    SELECT * FROM analysis_results
+                    WHERE timeframe = ?
                     AND (
                         (timestamp >= ? AND timestamp < ?) OR
                         (timestamp >= ? AND timestamp < ?)
@@ -1441,10 +1431,10 @@ class DataAgent:
                 '''
                 params = (timeframe, current_boundary_str, next_boundary_str, current_boundary_iso, next_boundary_iso)
             else:
-                query = '''
-                    SELECT * FROM analysis_results 
-                    WHERE symbol = ? 
-                    AND timeframe = ? 
+                query_str = '''
+                    SELECT * FROM analysis_results
+                    WHERE symbol = ?
+                    AND timeframe = ?
                     AND (
                         (timestamp >= ? AND timestamp < ?) OR
                         (timestamp >= ? AND timestamp < ?)
@@ -1452,14 +1442,11 @@ class DataAgent:
                     ORDER BY timestamp DESC
                 '''
                 params = (symbol, timeframe, current_boundary_str, next_boundary_str, current_boundary_iso, next_boundary_iso)
-            
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-            
-            results = []
-            for row in rows:
-                result = self._row_to_dict(cursor, row)
-                results.append(result)
+
+            # Use centralized query to handle SQLite/PostgreSQL placeholder conversion
+            rows = query(conn, query_str, params)
+
+            results = [dict(row.items()) for row in rows]
             
             # Filter results to ensure they are actually within the current boundary period
             # This provides an additional safety check
@@ -1527,24 +1514,20 @@ class DataAgent:
             next_boundary_str = next_boundary.strftime('%Y-%m-%d %H:%M:%S')
             
             conn = self.get_connection()
-            cursor = conn.cursor()
-            
+
             # Query for trades within the current cycle period
             # Use >= current_boundary and < next_boundary to ensure exact period matching
-            query = '''
-                SELECT * FROM trades 
+            query_str = '''
+                SELECT * FROM trades
                 WHERE created_at >= ? AND created_at < ?
                 ORDER BY created_at DESC
             '''
             params = (current_boundary_str, next_boundary_str)
-            
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-            
-            results = []
-            for row in rows:
-                result = self._row_to_dict(cursor, row)
-                results.append(result)
+
+            # Use centralized query to handle SQLite/PostgreSQL placeholder conversion
+            rows = query(conn, query_str, params)
+
+            results = [dict(row.items()) for row in rows]
             
             conn.close()
             

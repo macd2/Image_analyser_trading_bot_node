@@ -57,8 +57,14 @@ class ChartAnalyzer:
 
     def encode_image(self, image_path: str) -> str:
         """Encode image to base64."""
-        with open(image_path, "rb") as f:
-            return base64.b64encode(f.read()).decode("utf-8")
+        from trading_bot.core.storage import read_file
+
+        # Read file from storage (supports both local and Supabase)
+        image_data = read_file(image_path)
+        if image_data is None:
+            raise FileNotFoundError(f"Image not found: {image_path}")
+
+        return base64.b64encode(image_data).decode("utf-8")
 
     def encode_image_pil(self, image: Image.Image) -> str:
         """Encode PIL image to base64."""
@@ -301,7 +307,15 @@ class ChartAnalyzer:
             }
 
         try:
-            with Image.open(image_path) as img:
+            from trading_bot.core.storage import read_file
+            import io
+
+            # Read image from storage (supports both local and Supabase)
+            image_data = read_file(image_path)
+            if image_data is None:
+                raise FileNotFoundError(f"Image not found: {image_path}")
+
+            with Image.open(io.BytesIO(image_data)) as img:
                 # For autotrader: use filename timestamp instead of image extraction to avoid timezone issues
                 from .utils import extract_timestamp_from_filename
                 filename_timestamp = extract_timestamp_from_filename(image_path)
@@ -578,7 +592,15 @@ class ChartAnalyzer:
             }
 
         try:
-            with Image.open(image_path) as img:
+            from trading_bot.core.storage import read_file
+            import io
+
+            # Read image from storage (supports both local and Supabase)
+            image_data = read_file(image_path)
+            if image_data is None:
+                raise FileNotFoundError(f"Image not found: {image_path}")
+
+            with Image.open(io.BytesIO(image_data)) as img:
                 # For autotrader: use filename timestamp instead of image extraction to avoid timezone issues
                 from .utils import extract_timestamp_from_filename
                 filename_timestamp = extract_timestamp_from_filename(image_path)
