@@ -180,6 +180,9 @@ class TradingCycle:
 
         chart_paths: Dict[str, str] = {}
 
+        # Record cycle BEFORE analysis starts (so recommendations can reference it)
+        self._record_cycle_start(cycle_id, cycle_start)
+
         try:
             # STEP 0: Clean outdated charts
             charts_dir = self.config.paths.charts if self.config.paths else "data/charts"
@@ -448,11 +451,16 @@ class TradingCycle:
             # Use the centralized slot management system for accurate slot calculation
             try:
                 # Create a temporary SlotManager instance for slot calculation
-                # Use sourcer as trader (has API access) and database connection as data_agent
+                # Need OrderExecutor for API access, not ChartSourcer
+                from trading_bot.engine.order_executor import OrderExecutor
                 from trading_bot.core.slot_manager import SlotManager
+
+                # Create OrderExecutor for API access
+                order_executor = OrderExecutor(testnet=self.testnet)
+
                 slot_manager = SlotManager(
-                    trader=self.sourcer,  # Sourcer has API access for position checking
-                    data_agent=self._db,   # Use database connection for data access
+                    trader=order_executor,  # OrderExecutor has get_positions() and get_open_orders()
+                    data_agent=self._db,    # Use database connection for data access
                     config=self.config
                 )
                 available_slots, slot_details = slot_manager.get_available_order_slots()
@@ -703,36 +711,60 @@ class TradingCycle:
             logger.error(f"Failed to record recommendation: {e}", exc_info=True)
         return rec_id
 
-    def _record_cycle(self, results: Dict[str, Any]) -> None:
-        """Record cycle to database with run_id for audit trail."""
+    def _record_cycle_start(self, cycle_id: str, cycle_start: datetime) -> None:
+        """Record cycle start to database (so recommendations can reference it)."""
         try:
-            # Match the actual cycles table schema
-            status = "completed" if not results["errors"] else "failed"
-            # Use consistent ISO timestamp format
+            from trading_bot.db.client import execute as db_execute
             now_iso = datetime.now(timezone.utc).isoformat()
 
-            execute(self._db, """
+            db_execute("""
                 INSERT INTO cycles
                 (id, run_id, timeframe, cycle_number, boundary_time, status,
                  charts_captured, analyses_completed, recommendations_generated,
-                 trades_executed, started_at, completed_at, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 trades_executed, started_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                results["cycle_id"],
+                cycle_id,
                 self.run_id,  # Link to parent run
                 self.timeframe,
                 self._cycle_count,
                 get_current_cycle_boundary(self.timeframe).isoformat(),
+                "running",  # Initial status
+                0,  # Will be updated later
+                0,  # Will be updated later
+                0,  # Will be updated later
+                0,  # Will be updated later
+                cycle_start.isoformat(),
+                now_iso,  # created_at
+            ))
+        except Exception as e:
+            logger.error(f"Failed to record cycle start: {e}")
+
+    def _record_cycle(self, results: Dict[str, Any]) -> None:
+        """Update cycle in database with final results."""
+        try:
+            from trading_bot.db.client import execute as db_execute
+            # Match the actual cycles table schema
+            status = "completed" if not results["errors"] else "failed"
+
+            db_execute("""
+                UPDATE cycles SET
+                    status = ?,
+                    charts_captured = ?,
+                    analyses_completed = ?,
+                    recommendations_generated = ?,
+                    trades_executed = ?,
+                    completed_at = ?
+                WHERE id = ?
+            """, (
                 status,
                 results["symbols_analyzed"],  # charts_captured
                 results["symbols_analyzed"],  # analyses_completed
                 len(results["recommendations"]),
                 len(results["trades_executed"]),
-                results["started_at"],
                 results.get("completed_at"),
-                now_iso,  # created_at - explicit to match format with other tables
+                results["cycle_id"],
             ))
-            self._db.commit()
 
             # Update run aggregates
             if self.run_id:

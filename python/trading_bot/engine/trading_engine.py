@@ -192,14 +192,13 @@ class TradingEngine:
     ) -> None:
         """Insert a rejected trade into the database for audit trail."""
         try:
-            conn = get_connection()
-            cursor = conn.cursor()
+            from trading_bot.db.client import execute as db_execute
 
             # Determine side from recommendation
             recommendation = signal.get("recommendation", "").upper()
             side = "Buy" if recommendation in ("BUY", "LONG") else "Sell"
 
-            cursor.execute("""
+            db_execute("""
                 INSERT INTO trades (
                     id, recommendation_id, run_id, cycle_id, symbol, side,
                     entry_price, quantity, stop_loss, take_profit,
@@ -227,8 +226,6 @@ class TradingEngine:
                 timestamp.isoformat() if timestamp else datetime.now(timezone.utc).isoformat(),
             ))
 
-            conn.commit()
-            conn.close()
             logger.debug(f"Inserted rejected trade {trade_id} for {symbol}: {rejection_reason}")
         except Exception as e:
             logger.error(f"Failed to insert rejected trade {trade_id}: {e}")
@@ -506,7 +503,7 @@ class TradingEngine:
                 INSERT INTO trades
                 (id, recommendation_id, run_id, cycle_id, symbol, side, entry_price, take_profit,
                  stop_loss, quantity, status, order_id, confidence, rr_ratio, timeframe, dry_run, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 trade["id"],
                 trade.get("recommendation_id"),
