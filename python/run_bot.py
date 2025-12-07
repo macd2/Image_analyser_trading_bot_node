@@ -103,11 +103,10 @@ class TradingBot:
                 self.instance_prompt_name = row['prompt_name']
                 logger.info(f"📋 Instance prompt: {self.instance_prompt_name}")
 
-        # Use command line args if provided, otherwise use config from database
-        # If paper_trading arg is True (default), check config
-        self.paper_trading = paper_trading if not paper_trading else self.config.trading.paper_trading
-        # If testnet arg is False (default), check config
-        self.testnet = testnet if testnet else self.config.bybit.use_testnet
+        # Command line arguments always take precedence over database config
+        # The caller (main()) passes explicit values based on --live and --testnet flags
+        self.paper_trading = paper_trading
+        self.testnet = testnet
 
         # Create new run for this bot session
         self.run_id = self._create_run()
