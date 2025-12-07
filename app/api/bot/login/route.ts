@@ -13,7 +13,7 @@ import path from 'path';
 const STATE_FILE = path.join(process.cwd(), 'python', 'trading_bot', 'data', 'login_state.json');
 
 interface LoginState {
-  state: 'idle' | 'waiting_for_login' | 'login_confirmed' | 'browser_opened';
+  state: 'idle' | 'waiting_for_login' | 'waiting_for_browser_open' | 'browser_open_requested' | 'login_confirmed' | 'browser_opened';
   message: string | null;
   timestamp: string | null;
   browser_opened: boolean;
@@ -90,18 +90,21 @@ export async function POST(request: NextRequest) {
     switch (action) {
       case 'confirm_login':
         // User clicked "Confirm Login" - signal bot to verify and continue
-        if (currentState.state !== 'waiting_for_login') {
+        // Accept confirmation from any non-idle state (supports both old and new VNC flow)
+        if (currentState.state === 'idle') {
           return NextResponse.json({
             success: false,
-            message: 'Not waiting for login confirmation'
+            message: 'No login flow in progress'
           }, { status: 400 });
         }
-        
+
+        console.log(`[Login API] Confirming login from state: ${currentState.state}`);
+
         setLoginState({
           state: 'login_confirmed',
           message: 'Login confirmed by user - verifying...'
         });
-        
+
         return NextResponse.json({
           success: true,
           message: 'Login confirmation sent to bot'
