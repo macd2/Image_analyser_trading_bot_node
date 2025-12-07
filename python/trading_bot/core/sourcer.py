@@ -1412,6 +1412,7 @@ class ChartSourcer:
         try:
             from trading_bot.core.secrets_manager import SecretsManager
             username = os.getenv('TRADINGVIEW_EMAIL', '')
+            self.logger.info(f"🔍 Loading session for user: {username} from {DB_TYPE} database")
 
             conn = get_connection()
 
@@ -1424,10 +1425,12 @@ class ChartSourcer:
                     )
                 """)
                 if not table_check or not table_check[0]:
+                    self.logger.warning("❌ tradingview_sessions table does not exist")
                     conn.close()
                     return None
 
                 # Get most recent valid session
+                self.logger.debug(f"🔍 Querying for session: username={username}, is_valid=true")
                 row = query_one(conn, """
                     SELECT encrypted_data FROM tradingview_sessions
                     WHERE username = ? AND is_valid = true
@@ -1439,10 +1442,12 @@ class ChartSourcer:
                     SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'
                 """)
                 if not table_check:
+                    self.logger.warning("❌ sessions table does not exist")
                     conn.close()
                     return None
 
                 # Get most recent valid session
+                self.logger.debug(f"🔍 Querying for session: username={username}, is_valid=1")
                 row = query_one(conn, """
                     SELECT encrypted_data FROM sessions
                     WHERE username = ? AND is_valid = 1
@@ -1452,17 +1457,22 @@ class ChartSourcer:
             conn.close()
 
             if not row:
+                self.logger.warning(f"❌ No valid session found in database for user: {username}")
                 return None
 
             # Decrypt session data
             secrets = SecretsManager()
             encrypted_data = row[0] if isinstance(row, tuple) else row.get('encrypted_data')
             decrypted = secrets.decrypt(encrypted_data)
-            self.logger.info(f"✅ Loaded session from {DB_TYPE} database for user: {username}")
-            return json.loads(decrypted)
+            session_data = json.loads(decrypted)
+            cookie_count = len(session_data.get('cookies', []))
+            self.logger.info(f"✅ Loaded session from {DB_TYPE} database for user: {username} ({cookie_count} cookies)")
+            return session_data
 
         except Exception as e:
-            self.logger.debug(f"Could not load session from database: {e}")
+            self.logger.error(f"❌ Could not load session from database: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
             return None
     
     async def _save_session_data(self) -> None:
