@@ -442,10 +442,13 @@ class TradingCycle:
         Uses SlotManager if available, otherwise uses config max_concurrent_trades.
         """
         try:
-            # Try to get from config
-            max_trades = 3  # Default
-            if self.config.trading:
-                max_trades = getattr(self.config.trading, 'max_concurrent_trades', 3)
+            # Get max_concurrent_trades from config (REQUIRED - no defaults for trading settings)
+            if not self.config or not self.config.trading:
+                raise ValueError("Config and trading settings are required")
+
+            max_trades = self.config.trading.max_concurrent_trades
+            if max_trades is None:
+                raise ValueError("max_concurrent_trades must be configured in instance settings")
 
             # Integrate with SlotManager for real position counting
             # Use the centralized slot management system for accurate slot calculation
