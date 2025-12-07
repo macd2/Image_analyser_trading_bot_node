@@ -33,49 +33,50 @@ def _convert_timeframe_to_bybit(timeframe: str) -> str:
 
 
 def _get_symbol_precision(symbol: str) -> dict:
-    """Get price precision (tick size) and qty precision from Bybit for a symbol."""
-    try:
-        from pybit.unified_trading import HTTP
-        session = HTTP(testnet=False)
+    """Get price precision (tick size) and qty precision from Bybit for a symbol.
 
-        api_symbol = symbol if not symbol.endswith('.P') else symbol[:-2]
+    NOTE: This function is DISABLED to avoid slow API calls.
+    We use smart defaults based on the symbol instead.
+    """
+    # Smart defaults based on symbol patterns
+    # Most USDT pairs use 2-4 decimals, BTC pairs use more
+    if 'BTC' in symbol or symbol.startswith('BTC'):
+        price_decimals = 2
+        tick_size = 0.01
+    elif symbol.endswith('1000') or '1000' in symbol:
+        # 1000PEPE, 1000SHIB etc - very small prices
+        price_decimals = 6
+        tick_size = 0.000001
+    else:
+        # Default for most USDT pairs
+        price_decimals = 4
+        tick_size = 0.0001
 
-        response = session.get_instruments_info(
-            category="linear",
-            symbol=api_symbol
-        )
+    return {
+        'tickSize': tick_size,
+        'priceDecimals': price_decimals,
+        'qtyStep': 0.001,
+        'qtyDecimals': 3
+    }
 
-        if response.get('retCode') == 0 and response.get('result', {}).get('list'):
-            instrument = response['result']['list'][0]
-            price_filter = instrument.get('priceFilter', {})
-            lot_filter = instrument.get('lotSizeFilter', {})
+    # OLD CODE - DISABLED DUE TO SLOW API CALLS (30+ seconds)
+    # try:
+    #     from pybit.unified_trading import HTTP
+    #     session = HTTP(testnet=False)
+    #     api_symbol = symbol if not symbol.endswith('.P') else symbol[:-2]
+    #     response = session.get_instruments_info(category="linear", symbol=api_symbol)
+    #     if response.get('retCode') == 0 and response.get('result', {}).get('list'):
+    #         instrument = response['result']['list'][0]
+    #         price_filter = instrument.get('priceFilter', {})
+    #         lot_filter = instrument.get('lotSizeFilter', {})
+    #         tick_size = price_filter.get('tickSize', '0.01')
+    #         qty_step = lot_filter.get('qtyStep', '0.001')
+    #         # Calculate decimal places...
+    #         return {...}
+    # except Exception as e:
+    #     sys.stderr.write(f"Failed to get symbol precision: {e}\n")
 
-            tick_size = price_filter.get('tickSize', '0.01')
-            qty_step = lot_filter.get('qtyStep', '0.001')
-
-            # Calculate decimal places from tick size
-            tick_size_str = str(tick_size)
-            if '.' in tick_size_str:
-                price_decimals = len(tick_size_str.split('.')[1].rstrip('0')) or 0
-            else:
-                price_decimals = 0
-
-            qty_step_str = str(qty_step)
-            if '.' in qty_step_str:
-                qty_decimals = len(qty_step_str.split('.')[1].rstrip('0')) or 0
-            else:
-                qty_decimals = 0
-
-            return {
-                'tickSize': float(tick_size),
-                'priceDecimals': price_decimals,
-                'qtyStep': float(qty_step),
-                'qtyDecimals': qty_decimals
-            }
-    except Exception as e:
-        sys.stderr.write(f"Failed to get symbol precision: {e}\n")
-
-    # Default fallback
+    # Default fallback (never reached now)
     return {
         'tickSize': 0.01,
         'priceDecimals': 2,
@@ -221,28 +222,24 @@ def get_candles_for_trade(symbol: str, timeframe: str, timestamp_ms: int,
     # Get candles from database using centralized client
     candles = _get_candles_from_db(symbol, timeframe, start_ts, end_ts)
 
-    # Check if we have enough candles before and after the signal
+    # Check if we have enough candles before the signal
     expected_candles_before = candles_before
-    expected_candles_after = candles_after
     candles_before_signal = [c for c in candles if c['start_time'] < timestamp_ms]
     candles_after_signal = [c for c in candles if c['start_time'] >= timestamp_ms]
 
     need_fetch = False
     fetch_status = 'cached'
 
-    # Check if we need to fetch more candles
+    # Only check for candles BEFORE the signal - we show whatever exists after
     if len(candles_before_signal) < expected_candles_before * 0.8:  # 80% threshold
         need_fetch = True
         sys.stderr.write(f"Not enough candles before signal: {len(candles_before_signal)}/{expected_candles_before}\n")
 
-    if len(candles_after_signal) < expected_candles_after * 0.8:  # 80% threshold
-        need_fetch = True
-        sys.stderr.write(f"Not enough candles after signal: {len(candles_after_signal)}/{expected_candles_after}\n")
-
-    # Check if candles are up-to-date (for recent trades)
+    # For recent trades, check if candles are up-to-date
+    # But DON'T require a specific number of candles after - just show what exists
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
     if candles and timestamp_ms > now_ms - (24 * 60 * 60 * 1000):  # Trade within last 24h
-        latest_candle_time = max(c['start_time'] for c in candles)
+        latest_candle_time = max(c['start_time'] for c in candles) if candles else 0
         time_since_latest = now_ms - latest_candle_time
         max_age_ms = 2 * timeframe_ms  # Allow 2 candle periods of staleness
 
