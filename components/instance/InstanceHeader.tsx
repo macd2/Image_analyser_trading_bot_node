@@ -402,10 +402,9 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
             variant="default"
             size="sm"
             onClick={() => handleBotAction('stop')}
-            disabled={actionLoading || !isRunning}
-            className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50"
+            className="bg-amber-600 hover:bg-amber-700"
           >
-            {actionLoading && isRunning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Square size={14} className="mr-1" />}
+            <Square size={14} className="mr-1" />
             Stop
           </Button>
           <Button
@@ -416,8 +415,6 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
                 handleBotAction('kill')
               }
             }}
-            disabled={actionLoading || !isRunning}
-            className="disabled:opacity-50"
           >
             <Skull size={14} className="mr-1" />
             Kill
