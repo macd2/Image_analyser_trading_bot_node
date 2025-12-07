@@ -221,21 +221,19 @@ class ChartSourcer:
         storage_type = get_storage_type()
         self.logger.info(f"💾 Saving chart to {storage_type} storage: {filename}")
 
-        # Save using storage module
-        result = save_file(filename, image_data, content_type='image/png')
+        # Save using storage module with charts/ prefix for consistency
+        file_path = f"charts/{filename}"
+        result = save_file(file_path, image_data, content_type='image/png')
 
         if not result.get('success'):
             raise ValueError(f"Failed to save chart: {result.get('error', 'Unknown error')}")
 
-        saved_path = result.get('path', filename)
+        saved_path = result.get('path', file_path)
         self.logger.info(f"✅ Successfully saved chart: {saved_path} (storage: {storage_type})")
 
-        # For local storage, also keep reference to the filepath for backward compatibility
-        if storage_type == 'local':
-            return saved_path
-        else:
-            # For cloud storage, return the filename (caller can use get_public_url if needed)
-            return filename
+        # Return the file_path (charts/filename) for consistency with storage layer
+        # This allows callers to use it directly with read_file(), move_file(), etc.
+        return file_path
     
     def download_chart(self, url: str, symbol: str, timeframe: str) -> str:
         """Download chart from URL."""
@@ -288,7 +286,8 @@ class ChartSourcer:
                     parts = name_without_ext.rsplit('_', 2)  # Split from right: symbol, timeframe, timestamp
                     if len(parts) >= 1:
                         symbol = parts[0]
-                        matching_charts[symbol] = filename
+                        # Return full path with charts/ prefix for consistency with storage layer
+                        matching_charts[symbol] = f"charts/{filename}"
 
             if matching_charts:
                 self.logger.info(f"✅ Found {len(matching_charts)} charts for current {timeframe} boundary ({boundary_timestamp})")
