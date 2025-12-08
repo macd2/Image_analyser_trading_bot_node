@@ -277,27 +277,15 @@ export function SimulatorPage() {
     }
   }, [fetchStats, fetchOpenTrades, fetchClosedTrades, fetchMonitorStatus])
 
-  // Initial fetch and auto-start monitor
+  // Initial fetch - just load data, server handles background auto-close
   useEffect(() => {
     fetchStats()
     fetchOpenTrades()
     fetchClosedTrades()
     fetchMonitorStatus()
-
-    // Auto-start the monitor
-    const autoStart = async () => {
-      await fetch('/api/bot/simulator/monitor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'start' })
-      })
-      // Run first check immediately
-      triggerAutoClose()
-    }
-    autoStart()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-refresh UI data
+  // Auto-refresh UI data only (no auto-close triggering - server handles that)
   useEffect(() => {
     if (!autoRefresh) return
     const interval = setInterval(() => {
@@ -307,16 +295,7 @@ export function SimulatorPage() {
       fetchMonitorStatus()
     }, 5000)
     return () => clearInterval(interval)
-  }, [autoRefresh, fetchStats, fetchOpenTrades, fetchMonitorStatus])
-
-  // Auto-monitor: run auto-close every 10 seconds when monitor is running
-  useEffect(() => {
-    if (!monitorStatus?.running || autoClosing) return
-    const interval = setInterval(() => {
-      triggerAutoClose()
-    }, 10000) // Check every 10 seconds
-    return () => clearInterval(interval)
-  }, [monitorStatus?.running, autoClosing, triggerAutoClose])
+  }, [autoRefresh, fetchStats, fetchOpenTrades, fetchClosedTrades, fetchMonitorStatus])
 
   // Get last checked price for a trade from monitor results
   const getLastCheckedPrice = (tradeId: string): { price: number; checkedAt: string } | null => {
