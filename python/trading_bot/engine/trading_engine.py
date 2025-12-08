@@ -14,6 +14,7 @@ from typing import Dict, Any, Optional, List, Callable
 from trading_bot.config.settings_v2 import ConfigV2
 from trading_bot.core.state_manager import StateManager
 from trading_bot.core.websocket_manager import BybitWebSocketManager
+from trading_bot.core.shared_websocket_manager import SharedWebSocketManager
 from trading_bot.engine.order_executor import OrderExecutor
 from trading_bot.engine.position_sizer import PositionSizer
 from trading_bot.db.client import get_connection, execute
@@ -78,14 +79,14 @@ class TradingEngine:
             min_position_value=self.config.trading.min_position_value_usd,
         )
 
-        # WebSocket manager (initialized on start)
-        self.ws_manager: Optional[BybitWebSocketManager] = None
-        
+        # WebSocket manager (shared singleton for multi-instance support)
+        self.ws_manager: Optional[SharedWebSocketManager] = None
+
         # Engine state
         self._running = False
         self._stop_event = threading.Event()
         self._cycle_count = 0
-        
+
         # Callbacks
         self._on_cycle_complete: Optional[Callable] = None
         self._on_trade_executed: Optional[Callable] = None
@@ -103,46 +104,54 @@ class TradingEngine:
         
         logger.info("=" * 60)
         logger.info("🚀 STARTING TRADING ENGINE")
+        logger.info(f"   Instance: {self.instance_id}")
         logger.info(f"   Mode: {'PAPER' if self.paper_trading else 'LIVE'}")
         logger.info(f"   Network: {'TESTNET' if self.testnet else 'MAINNET'}")
         logger.info("=" * 60)
-        
-        # Initialize WebSocket connection
-        self.ws_manager = BybitWebSocketManager(
-            testnet=self.testnet,
+
+        # MULTI-INSTANCE: Use shared WebSocket manager (singleton)
+        # Multiple instances share the same WebSocket connection
+        self.ws_manager = SharedWebSocketManager(testnet=self.testnet)
+
+        # Subscribe this instance to WebSocket messages
+        # StateManager will filter messages based on order_link_id prefix
+        self.ws_manager.subscribe(
+            subscriber_id=self.instance_id or "default",
             on_order=self.state_manager.handle_order_message,
             on_position=self.state_manager.handle_position_message,
             on_execution=self.state_manager.handle_execution_message,
             on_wallet=self.state_manager.handle_wallet_message,
-            on_connect=self._on_ws_connect,
-            on_disconnect=self._on_ws_disconnect,
         )
-        
+
+        # Connect WebSocket (if not already connected by another instance)
         if not self.ws_manager.connect():
-            logger.error("Failed to connect WebSocket")
+            logger.error("Failed to connect shared WebSocket")
             return False
-        
+
         self._running = True
         self._stop_event.clear()
-        
-        logger.info("✅ Trading engine started")
+
+        logger.info(f"✅ Trading engine started (subscribers: {self.ws_manager.get_subscriber_count()})")
         return True
     
     def stop(self) -> None:
         """Stop the trading engine."""
-        logger.info("Stopping trading engine...")
-        
+        logger.info(f"Stopping trading engine (instance: {self.instance_id})...")
+
         self._running = False
         self._stop_event.set()
-        
+
+        # MULTI-INSTANCE: Unsubscribe from shared WebSocket
+        # WebSocket will only disconnect if no subscribers remain
         if self.ws_manager:
-            self.ws_manager.disconnect()
+            self.ws_manager.unsubscribe(self.instance_id or "default")
+            # Don't call disconnect() - let the shared manager handle it
             self.ws_manager = None
-        
+
         if self._db:
             self._db.close()
             self._db = None
-        
+
         logger.info("Trading engine stopped")
     
     def _on_ws_connect(self) -> None:
@@ -263,7 +272,10 @@ class TradingEngine:
         Returns:
             Execution result dict
         """
-        trade_id = str(uuid.uuid4())[:8]
+        # MULTI-INSTANCE: Generate trade_id with instance_id prefix for WebSocket filtering
+        # Format: {instance_id}_{uuid} so StateManager can identify ownership
+        trade_uuid = str(uuid.uuid4())[:8]
+        trade_id = f"{self.instance_id}_{trade_uuid}" if self.instance_id else trade_uuid
         timestamp = datetime.now(timezone.utc)
 
         # Validate signal

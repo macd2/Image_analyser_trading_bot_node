@@ -102,7 +102,7 @@ class StateManager:
         Args:
             db_connection: Optional database connection for persistence
             paper_trading: If True, use database for position/slot checking instead of WebSocket
-            instance_id: Instance ID for filtering database queries in paper trading mode
+            instance_id: Instance ID for filtering database queries and WebSocket messages
         """
         self._db = db_connection
         self._lock = threading.RLock()
@@ -110,14 +110,16 @@ class StateManager:
         self.instance_id = instance_id
 
         # In-memory state (used for live trading via WebSocket)
+        # MULTI-INSTANCE SUPPORT: Track by (instance_id, symbol) for proper isolation
         self._orders: Dict[str, OrderState] = {}  # order_id -> OrderState
-        self._positions: Dict[str, PositionState] = {}  # symbol -> PositionState
-        self._wallet: Dict[str, WalletState] = {}  # coin -> WalletState
+        self._positions: Dict[tuple, PositionState] = {}  # (instance_id, symbol) -> PositionState
+        self._wallet: Dict[str, WalletState] = {}  # coin -> WalletState (shared across instances)
         self._executions: List[ExecutionRecord] = []  # Recent executions
 
-        # Track symbols with open positions/orders (WebSocket-based for live trading)
-        self._symbols_with_positions: Set[str] = set()
-        self._symbols_with_orders: Set[str] = set()
+        # Track symbols with open positions/orders (instance-aware)
+        # Format: Set of (instance_id, symbol) tuples
+        self._symbols_with_positions: Set[tuple] = set()
+        self._symbols_with_orders: Set[tuple] = set()
 
         # Callbacks for state changes
         self._on_order_update: Optional[Callable] = None
@@ -156,18 +158,33 @@ class StateManager:
                 self._update_order(order_data)
     
     def _update_order(self, data: Dict) -> None:
-        """Update order state from WebSocket data."""
+        """
+        Update order state from WebSocket data.
+
+        MULTI-INSTANCE: Only tracks orders that belong to this instance.
+        Ownership determined by order_link_id prefix matching instance_id.
+        """
         order_id = data.get("orderId", "")
         if not order_id:
             return
-        
+
+        order_link_id = data.get("orderLinkId", "")
+
+        # MULTI-INSTANCE FILTER: Only track orders from this instance
+        # Order link IDs are formatted as: {instance_id}_{trade_id} or similar
+        if self.instance_id and order_link_id:
+            if not order_link_id.startswith(self.instance_id):
+                # This order belongs to a different instance, ignore it
+                logger.debug(f"Ignoring order from different instance: {order_link_id}")
+                return
+
         status = data.get("orderStatus", "")
         symbol = data.get("symbol", "")
-        
+
         # Create or update order state
         order = OrderState(
             order_id=order_id,
-            order_link_id=data.get("orderLinkId", ""),
+            order_link_id=order_link_id,
             symbol=symbol,
             side=data.get("side", ""),
             order_type=data.get("orderType", ""),
@@ -187,20 +204,22 @@ class StateManager:
         self._update_count += 1
         self._last_update_time = datetime.now(timezone.utc)
 
-        # Track symbols with active orders
+        # Track symbols with active orders (instance-aware)
+        instance_symbol_key = (self.instance_id, symbol)
         if status in ("New", "PartiallyFilled"):
-            self._symbols_with_orders.add(symbol)
+            self._symbols_with_orders.add(instance_symbol_key)
         elif status in ("Filled", "Cancelled", "Rejected"):
-            # Check if any other orders for this symbol
+            # Check if any other orders for this (instance, symbol) combination
             has_other_orders = any(
                 o.symbol == symbol and o.order_id != order_id
                 and o.status in ("New", "PartiallyFilled")
+                and (not self.instance_id or o.order_link_id.startswith(self.instance_id))
                 for o in self._orders.values()
             )
             if not has_other_orders:
-                self._symbols_with_orders.discard(symbol)
+                self._symbols_with_orders.discard(instance_symbol_key)
 
-        logger.debug(f"Order update: {symbol} {order_id[:8]}... -> {status}")
+        logger.debug(f"[{self.instance_id}] Order update: {symbol} {order_id[:8]}... -> {status}")
 
         # Callback
         if self._on_order_update:
@@ -218,7 +237,13 @@ class StateManager:
                 self._update_position(pos_data)
 
     def _update_position(self, data: Dict) -> None:
-        """Update position state from WebSocket data."""
+        """
+        Update position state from WebSocket data.
+
+        MULTI-INSTANCE: Tracks positions by (instance_id, symbol) key.
+        All position updates are tracked since we can't filter by order_link_id here.
+        Each instance will see all positions but only act on its own symbols.
+        """
         symbol = data.get("symbol", "")
         if not symbol:
             return
@@ -242,17 +267,19 @@ class StateManager:
             category=data.get("category", "linear"),
         )
 
-        self._positions[symbol] = position
+        # Store position with instance-aware key
+        instance_symbol_key = (self.instance_id, symbol)
+        self._positions[instance_symbol_key] = position
         self._update_count += 1
         self._last_update_time = datetime.now(timezone.utc)
 
-        # Track symbols with open positions
+        # Track symbols with open positions (instance-aware)
         if size > 0 and side:
-            self._symbols_with_positions.add(symbol)
+            self._symbols_with_positions.add(instance_symbol_key)
         else:
-            self._symbols_with_positions.discard(symbol)
+            self._symbols_with_positions.discard(instance_symbol_key)
 
-        logger.debug(f"Position update: {symbol} {side} size={size}")
+        logger.debug(f"[{self.instance_id}] Position update: {symbol} {side} size={size}")
 
         # Callback
         if self._on_position_update:
@@ -388,16 +415,25 @@ class StateManager:
             return self._orders.get(order_id)
 
     def get_position(self, symbol: str) -> Optional[PositionState]:
-        """Get position for symbol."""
+        """
+        Get position for symbol (for this instance).
+
+        MULTI-INSTANCE: Uses (instance_id, symbol) key for lookup.
+        """
         with self._lock:
-            return self._positions.get(symbol)
+            instance_symbol_key = (self.instance_id, symbol)
+            return self._positions.get(instance_symbol_key)
 
     def get_open_positions(self) -> List[PositionState]:
-        """Get all open positions (size > 0)."""
+        """
+        Get all open positions (size > 0) for this instance.
+
+        MULTI-INSTANCE: Only returns positions belonging to this instance.
+        """
         with self._lock:
             return [
-                p for p in self._positions.values()
-                if p.size > 0 and p.side
+                p for (inst_id, sym), p in self._positions.items()
+                if inst_id == self.instance_id and p.size > 0 and p.side
             ]
 
     def get_wallet_balance(self, coin: str = "USDT") -> Optional[WalletState]:
@@ -407,46 +443,54 @@ class StateManager:
 
     def has_position(self, symbol: str) -> bool:
         """
-        Check if symbol has an open position.
+        Check if symbol has an open position (for this instance).
 
         In paper trading mode: Queries database for open positions.
         In live trading mode: Uses WebSocket data (real-time).
+
+        MULTI-INSTANCE: Checks using (instance_id, symbol) key.
         """
         if self.paper_trading:
             # Paper trading: Check database
             positions = self._get_db_open_positions()
             has_pos = any(p['symbol'] == symbol for p in positions)
-            logger.debug(f"[Paper Trading] DB check for {symbol}: {has_pos}")
+            logger.debug(f"[{self.instance_id}] [Paper Trading] DB check for {symbol}: {has_pos}")
             return has_pos
         else:
-            # Live trading: Use WebSocket data
+            # Live trading: Use WebSocket data with instance-aware key
             with self._lock:
-                return symbol in self._symbols_with_positions
+                instance_symbol_key = (self.instance_id, symbol)
+                return instance_symbol_key in self._symbols_with_positions
 
     def has_open_order(self, symbol: str) -> bool:
         """
-        Check if symbol has an open order.
+        Check if symbol has an open order (for this instance).
 
         In paper trading mode: Checks database for pending paper trades (status='paper_trade').
         In live trading mode: Uses WebSocket data (real-time).
+
+        MULTI-INSTANCE: Checks using (instance_id, symbol) key.
         """
         if self.paper_trading:
             # Paper trading: Check database for pending orders (not yet filled by simulator)
             pending_orders = self._get_db_pending_orders()
             has_order = any(p['symbol'] == symbol for p in pending_orders)
-            logger.debug(f"[Paper Trading] DB check for pending order {symbol}: {has_order}")
+            logger.debug(f"[{self.instance_id}] [Paper Trading] DB check for pending order {symbol}: {has_order}")
             return has_order
         else:
-            # Live trading: Use WebSocket data
+            # Live trading: Use WebSocket data with instance-aware key
             with self._lock:
-                return symbol in self._symbols_with_orders
+                instance_symbol_key = (self.instance_id, symbol)
+                return instance_symbol_key in self._symbols_with_orders
 
     def count_slots_used(self) -> int:
         """
-        Count total slots used (positions + entry orders).
+        Count total slots used (positions + entry orders) for this instance.
 
         In paper trading mode: Queries database for open positions AND pending orders.
         In live trading mode: Uses WebSocket data (real-time).
+
+        MULTI-INSTANCE: Only counts slots for this instance.
         """
         if self.paper_trading:
             # Paper trading: Count both filled positions and pending orders
@@ -460,16 +504,21 @@ class StateManager:
 
             count = len(all_symbols)
             logger.debug(
-                f"[Paper Trading] DB-based slot count: {count} "
+                f"[{self.instance_id}] [Paper Trading] DB-based slot count: {count} "
                 f"(filled: {len(filled_symbols)}, pending: {len(pending_symbols)})"
             )
             return count
         else:
-            # Live trading: Use WebSocket data
+            # Live trading: Use WebSocket data (instance-aware)
             with self._lock:
-                # Unique symbols with either position or order
-                symbols = self._symbols_with_positions | self._symbols_with_orders
-                return len(symbols)
+                # Unique (instance_id, symbol) tuples with either position or order
+                # Filter to only this instance's slots
+                instance_slots = {
+                    (inst_id, sym) for (inst_id, sym) in
+                    (self._symbols_with_positions | self._symbols_with_orders)
+                    if inst_id == self.instance_id
+                }
+                return len(instance_slots)
 
     def get_available_slots(self, max_slots: int) -> int:
         """Get number of available trading slots."""
@@ -497,16 +546,31 @@ class StateManager:
     # ==================== STATS ====================
 
     def get_stats(self) -> Dict[str, Any]:
-        """Get state manager statistics."""
+        """
+        Get state manager statistics for this instance.
+
+        MULTI-INSTANCE: Returns stats filtered to this instance only.
+        """
         with self._lock:
+            # Filter to this instance's data
+            instance_positions = [
+                (inst_id, sym) for (inst_id, sym) in self._symbols_with_positions
+                if inst_id == self.instance_id
+            ]
+            instance_orders = [
+                (inst_id, sym) for (inst_id, sym) in self._symbols_with_orders
+                if inst_id == self.instance_id
+            ]
+
             return {
+                "instance_id": self.instance_id,
                 "update_count": self._update_count,
                 "last_update": self._last_update_time.isoformat() if self._last_update_time else None,
                 "orders_count": len(self._orders),
                 "open_orders_count": len([o for o in self._orders.values() if o.status in ("New", "PartiallyFilled")]),
-                "positions_count": len(self._symbols_with_positions),
-                "symbols_with_orders": list(self._symbols_with_orders),
-                "symbols_with_positions": list(self._symbols_with_positions),
+                "positions_count": len(instance_positions),
+                "symbols_with_orders": [sym for (_, sym) in instance_orders],
+                "symbols_with_positions": [sym for (_, sym) in instance_positions],
                 "slots_used": self.count_slots_used(),
                 "wallet_coins": list(self._wallet.keys()),
             }

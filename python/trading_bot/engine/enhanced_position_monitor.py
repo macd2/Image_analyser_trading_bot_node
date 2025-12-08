@@ -69,7 +69,12 @@ class TighteningStep:
 
 @dataclass
 class PositionTrackingState:
-    """Internal state for tracking a position"""
+    """
+    Internal state for tracking a position.
+
+    MULTI-INSTANCE: Tracked by (instance_id, symbol) key externally.
+    """
+    instance_id: str  # Instance that owns this position
     symbol: str
     entry_price: float
     original_sl: float
@@ -139,16 +144,17 @@ class EnhancedPositionMonitor:
         self.age_tightening_config = age_tightening_config or AgeTighteningConfig()
         self.age_cancellation_config = age_cancellation_config or AgeCancellationConfig()
         self._db = db_connection
-        
+
         # Tracking state
-        self._position_state: Dict[str, PositionTrackingState] = {}  # symbol -> state
-        self._order_state: Dict[str, Dict] = {}  # order_id -> order info
-        
+        # MULTI-INSTANCE: Track by (instance_id, symbol) for proper isolation
+        self._position_state: Dict[tuple, PositionTrackingState] = {}  # (instance_id, symbol) -> state
+        self._order_state: Dict[str, Dict] = {}  # order_id -> order info (includes instance_id)
+
         # Threading for polling mode
         self._running = False
         self._monitor_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
-        
+
         # Callbacks
         self._on_position_closed: Optional[Callable] = None
         self._on_sl_tightened: Optional[Callable] = None
@@ -194,23 +200,27 @@ class EnhancedPositionMonitor:
             instance_id: Instance ID for audit trail
             run_id: Run ID for audit trail
             trade_id: Trade ID for linking (optional)
+
+        MULTI-INSTANCE: Uses (instance_id, symbol) key for tracking.
         """
         symbol = position.symbol
+        position_key = (instance_id, symbol)
 
         # Skip empty positions
         if position.size == 0 or not position.side:
-            if symbol in self._position_state:
+            if position_key in self._position_state:
                 logger.info(f"[{instance_id}] Position closed: {symbol}")
                 self._log_position_action(
                     instance_id, run_id, trade_id, symbol,
                     "position_closed", "Position closed by exchange"
                 )
-                del self._position_state[symbol]
+                del self._position_state[position_key]
             return
 
         # Initialize or update position state
-        if symbol not in self._position_state:
-            self._position_state[symbol] = PositionTrackingState(
+        if position_key not in self._position_state:
+            self._position_state[position_key] = PositionTrackingState(
+                instance_id=instance_id,
                 symbol=symbol,
                 entry_price=position.entry_price,
                 original_sl=position.stop_loss or 0.0,
@@ -227,7 +237,7 @@ class EnhancedPositionMonitor:
             )
 
         # Check for tightening opportunities
-        state = self._position_state[symbol]
+        state = self._position_state[position_key]
         self._check_all_tightening(position, state, instance_id, run_id, trade_id)
 
     def on_order_update(self, order: OrderState, instance_id: str, run_id: str, timeframe: str) -> None:
@@ -239,6 +249,8 @@ class EnhancedPositionMonitor:
             instance_id: Instance ID for audit trail
             run_id: Run ID for audit trail
             timeframe: Timeframe for age calculation
+
+        MULTI-INSTANCE: Stores instance_id with order state.
         """
         order_id = order.order_id
 
@@ -246,6 +258,7 @@ class EnhancedPositionMonitor:
         if order.status in ["New", "PartiallyFilled"]:
             if order_id not in self._order_state:
                 self._order_state[order_id] = {
+                    "instance_id": instance_id,
                     "symbol": order.symbol,
                     "side": order.side,
                     "created_time": order.created_time or datetime.now(timezone.utc).isoformat(),
@@ -720,12 +733,26 @@ class EnhancedPositionMonitor:
 
     # ==================== PUBLIC API ====================
 
-    def get_position_state(self, symbol: str) -> Optional[PositionTrackingState]:
-        """Get tracked state for a position"""
-        return self._position_state.get(symbol)
+    def get_position_state(self, instance_id: str, symbol: str) -> Optional[PositionTrackingState]:
+        """
+        Get tracked state for a position.
 
-    def get_all_positions(self) -> Dict[str, PositionTrackingState]:
-        """Get all tracked positions"""
+        MULTI-INSTANCE: Requires instance_id for lookup.
+        """
+        position_key = (instance_id, symbol)
+        return self._position_state.get(position_key)
+
+    def get_all_positions(self, instance_id: Optional[str] = None) -> Dict[tuple, PositionTrackingState]:
+        """
+        Get all tracked positions.
+
+        MULTI-INSTANCE: If instance_id provided, filters to that instance only.
+        """
+        if instance_id:
+            return {
+                key: state for key, state in self._position_state.items()
+                if key[0] == instance_id
+            }
         return self._position_state.copy()
 
     def get_tracked_orders(self) -> Dict[str, Dict]:
@@ -757,8 +784,12 @@ class EnhancedPositionMonitor:
             instance_id: Instance ID for audit trail
             run_id: Run ID for audit trail
             trade_id: Trade ID for linking
+
+        MULTI-INSTANCE: Uses (instance_id, symbol) key for tracking.
         """
-        self._position_state[symbol] = PositionTrackingState(
+        position_key = (instance_id, symbol)
+        self._position_state[position_key] = PositionTrackingState(
+            instance_id=instance_id,
             symbol=symbol,
             entry_price=entry_price,
             original_sl=stop_loss,

@@ -439,7 +439,7 @@ function getBotStatus(instanceId?: string): Response {
 function getSingleInstanceStatus(instanceId: string): Response {
   // Check in-memory state first
   const botProcess = botProcesses.get(instanceId);
-  let running = botProcess !== null && !botProcess.killed;
+  let running = botProcess !== undefined && botProcess !== null && !botProcess.killed;
   let pid = botPids.get(instanceId);
   let startedAt = botStartTimes.get(instanceId);
   const logs = getInstanceLogs(instanceId);
