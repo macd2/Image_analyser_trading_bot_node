@@ -359,7 +359,7 @@ export function TradeDetailModal({ isOpen, onClose, trade }: TradeDetailModalPro
             <div className="bg-slate-700 rounded-lg p-4">
               <div className="text-slate-400 text-xs mb-1">Take Profit</div>
               <div className="text-green-400 font-mono text-lg">${trade.take_profit.toFixed(4)}</div>
-              <div className="text-slate-500 text-xs mt-1">Reward: {(isLong ? (trade.take_profit - trade.entry_price) : (trade.entry_price - trade.take_profit)) / trade.entry_price * 100).toFixed(2)}%</div>
+              <div className="text-slate-500 text-xs mt-1">Reward: {((isLong ? (trade.take_profit - trade.entry_price) : (trade.entry_price - trade.take_profit)) / trade.entry_price * 100).toFixed(2)}%</div>
             </div>
             <div className="bg-slate-700 rounded-lg p-4">
               <div className="text-slate-400 text-xs mb-1">R:R Ratio</div>
