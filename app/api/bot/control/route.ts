@@ -74,10 +74,13 @@ function restoreOnStartup() {
 
 /**
  * GET /api/bot/control - Get bot running status
+ * Query params: instance_id (optional) - if provided, returns status for that instance
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   restoreOnStartup();
-  return getBotStatus();
+  const { searchParams } = new URL(request.url);
+  const instanceId = searchParams.get('instance_id');
+  return getBotStatus(instanceId || undefined);
 }
 
 /**

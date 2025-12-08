@@ -112,7 +112,7 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
   // Fetch control status (for running state and logs)
   const fetchControlStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/bot/control')
+      const res = await fetch(`/api/bot/control?instance_id=${instanceId}`)
       if (res.ok) {
         const data = await res.json() as ControlStatus
         setControlStatus(data)
@@ -124,7 +124,7 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
     } catch (err) {
       console.error('Failed to fetch control status:', err)
     }
-  }, [setLogs])
+  }, [instanceId, setLogs])
 
   // Fetch health status
   const fetchHealthStatus = useCallback(async () => {
