@@ -17,14 +17,14 @@ import {
   isProcessAlive
 } from '@/lib/process-state';
 
-// Store running bot process (global for this instance)
+// MULTI-INSTANCE SUPPORT: Store running bot processes by instance_id
 // Note: This is in-memory and will be lost on server restart
 // We use process-state.ts for persistence
-let botProcess: ChildProcess | null = null;
-let botStartedAt: number | null = null;
-let botLogs: string[] = [];
-let botPid: number | null = null;
-let forceKillTimeout: NodeJS.Timeout | null = null;
+const botProcesses: Map<string, ChildProcess> = new Map();
+const botStartTimes: Map<string, number> = new Map();
+const botLogs: Map<string, string[]> = new Map();
+const botPids: Map<string, number> = new Map();
+const forceKillTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
 export interface ControlRequest {
   action: 'start' | 'stop' | 'kill' | 'status';
@@ -43,8 +43,13 @@ export interface ControlResponse {
   instance_id?: string;
 }
 
-// Track which instance is currently running
-let currentInstanceId: string | null = null;
+// Helper function to get logs for an instance (initialize if needed)
+function getInstanceLogs(instanceId: string): string[] {
+  if (!botLogs.has(instanceId)) {
+    botLogs.set(instanceId, []);
+  }
+  return botLogs.get(instanceId)!;
+}
 
 // Restore process states on module load (server startup)
 let restoredOnStartup = false;
@@ -89,11 +94,11 @@ export async function POST(request: NextRequest) {
       case 'start':
         return startBot(paper_trading, testnet, instance_id);
       case 'stop':
-        return stopBot();
+        return stopBot(instance_id);
       case 'kill':
-        return killBot();
+        return killBot(instance_id);
       case 'status':
-        return getBotStatus();
+        return getBotStatus(instance_id);
       default:
         return NextResponse.json(
           { error: `Invalid action: ${action}. Use 'start', 'stop', 'kill', or 'status'` },
@@ -119,23 +124,25 @@ function startBot(paperTrading: boolean, testnet: boolean, instanceId?: string):
     }, { status: 400 });
   }
 
-  // Check if process is actually running
-  const isActuallyRunning = botProcess !== null && !botProcess.killed && botProcess.pid;
+  // MULTI-INSTANCE: Check if THIS specific instance is already running
+  const existingProcess = botProcesses.get(instanceId);
+  const isActuallyRunning = existingProcess && !existingProcess.killed && existingProcess.pid;
 
   if (isActuallyRunning) {
+    const startedAt = botStartTimes.get(instanceId);
+    const pid = botPids.get(instanceId);
     return NextResponse.json({
       success: false,
       running: true,
-      message: 'Bot is already running',
-      uptime_seconds: botStartedAt ? Math.floor((Date.now() - botStartedAt) / 1000) : 0,
-      pid: botPid,
-      instance_id: currentInstanceId,
+      message: `Instance '${instanceId}' is already running`,
+      uptime_seconds: startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0,
+      pid: pid,
+      instance_id: instanceId,
     });
   }
 
   const pythonDir = path.join(process.cwd(), 'python');
   const args = ['run_bot.py', '--instance', instanceId];
-  currentInstanceId = instanceId;
 
   if (!paperTrading) {
     args.push('--live');
@@ -146,36 +153,43 @@ function startBot(paperTrading: boolean, testnet: boolean, instanceId?: string):
 
   console.log(`[BOT CONTROL] Starting bot in ${pythonDir} with args: ${args.join(' ')}`);
 
-  botLogs = [];
-  botLogs.push(`[${new Date().toISOString()}] Starting bot...`);
-  botStartedAt = Date.now();
+  // MULTI-INSTANCE: Initialize logs for this instance
+  const logs = getInstanceLogs(instanceId);
+  logs.length = 0; // Clear previous logs
+  logs.push(`[${new Date().toISOString()}] Starting bot...`);
+  const startedAt = Date.now();
+  botStartTimes.set(instanceId, startedAt);
 
   try {
     // Log the command being executed for debugging
     console.log(`[BOT CONTROL] Starting bot with command: python3 ${args.join(' ')}`);
     console.log(`[BOT CONTROL] Working directory: ${pythonDir}`);
 
-    botProcess = spawn('python3', args, {
+    const botProcess = spawn('python3', args, {
       cwd: pythonDir,
       env: { ...process.env },
       detached: false,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    botPid = botProcess.pid || null;
-    const startMessage = `Bot process started with PID: ${botPid}`;
+    const pid = botProcess.pid || null;
+    const startMessage = `Bot process started with PID: ${pid}`;
     console.log(`[BOT CONTROL] ${startMessage}`);
-    botLogs.push(`[${new Date().toISOString()}] ${startMessage}`);
+    logs.push(`[${new Date().toISOString()}] ${startMessage}`);
+
+    // MULTI-INSTANCE: Store process info
+    botProcesses.set(instanceId, botProcess);
+    if (pid) botPids.set(instanceId, pid);
 
     // Register with process monitor for status tracking
-    if (botPid && instanceId) {
-      processMonitor.registerProcess(instanceId, botPid);
+    if (pid && instanceId) {
+      processMonitor.registerProcess(instanceId, pid);
 
       // Save to persistent state
       saveProcessState(instanceId, {
-        pid: botPid,
+        pid: pid,
         instanceId,
-        startedAt: botStartedAt,
+        startedAt: startedAt,
         paperTrading,
         testnet
       });
@@ -185,14 +199,16 @@ function startBot(paperTrading: boolean, testnet: boolean, instanceId?: string):
       const lines: string[] = data.toString().split('\n').filter((l: string) => l.trim());
       // Log each line individually to Railway logs for better visibility
       lines.forEach((line: string) => {
-        console.log(`[BOT STDOUT] ${line}`);
+        console.log(`[BOT STDOUT] [${instanceId}] ${line}`);
       });
-      botLogs.push(...lines);
+      logs.push(...lines);
       // Emit logs to connected clients in real-time
       lines.forEach((line: string) => emitLog(line, instanceId));
       // Keep only last 500 log lines
-      if (botLogs.length > 500) {
-        botLogs = botLogs.slice(-500);
+      if (logs.length > 500) {
+        const trimmed = logs.slice(-500);
+        logs.length = 0;
+        logs.push(...trimmed);
       }
     });
 
@@ -201,215 +217,248 @@ function startBot(paperTrading: boolean, testnet: boolean, instanceId?: string):
       const lines: string[] = data.toString().split('\n').filter((l: string) => l.trim());
       // Log each line individually to Railway logs for better visibility
       lines.forEach((line: string) => {
-        console.log(`[BOT STDERR] ${line}`);
+        console.log(`[BOT STDERR] [${instanceId}] ${line}`);
       });
       // Don't prefix - the log level is already in the message (| INFO |, | WARNING |, etc)
-      botLogs.push(...lines);
+      logs.push(...lines);
       // Emit logs to connected clients in real-time
       lines.forEach((line: string) => emitLog(line, instanceId));
-      if (botLogs.length > 500) {
-        botLogs = botLogs.slice(-500);
+      if (logs.length > 500) {
+        const trimmed = logs.slice(-500);
+        logs.length = 0;
+        logs.push(...trimmed);
       }
     });
 
     botProcess.on('error', (err) => {
       const errorMsg = `Process error: ${err.message}`;
-      console.error(`[BOT CONTROL] ${errorMsg}`);
-      botLogs.push(`[ERROR] ${errorMsg}`);
+      console.error(`[BOT CONTROL] [${instanceId}] ${errorMsg}`);
+      logs.push(`[ERROR] ${errorMsg}`);
     });
 
     botProcess.on('close', (code, signal) => {
       const timestamp = new Date().toISOString();
       const msg = `Bot process exited with code ${code}, signal ${signal}`;
-      console.log(`[BOT CONTROL] [${timestamp}] ${msg}`);
-      botLogs.push(`[${timestamp}] ${msg}`);
+      console.log(`[BOT CONTROL] [${instanceId}] [${timestamp}] ${msg}`);
+      logs.push(`[${timestamp}] ${msg}`);
 
-      // Remove from persistent state
-      if (currentInstanceId) {
-        console.log(`[BOT CONTROL] Removing process state for instance: ${currentInstanceId}`);
-        removeProcessState(currentInstanceId);
-      }
+      // MULTI-INSTANCE: Remove this instance's state
+      console.log(`[BOT CONTROL] Removing process state for instance: ${instanceId}`);
+      removeProcessState(instanceId);
 
       // Note: Don't unregister here - the process monitor will detect the dead process
       // and emit the status update. This ensures consistent handling.
 
-      botProcess = null;
-      botStartedAt = null;
-      botPid = null;
-      currentInstanceId = null;
+      // MULTI-INSTANCE: Clean up this instance's data
+      botProcesses.delete(instanceId);
+      botStartTimes.delete(instanceId);
+      botPids.delete(instanceId);
     });
 
     return NextResponse.json({
       success: true,
       running: true,
       message: `Bot started in ${paperTrading ? 'paper' : 'live'} trading mode on ${testnet ? 'testnet' : 'mainnet'}`,
-      pid: botPid,
-      logs: botLogs.slice(-20),
+      pid: pid,
+      instance_id: instanceId,
+      logs: logs.slice(-20),
     });
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error('[BOT CONTROL] Failed to start bot:', errorMsg);
-    botLogs.push(`[ERROR] Failed to start: ${errorMsg}`);
+    console.error(`[BOT CONTROL] [${instanceId}] Failed to start bot:`, errorMsg);
+    logs.push(`[ERROR] Failed to start: ${errorMsg}`);
     return NextResponse.json({
       success: false,
       running: false,
       message: `Failed to start bot: ${errorMsg}`,
-      logs: botLogs.slice(-20),
+      logs: logs.slice(-20),
     }, { status: 500 });
   }
 }
 
-function stopBot(): Response {
+function stopBot(instanceId?: string): Response {
+  // MULTI-INSTANCE: Instance ID is required
+  if (!instanceId) {
+    return NextResponse.json({
+      success: false,
+      running: false,
+      message: 'instance_id is required to stop a bot',
+    }, { status: 400 });
+  }
+
+  const botProcess = botProcesses.get(instanceId);
+  const logs = getInstanceLogs(instanceId);
+
   if (!botProcess || botProcess.killed) {
     // Clean up state if somehow stale
-    botProcess = null;
-    botStartedAt = null;
-    botPid = null;
-    currentInstanceId = null;
+    botProcesses.delete(instanceId);
+    botStartTimes.delete(instanceId);
+    botPids.delete(instanceId);
 
     // Clear any pending force kill timeout
-    if (forceKillTimeout) {
-      clearTimeout(forceKillTimeout);
-      forceKillTimeout = null;
+    const timeout = forceKillTimeouts.get(instanceId);
+    if (timeout) {
+      clearTimeout(timeout);
+      forceKillTimeouts.delete(instanceId);
     }
 
     return NextResponse.json({
       success: true,
       running: false,
-      message: 'Bot is not running',
-      logs: botLogs.slice(-20),
+      message: `Instance '${instanceId}' is not running`,
+      logs: logs.slice(-20),
     });
   }
 
-  console.log(`[BOT CONTROL] Sending SIGTERM to bot (PID: ${botPid})`);
-  botLogs.push(`[${new Date().toISOString()}] Stopping bot gracefully (SIGTERM)...`);
+  const pid = botPids.get(instanceId);
+  console.log(`[BOT CONTROL] [${instanceId}] Sending SIGTERM to bot (PID: ${pid})`);
+  logs.push(`[${new Date().toISOString()}] Stopping bot gracefully (SIGTERM)...`);
 
   // Unregister from process monitor (graceful stop)
-  if (currentInstanceId) {
-    processMonitor.unregisterProcess(currentInstanceId, 'stopped');
-    // Remove from persistent state
-    removeProcessState(currentInstanceId);
-  }
-
-  const stoppedInstanceId = currentInstanceId;
+  processMonitor.unregisterProcess(instanceId, 'stopped');
+  // Remove from persistent state
+  removeProcessState(instanceId);
 
   botProcess.kill('SIGTERM');
 
   // Clean up state immediately so UI updates
   const processRef = botProcess;
-  botProcess = null;
-  botStartedAt = null;
-  botPid = null;
-  currentInstanceId = null;
+  botProcesses.delete(instanceId);
+  botStartTimes.delete(instanceId);
+  botPids.delete(instanceId);
 
   // Clear any existing force kill timeout
-  if (forceKillTimeout) {
-    clearTimeout(forceKillTimeout);
-    forceKillTimeout = null;
+  const existingTimeout = forceKillTimeouts.get(instanceId);
+  if (existingTimeout) {
+    clearTimeout(existingTimeout);
+    forceKillTimeouts.delete(instanceId);
   }
 
   // Set up cleanup handler for graceful exit
   const exitHandler = () => {
-    if (forceKillTimeout) {
-      clearTimeout(forceKillTimeout);
-      forceKillTimeout = null;
+    const timeout = forceKillTimeouts.get(instanceId);
+    if (timeout) {
+      clearTimeout(timeout);
+      forceKillTimeouts.delete(instanceId);
     }
   };
   processRef.once('exit', exitHandler);
 
   // Force kill after 10 seconds if process still running
-  forceKillTimeout = setTimeout(() => {
+  const timeout = setTimeout(() => {
     if (processRef && !processRef.killed) {
-      console.log('[BOT CONTROL] Force killing bot with SIGKILL');
-      botLogs.push(`[${new Date().toISOString()}] Force killing bot (SIGKILL)...`);
+      console.log(`[BOT CONTROL] [${instanceId}] Force killing bot with SIGKILL`);
+      logs.push(`[${new Date().toISOString()}] Force killing bot (SIGKILL)...`);
       processRef.kill('SIGKILL');
     }
-    forceKillTimeout = null;
+    forceKillTimeouts.delete(instanceId);
   }, 10000);
+  forceKillTimeouts.set(instanceId, timeout);
 
   return NextResponse.json({
     success: true,
     running: false,
     message: 'Stop signal sent to bot (graceful shutdown)',
-    logs: botLogs.slice(-20),
-    instance_id: stoppedInstanceId,
+    logs: logs.slice(-20),
+    instance_id: instanceId,
   });
 }
 
-function killBot(): Response {
+function killBot(instanceId?: string): Response {
+  // MULTI-INSTANCE: Instance ID is required
+  if (!instanceId) {
+    return NextResponse.json({
+      success: false,
+      running: false,
+      message: 'instance_id is required to kill a bot',
+    }, { status: 400 });
+  }
+
+  const botProcess = botProcesses.get(instanceId);
+  const logs = getInstanceLogs(instanceId);
+
   if (!botProcess || botProcess.killed) {
     // Clear any pending force kill timeout
-    if (forceKillTimeout) {
-      clearTimeout(forceKillTimeout);
-      forceKillTimeout = null;
+    const timeout = forceKillTimeouts.get(instanceId);
+    if (timeout) {
+      clearTimeout(timeout);
+      forceKillTimeouts.delete(instanceId);
     }
 
     return NextResponse.json({
       success: true,
       running: false,
-      message: 'Bot is not running',
-      logs: botLogs.slice(-20),
+      message: `Instance '${instanceId}' is not running`,
+      logs: logs.slice(-20),
     });
   }
 
-  console.log(`[BOT CONTROL] KILL SWITCH - Sending SIGKILL to bot (PID: ${botPid})`);
-  botLogs.push(`[${new Date().toISOString()}] ⚠️ KILL SWITCH - Immediate termination (SIGKILL)!`);
+  const pid = botPids.get(instanceId);
+  console.log(`[BOT CONTROL] [${instanceId}] KILL SWITCH - Sending SIGKILL to bot (PID: ${pid})`);
+  logs.push(`[${new Date().toISOString()}] ⚠️ KILL SWITCH - Immediate termination (SIGKILL)!`);
 
   // Unregister from process monitor (kill)
-  if (currentInstanceId) {
-    processMonitor.unregisterProcess(currentInstanceId, 'killed');
-    // Remove from persistent state
-    removeProcessState(currentInstanceId);
-  }
+  processMonitor.unregisterProcess(instanceId, 'killed');
+  // Remove from persistent state
+  removeProcessState(instanceId);
 
   // Immediately kill with SIGKILL
   botProcess.kill('SIGKILL');
 
   // Clean up state immediately
-  botProcess = null;
-  botStartedAt = null;
-  botPid = null;
-  currentInstanceId = null;
+  botProcesses.delete(instanceId);
+  botStartTimes.delete(instanceId);
+  botPids.delete(instanceId);
 
   // Clear any pending force kill timeout
-  if (forceKillTimeout) {
-    clearTimeout(forceKillTimeout);
-    forceKillTimeout = null;
+  const timeout = forceKillTimeouts.get(instanceId);
+  if (timeout) {
+    clearTimeout(timeout);
+    forceKillTimeouts.delete(instanceId);
   }
 
   return NextResponse.json({
     success: true,
     running: false,
     message: '⚠️ Bot killed immediately (SIGKILL)',
-    logs: botLogs.slice(-20),
+    instance_id: instanceId,
+    logs: logs.slice(-20),
   });
 }
 
-function getBotStatus(): Response {
+function getBotStatus(instanceId?: string): Response {
+  // MULTI-INSTANCE: If instanceId provided, return status for that instance
+  if (instanceId) {
+    return getSingleInstanceStatus(instanceId);
+  }
+
+  // MULTI-INSTANCE: Return status for all instances
+  return getAllInstancesStatus();
+}
+
+function getSingleInstanceStatus(instanceId: string): Response {
   // Check in-memory state first
+  const botProcess = botProcesses.get(instanceId);
   let running = botProcess !== null && !botProcess.killed;
-  let pid = botPid;
-  let instanceId = currentInstanceId;
-  let startedAt = botStartedAt;
+  let pid = botPids.get(instanceId);
+  let startedAt = botStartTimes.get(instanceId);
+  const logs = getInstanceLogs(instanceId);
 
   // If no in-memory state, check persistent state (handles server restart)
   if (!running) {
     const allStates = getAllProcessStates();
-    if (allStates.length > 0) {
-      // Take the first running process (in future we'll support multiple)
-      const state = allStates[0];
-      if (isProcessAlive(state.pid)) {
-        running = true;
-        pid = state.pid;
-        instanceId = state.instanceId;
-        startedAt = state.startedAt;
-        console.log(`[BOT CONTROL] Detected running process from persistent state: instance=${instanceId}, PID=${pid}`);
+    const state = allStates.find(s => s.instanceId === instanceId);
 
-        // Add a note to logs that we recovered the process
-        if (botLogs.length === 0) {
-          botLogs.push(`[${new Date().toISOString()}] ℹ️ Bot process recovered after server restart (PID: ${pid})`);
-          botLogs.push(`[${new Date().toISOString()}] ℹ️ Previous logs are not available. New logs will appear as the bot runs.`);
-        }
+    if (state && isProcessAlive(state.pid)) {
+      running = true;
+      pid = state.pid;
+      startedAt = state.startedAt;
+      console.log(`[BOT CONTROL] Detected running process from persistent state: instance=${instanceId}, PID=${pid}`);
+
+      // Add a note to logs that we recovered the process
+      if (logs.length === 0) {
+        logs.push(`[${new Date().toISOString()}] ℹ️ Bot process recovered after server restart (PID: ${pid})`);
+        logs.push(`[${new Date().toISOString()}] ℹ️ Previous logs are not available. New logs will appear as the bot runs.`);
       }
     }
   }
@@ -417,11 +466,62 @@ function getBotStatus(): Response {
   return NextResponse.json({
     success: true,
     running,
-    message: running ? 'Bot is running' : 'Bot is not running',
+    message: running ? `Instance '${instanceId}' is running` : `Instance '${instanceId}' is not running`,
     uptime_seconds: running && startedAt ? Math.floor((Date.now() - startedAt) / 1000) : undefined,
-    logs: botLogs.slice(-50),
+    logs: logs.slice(-50),
     pid,
-    instance_id: running ? instanceId : undefined,
+    instance_id: instanceId,
+  });
+}
+
+function getAllInstancesStatus(): Response {
+  // MULTI-INSTANCE: Collect status for all instances
+  const instances: Array<{
+    instance_id: string;
+    running: boolean;
+    pid?: number;
+    uptime_seconds?: number;
+  }> = [];
+
+  // Check in-memory processes
+  for (const [instanceId, process] of botProcesses.entries()) {
+    const running = process && !process.killed;
+    const pid = botPids.get(instanceId);
+    const startedAt = botStartTimes.get(instanceId);
+
+    instances.push({
+      instance_id: instanceId,
+      running,
+      pid,
+      uptime_seconds: running && startedAt ? Math.floor((Date.now() - startedAt) / 1000) : undefined,
+    });
+  }
+
+  // Check persistent state for instances not in memory (after server restart)
+  const allStates = getAllProcessStates();
+  for (const state of allStates) {
+    // Skip if already in memory
+    if (botProcesses.has(state.instanceId)) continue;
+
+    if (isProcessAlive(state.pid)) {
+      instances.push({
+        instance_id: state.instanceId,
+        running: true,
+        pid: state.pid,
+        uptime_seconds: Math.floor((Date.now() - state.startedAt) / 1000),
+      });
+    }
+  }
+
+  const runningCount = instances.filter(i => i.running).length;
+
+  return NextResponse.json({
+    success: true,
+    running: runningCount > 0,
+    message: runningCount > 0
+      ? `${runningCount} instance(s) running`
+      : 'No instances running',
+    instances,
   });
 }
 
