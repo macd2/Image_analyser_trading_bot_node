@@ -2,6 +2,8 @@
 State Manager for real-time trading state.
 Maintains in-memory cache of positions, orders, and wallet data from WebSocket.
 Syncs to database for persistence and audit trail.
+
+For paper trading mode, queries database instead of using WebSocket data.
 """
 
 import logging
@@ -10,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Set, Callable
 from dataclasses import dataclass, field
-from trading_bot.db.client import execute
+from trading_bot.db.client import execute, query, get_connection, get_boolean_comparison
 
 logger = logging.getLogger(__name__)
 
@@ -84,39 +86,44 @@ class ExecutionRecord:
 class StateManager:
     """
     Manages real-time trading state from WebSocket streams.
-    
+
     Features:
     - In-memory cache for fast access (no API calls needed)
     - Thread-safe updates
     - Database sync for persistence
     - Event callbacks for state changes
+    - Paper trading mode: Uses database instead of WebSocket for position/slot checking
     """
-    
-    def __init__(self, db_connection=None):
+
+    def __init__(self, db_connection=None, paper_trading: bool = False, instance_id: Optional[str] = None):
         """
         Initialize StateManager.
-        
+
         Args:
             db_connection: Optional database connection for persistence
+            paper_trading: If True, use database for position/slot checking instead of WebSocket
+            instance_id: Instance ID for filtering database queries in paper trading mode
         """
         self._db = db_connection
         self._lock = threading.RLock()
-        
-        # In-memory state
+        self.paper_trading = paper_trading
+        self.instance_id = instance_id
+
+        # In-memory state (used for live trading via WebSocket)
         self._orders: Dict[str, OrderState] = {}  # order_id -> OrderState
         self._positions: Dict[str, PositionState] = {}  # symbol -> PositionState
         self._wallet: Dict[str, WalletState] = {}  # coin -> WalletState
         self._executions: List[ExecutionRecord] = []  # Recent executions
-        
-        # Track symbols with open positions/orders
+
+        # Track symbols with open positions/orders (WebSocket-based for live trading)
         self._symbols_with_positions: Set[str] = set()
         self._symbols_with_orders: Set[str] = set()
-        
+
         # Callbacks for state changes
         self._on_order_update: Optional[Callable] = None
         self._on_position_update: Optional[Callable] = None
         self._on_fill: Optional[Callable] = None
-        
+
         # Stats
         self._update_count = 0
         self._last_update_time: Optional[datetime] = None
@@ -399,21 +406,70 @@ class StateManager:
             return self._wallet.get(coin)
 
     def has_position(self, symbol: str) -> bool:
-        """Check if symbol has an open position."""
-        with self._lock:
-            return symbol in self._symbols_with_positions
+        """
+        Check if symbol has an open position.
+
+        In paper trading mode: Queries database for open positions.
+        In live trading mode: Uses WebSocket data (real-time).
+        """
+        if self.paper_trading:
+            # Paper trading: Check database
+            positions = self._get_db_open_positions()
+            has_pos = any(p['symbol'] == symbol for p in positions)
+            logger.debug(f"[Paper Trading] DB check for {symbol}: {has_pos}")
+            return has_pos
+        else:
+            # Live trading: Use WebSocket data
+            with self._lock:
+                return symbol in self._symbols_with_positions
 
     def has_open_order(self, symbol: str) -> bool:
-        """Check if symbol has an open order."""
-        with self._lock:
-            return symbol in self._symbols_with_orders
+        """
+        Check if symbol has an open order.
+
+        In paper trading mode: Checks database for pending paper trades (status='paper_trade').
+        In live trading mode: Uses WebSocket data (real-time).
+        """
+        if self.paper_trading:
+            # Paper trading: Check database for pending orders (not yet filled by simulator)
+            pending_orders = self._get_db_pending_orders()
+            has_order = any(p['symbol'] == symbol for p in pending_orders)
+            logger.debug(f"[Paper Trading] DB check for pending order {symbol}: {has_order}")
+            return has_order
+        else:
+            # Live trading: Use WebSocket data
+            with self._lock:
+                return symbol in self._symbols_with_orders
 
     def count_slots_used(self) -> int:
-        """Count total slots used (positions + entry orders)."""
-        with self._lock:
-            # Unique symbols with either position or order
-            symbols = self._symbols_with_positions | self._symbols_with_orders
-            return len(symbols)
+        """
+        Count total slots used (positions + entry orders).
+
+        In paper trading mode: Queries database for open positions AND pending orders.
+        In live trading mode: Uses WebSocket data (real-time).
+        """
+        if self.paper_trading:
+            # Paper trading: Count both filled positions and pending orders
+            filled_positions = self._get_db_open_positions()
+            pending_orders = self._get_db_pending_orders()
+
+            # Get unique symbols (a symbol can't have both pending order and position)
+            filled_symbols = {p['symbol'] for p in filled_positions}
+            pending_symbols = {p['symbol'] for p in pending_orders}
+            all_symbols = filled_symbols | pending_symbols
+
+            count = len(all_symbols)
+            logger.debug(
+                f"[Paper Trading] DB-based slot count: {count} "
+                f"(filled: {len(filled_symbols)}, pending: {len(pending_symbols)})"
+            )
+            return count
+        else:
+            # Live trading: Use WebSocket data
+            with self._lock:
+                # Unique symbols with either position or order
+                symbols = self._symbols_with_positions | self._symbols_with_orders
+                return len(symbols)
 
     def get_available_slots(self, max_slots: int) -> int:
         """Get number of available trading slots."""
@@ -467,4 +523,99 @@ class StateManager:
             self._update_count = 0
             self._last_update_time = None
             logger.info("State manager cleared")
+
+    # ==================== DATABASE QUERIES (PAPER TRADING) ====================
+
+    def _get_db_open_positions(self) -> List[Dict[str, Any]]:
+        """
+        Query database for open positions for this instance (paper trading only).
+        Uses centralized database layer to respect DB_TYPE environment variable.
+
+        Returns:
+            List of open position records with symbol, side, status
+        """
+        if not self.instance_id:
+            logger.warning("No instance_id provided - cannot query database positions")
+            return []
+
+        try:
+            conn = get_connection()
+
+            # Query for open dry-run positions for this instance
+            # Open positions: status IN ('filled', 'partially_filled', 'paper_trade') AND pnl IS NULL
+            # Use database-agnostic boolean comparison
+            dry_run_check = get_boolean_comparison('t.dry_run', True)
+
+            results = query(conn, f"""
+                SELECT DISTINCT t.symbol, t.side, t.status, t.id
+                FROM trades t
+                JOIN cycles c ON t.cycle_id = c.id
+                JOIN runs r ON c.run_id = r.id
+                WHERE r.instance_id = ?
+                  AND {dry_run_check}
+                  AND t.status IN ('filled', 'partially_filled', 'paper_trade')
+                  AND t.pnl IS NULL
+            """, (self.instance_id,))
+
+            positions = [dict(row.items()) for row in results]
+            logger.debug(f"[DB Query] Found {len(positions)} open positions for instance {self.instance_id}")
+
+            conn.close()
+            return positions
+
+        except Exception as e:
+            logger.error(f"Error querying database for open positions: {e}")
+            return []
+
+    def _get_db_open_positions_count(self) -> int:
+        """
+        Get count of open positions from database (paper trading only).
+        Uses centralized database layer to respect DB_TYPE environment variable.
+
+        Returns:
+            Number of open positions for this instance
+        """
+        positions = self._get_db_open_positions()
+        return len(positions)
+
+    def _get_db_pending_orders(self) -> List[Dict[str, Any]]:
+        """
+        Query database for pending paper trade orders (not yet filled by simulator).
+        Uses centralized database layer to respect DB_TYPE environment variable.
+
+        Returns:
+            List of pending order records with symbol, side, status
+        """
+        if not self.instance_id:
+            logger.warning("No instance_id provided - cannot query database pending orders")
+            return []
+
+        try:
+            conn = get_connection()
+
+            # Query for pending paper trade orders for this instance
+            # Pending orders: status = 'paper_trade' (waiting for simulator to fill)
+            # Use database-agnostic boolean comparison
+            dry_run_check = get_boolean_comparison('t.dry_run', True)
+
+            results = query(conn, f"""
+                SELECT DISTINCT t.symbol, t.side, t.status, t.id
+                FROM trades t
+                JOIN cycles c ON t.cycle_id = c.id
+                JOIN runs r ON c.run_id = r.id
+                WHERE r.instance_id = ?
+                  AND {dry_run_check}
+                  AND t.status = 'paper_trade'
+                  AND t.pnl IS NULL
+            """, (self.instance_id,))
+
+            pending_orders = [dict(row.items()) for row in results]
+            logger.debug(f"[DB Query] Found {len(pending_orders)} pending orders for instance {self.instance_id}")
+
+            conn.close()
+            return pending_orders
+
+        except Exception as e:
+            logger.error(f"Error querying database for pending orders: {e}")
+            return []
 
