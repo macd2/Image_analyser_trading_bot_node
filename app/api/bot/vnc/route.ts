@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
         env: {
           ...process.env,
           DISPLAY: process.env.DISPLAY || ':0',  // Use default display
+          PYTHONUNBUFFERED: '1',  // Force unbuffered output for real-time logs
         },
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: false,

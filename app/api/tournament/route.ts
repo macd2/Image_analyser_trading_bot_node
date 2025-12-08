@@ -141,7 +141,10 @@ except Exception as e:
     sys.exit(1)
 `;
 
-    const python = spawn('python3', ['-c', pythonCode], { cwd: pythonDir });
+    const python = spawn('python3', ['-c', pythonCode], {
+      cwd: pythonDir,
+      env: { ...process.env, PYTHONUNBUFFERED: '1' }
+    });
     state.process = python;
 
     python.stdout.on('data', (data) => {

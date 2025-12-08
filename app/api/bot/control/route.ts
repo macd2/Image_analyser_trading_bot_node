@@ -167,7 +167,10 @@ function startBot(paperTrading: boolean, testnet: boolean, instanceId?: string):
 
     const botProcess = spawn('python3', args, {
       cwd: pythonDir,
-      env: { ...process.env },
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: '1',  // Force unbuffered output for real-time logs
+      },
       detached: false,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
