@@ -20,13 +20,19 @@ export function getSocketServer(): SocketIOServer | null {
   return io;
 }
 
+// Default symbols always included for dashboard
+const DEFAULT_DASHBOARD_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT'];
+
 /**
- * Get all unique symbols from active instances
+ * Get all unique symbols from active instances + default dashboard symbols
  */
 async function getSymbolsFromInstances(): Promise<string[]> {
   try {
     const instances = await getInstances(true); // Get active instances only
     const symbolsSet = new Set<string>();
+
+    // Always include default dashboard symbols
+    DEFAULT_DASHBOARD_SYMBOLS.forEach(s => symbolsSet.add(s));
 
     for (const instance of instances) {
       if (instance.symbols) {
@@ -42,12 +48,12 @@ async function getSymbolsFromInstances(): Promise<string[]> {
     }
 
     const symbolsList = Array.from(symbolsSet);
-    console.log(`[Socket.io] Found ${symbolsList.length} unique symbols from ${instances.length} active instances:`, symbolsList);
+    console.log(`[Socket.io] Watchlist: ${symbolsList.length} symbols (${DEFAULT_DASHBOARD_SYMBOLS.length} default + ${symbolsList.length - DEFAULT_DASHBOARD_SYMBOLS.length} from ${instances.length} instances):`, symbolsList);
     return symbolsList;
   } catch (error) {
     console.error('[Socket.io] Failed to get symbols from instances:', error);
-    // Fallback to common symbols
-    return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+    // Fallback to default dashboard symbols
+    return DEFAULT_DASHBOARD_SYMBOLS;
   }
 }
 
@@ -111,6 +117,59 @@ export function initSocketServer(httpServer: HTTPServer): SocketIOServer {
         testnet: process.env.BYBIT_TESTNET === 'true'
       });
 
+      // Setup event handlers before connecting
+      // Forward ticker updates
+      bybit.on('ticker', (data: TickerData) => {
+        tickers[data.symbol] = data;
+        io?.emit('ticker', data);
+      });
+
+      // Forward position updates
+      bybit.on('position', (data: PositionData[]) => {
+        const openPositions = data.filter(p => parseFloat(p.size) !== 0);
+        positions.length = 0;
+        positions.push(...openPositions);
+        io?.emit('positions', openPositions);
+      });
+
+      // Forward order updates
+      bybit.on('order', (data: unknown) => {
+        io?.emit('order', data);
+      });
+
+      // Forward wallet updates
+      bybit.on('wallet', (data: any) => {
+        console.log('[Socket.io] Received wallet event from Bybit:', JSON.stringify(data).substring(0, 200));
+
+        // Bybit sends wallet data as array with coin array inside
+        // Extract USDT wallet data
+        if (Array.isArray(data)) {
+          for (const walletData of data) {
+            const coins = walletData.coin || [];
+            for (const coinData of coins) {
+              if (coinData.coin === 'USDT') {
+                wallet = {
+                  coin: coinData.coin,
+                  walletBalance: coinData.walletBalance,
+                  availableToWithdraw: coinData.availableToWithdraw,
+                  equity: coinData.equity,
+                  unrealisedPnl: coinData.unrealisedPnl || '0'
+                };
+                io?.emit('wallet', wallet);
+                console.log('[Socket.io] ✅ Wallet update emitted to clients:', {
+                  balance: wallet.walletBalance,
+                  available: wallet.availableToWithdraw,
+                  equity: wallet.equity
+                });
+                break;
+              }
+            }
+          }
+        } else {
+          console.warn('[Socket.io] ⚠️ Unexpected wallet data format:', typeof data);
+        }
+      });
+
       // Get symbols from active instances
       currentWatchlist = await getSymbolsFromInstances();
 
@@ -134,61 +193,6 @@ export function initSocketServer(httpServer: HTTPServer): SocketIOServer {
 
   // Initialize connection asynchronously
   initBybitConnection();
-    // Forward ticker updates
-    bybit.on('ticker', (data: TickerData) => {
-      tickers[data.symbol] = data;
-      io?.emit('ticker', data);
-    });
-
-    // Forward position updates
-    bybit.on('position', (data: PositionData[]) => {
-      const openPositions = data.filter(p => parseFloat(p.size) !== 0);
-      positions.length = 0;
-      positions.push(...openPositions);
-      io?.emit('positions', openPositions);
-    });
-
-    // Forward order updates
-    bybit.on('order', (data: unknown) => {
-      io?.emit('order', data);
-    });
-
-    // Forward wallet updates
-    bybit.on('wallet', (data: any) => {
-      console.log('[Socket.io] Received wallet event from Bybit:', JSON.stringify(data).substring(0, 200));
-
-      // Bybit sends wallet data as array with coin array inside
-      // Extract USDT wallet data
-      if (Array.isArray(data)) {
-        for (const walletData of data) {
-          const coins = walletData.coin || [];
-          for (const coinData of coins) {
-            if (coinData.coin === 'USDT') {
-              wallet = {
-                coin: coinData.coin,
-                walletBalance: coinData.walletBalance,
-                availableToWithdraw: coinData.availableToWithdraw,
-                equity: coinData.equity,
-                unrealisedPnl: coinData.unrealisedPnl || '0'
-              };
-              io?.emit('wallet', wallet);
-              console.log('[Socket.io] ✅ Wallet update emitted to clients:', {
-                balance: wallet.walletBalance,
-                available: wallet.availableToWithdraw,
-                equity: wallet.equity
-              });
-              break;
-            }
-          }
-        }
-      } else {
-        console.warn('[Socket.io] ⚠️ Unexpected wallet data format:', typeof data);
-      }
-    });
-  } catch (err) {
-    console.error('[Socket.io] Failed to initialize Bybit WS:', err);
-    // Continue without real-time data - dashboard will still work
-  }
 
   // Handle client connections
   io.on('connection', (socket) => {
