@@ -2913,35 +2913,69 @@ class ChartSourcer:
                 if ':' in expected_base:
                     expected_base = expected_base.split(':')[-1]
 
-                self.logger.debug(f"Verifying navigation: expected base symbol = {expected_base}")
+                self.logger.info(f"🔍 Verifying navigation: expected base symbol = {expected_base}")
 
-                # Look for the symbol in the chart header or title
+                # Method 1: Check page title (TradingView updates title with symbol)
+                try:
+                    title = await self.page.title()
+                    self.logger.debug(f"Page title: {title}")
+                    if title and expected_base in title.upper():
+                        self.logger.info(f"✅ Title verification passed: '{expected_base}' found in title")
+                        return True
+                except Exception as e:
+                    self.logger.debug(f"Title check failed: {e}")
+
+                # Method 2: Check TradingView chart legend (most reliable for watchlist clicks)
+                # These selectors are specific to TradingView's current DOM structure
                 chart_symbol_selectors = [
-                    '.chart-symbol',
+                    # TradingView legend selectors (most reliable)
+                    '.pane-legend-title__description',
+                    '.pane-legend-title-highlighted-item',
+                    '[data-name="legend-source-title"] span',
+                    '.chart-controls-bar .apply-common-tooltip',
+                    # Generic selectors
                     '[data-symbol]',
+                    'span[class*="symbol"]',
                     '.symbol-name',
-                    'span[class*="symbol"]'
+                    '.chart-symbol',
                 ]
 
                 for selector in chart_symbol_selectors:
                     try:
-                        element = await self.page.query_selector(selector)
-                        if element:
+                        elements = await self.page.query_selector_all(selector)
+                        for element in elements:
                             chart_symbol = await element.text_content()
                             if chart_symbol:
                                 chart_upper = chart_symbol.strip().upper()
+                                self.logger.debug(f"Selector {selector}: found '{chart_symbol}'")
                                 # Check if base symbol is in the chart symbol (handles both CAKEUSDT and CAKEUSDT.P)
                                 if expected_base and expected_base in chart_upper:
-                                    self.logger.info(f"✅ Verified navigation to {symbol_text} (base: {expected_base}) in chart")
+                                    self.logger.info(f"✅ DOM verification passed: '{expected_base}' found via {selector}")
                                     return True
-                    except Exception:
+                    except Exception as e:
+                        self.logger.debug(f"Selector {selector} failed: {e}")
                         continue
 
-                # Also check the URL as a fallback verification
+                # Method 3: Check URL as fallback (note: watchlist clicks may not update URL)
                 current_url = self.page.url.upper()
+                self.logger.debug(f"Current URL: {current_url}")
                 if expected_base and expected_base in current_url:
                     self.logger.info(f"✅ URL verification passed for {expected_base}")
                     return True
+
+                # Method 4: Check for data-symbol attribute value
+                try:
+                    data_symbol = await self.page.evaluate("""
+                        () => {
+                            const el = document.querySelector('[data-symbol]');
+                            return el ? el.getAttribute('data-symbol') : null;
+                        }
+                    """)
+                    if data_symbol and expected_base in data_symbol.upper():
+                        self.logger.info(f"✅ data-symbol verification passed for {expected_base}")
+                        return True
+                except Exception:
+                    pass
 
                 # FIXED: If we can't verify, FAIL instead of assuming success
                 # This prevents capturing the wrong chart and saving with wrong filename
@@ -3115,11 +3149,12 @@ class ChartSourcer:
                 try:
                     self.logger.info(f"Processing symbol {i+1}/{len(symbols)}: {symbol}")
 
-                    # Navigate to symbol using watchlist click
-                    if await self.navigate_to_watchlist_symbol(i):
-                        # Normalize symbol name for filename
-                        symbol_clean = symbol.replace('/', '_').replace(':', '_').replace(' ', '_')
-                        symbol_clean = normalize_symbol_for_bybit(symbol_clean)
+                    # Normalize symbol name for Bybit format (removes .P suffix etc.)
+                    symbol_clean = symbol.replace('/', '_').replace(':', '_').replace(' ', '_')
+                    symbol_clean = normalize_symbol_for_bybit(symbol_clean)
+
+                    # Navigate to symbol using URL-based navigation (more reliable than watchlist clicks)
+                    if await self.navigate_to_chart(symbol_clean, timeframe or "1d"):
 
                         # Wait for chart to load after navigation
                         await self.wait_for_chart_load()
