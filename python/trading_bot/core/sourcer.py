@@ -970,21 +970,21 @@ class ChartSourcer:
             self.logger.info(f"🔗 Navigating to chart URL: {chart_url}")
 
             try:
-                await self.page.goto(chart_url, timeout=self.tv_config.browser.timeout)
-                self.logger.info("Chart page navigation initiated, waiting for load...")
-                await self.page.wait_for_load_state('networkidle', timeout=50000)
-                self.logger.info("Chart page loaded successfully")
-            except Exception as nav_error:
-                self.logger.error(f"Chart page navigation failed: {str(nav_error)}")
-                # Try with domcontentloaded as fallback
-                try:
-                    await self.page.wait_for_load_state('domcontentloaded', timeout=20000)
-                    self.logger.info("Chart page loaded with domcontentloaded state")
-                except Exception as dom_error:
-                    self.logger.error(f"Dom content load also failed: {str(dom_error)}")
-                    raise nav_error
+                # Start navigation without waiting for load state
+                await self.page.goto(chart_url, wait_until='commit', timeout=10000)
+                self.logger.info("Chart page navigation initiated")
 
-            await asyncio.sleep(3)  # Wait for page to fully load
+                # Fallback: Just wait 5 seconds for page to load
+                # This is more reliable than waiting for networkidle/domcontentloaded
+                # which can timeout on TradingView due to continuous network activity
+                await asyncio.sleep(5)
+                self.logger.info("Chart page assumed loaded after 5 second wait")
+
+            except Exception as nav_error:
+                self.logger.warning(f"Navigation error (continuing anyway): {str(nav_error)}")
+                # Even if navigation fails, wait and try to continue
+                # The page might still be usable
+                await asyncio.sleep(5)
 
             # Check if we hit the "can't open chart layout" error page
             if await self._detect_login_required_page():
@@ -992,9 +992,8 @@ class ChartSourcer:
                 if await self._handle_login_required_and_retry():
                     # Re-navigate after successful login
                     self.logger.info("🔄 Retrying navigation after successful login...")
-                    await self.page.goto(chart_url, timeout=self.tv_config.browser.timeout)
-                    await self.page.wait_for_load_state('networkidle', timeout=50000)
-                    await asyncio.sleep(3)
+                    await self.page.goto(chart_url, wait_until='commit', timeout=10000)
+                    await asyncio.sleep(5)
                 else:
                     self.logger.error("❌ Login failed - cannot access chart")
                     return False
