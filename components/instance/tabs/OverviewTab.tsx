@@ -59,10 +59,14 @@ interface OverviewTabProps {
 
 interface BotStatus {
   running: boolean
-  wallet: { balance_usdt: number; available_usdt: number; equity_usdt: number }
-  positions: Array<{ symbol: string; side: string; size: string; entryPrice: string; unrealisedPnl: string }>
-  slots: { used: number; max: number }
-  last_cycle: { timeframe: string; boundary_time: string; status: string } | null
+  mode: 'paper' | 'live'
+  network: 'testnet' | 'mainnet'
+  slots: { used: number; max: number; available: number }
+  last_cycle: string | null
+  error: string | null
+  // Legacy fields for backwards compatibility (now come from WebSocket)
+  wallet?: { balance_usdt: number; available_usdt: number; equity_usdt: number }
+  positions?: Array<{ symbol: string; side: string; size: string; entryPrice: string; unrealisedPnl: string }>
 }
 
 interface Trade {
@@ -86,8 +90,8 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
   // Use shared context for logs
   const { logs, addLog, setLogs } = useBotState()
 
-  // Connect to Socket.IO for real-time updates
-  const { socket, wallet: liveWallet } = useRealtime()
+  // Connect to Socket.IO for real-time updates (wallet, positions, tickers)
+  const { socket, wallet: liveWallet, positions: livePositions } = useRealtime()
 
   const [status, setStatus] = useState<BotStatus | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
@@ -237,8 +241,10 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
   if (loading) return <LoadingState text="Loading overview..." />
   if (error) return <ErrorState message={error} onRetry={fetchData} />
 
-  const unrealizedPnl = status?.positions?.reduce((sum, p) => sum + parseFloat(p.unrealisedPnl || '0'), 0) || 0
-  const positionCount = status?.positions?.length || 0
+  // Use WebSocket positions if available, fallback to status API
+  const positions = livePositions.length > 0 ? livePositions : (status?.positions || [])
+  const unrealizedPnl = positions.reduce((sum, p) => sum + parseFloat(p.unrealisedPnl || '0'), 0)
+  const positionCount = positions.length
 
   return (
     <div className="p-4 space-y-4">
@@ -387,7 +393,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {status?.positions?.map((pos, idx) => (
+                  {positions.map((pos, idx) => (
                     <tr key={idx} className="border-b border-slate-700/50 hover:bg-slate-700/20">
                       <td className="py-1.5 font-mono font-bold text-white">{pos.symbol}</td>
                       <td className="py-1.5">
@@ -422,17 +428,15 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
             {status?.last_cycle ? (
               <div className="space-y-1 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Timeframe:</span>
-                  <span className="text-white font-mono">{status.last_cycle.timeframe}</span>
+                  <span className="text-slate-500">Last Run:</span>
+                  <span className="text-white font-mono">
+                    {new Date(status.last_cycle).toLocaleString()}
+                  </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Time:</span>
-                  <span className="text-white font-mono">{status.last_cycle.boundary_time}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Status:</span>
-                  <span className={status.last_cycle.status === 'completed' ? 'text-green-400' : 'text-yellow-400'}>
-                    {status.last_cycle.status}
+                  <span className="text-slate-500">Mode:</span>
+                  <span className={status.mode === 'paper' ? 'text-yellow-400' : 'text-green-400'}>
+                    {status.mode === 'paper' ? 'Paper Trading' : 'Live Trading'}
                   </span>
                 </div>
               </div>
