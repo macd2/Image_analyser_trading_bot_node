@@ -73,11 +73,14 @@ class SlotManager:
         """
         try:
             if self.paper_trading:
-                # Paper trading mode: Use database to count open positions
+                # Paper trading mode: Use database to count open positions AND pending orders
                 open_positions = self._get_db_open_positions_count()
-                entry_orders = 0  # In paper trading, we don't have pending orders
-                tp_sl_orders = 0
-                self.logger.debug(f"[Paper Trading] DB-based position count: {open_positions}")
+                entry_orders = self._get_db_pending_orders_count()  # Pending paper trades (not yet filled)
+                tp_sl_orders = 0  # TP/SL are part of the position, not separate orders
+                self.logger.debug(
+                    f"[Paper Trading] DB-based counts: positions={open_positions}, "
+                    f"pending_orders={entry_orders}"
+                )
             else:
                 # Live trading mode: Use API to count positions and orders
                 count_result = count_open_positions_and_orders(trader=self.trader)
@@ -400,3 +403,43 @@ class SlotManager:
         """
         positions = self._get_db_open_positions()
         return len(positions)
+    def _get_db_pending_orders_count(self) -> int:
+        """
+        Get count of pending paper trade orders from database (paper trading only).
+        Pending orders are trades with status='paper_trade' (waiting for simulator to fill).
+
+        Returns:
+            Number of pending orders for this instance
+        """
+        if not self.instance_id:
+            self.logger.warning("No instance_id provided - cannot query database pending orders")
+            return 0
+
+        try:
+            conn = get_connection()
+
+            # Query for pending paper trade orders for this instance
+            # Pending orders: status = 'paper_trade' (waiting for simulator to fill)
+            dry_run_check = get_boolean_comparison('t.dry_run', True)
+
+            results = query(conn, f"""
+                SELECT COUNT(DISTINCT t.symbol) as count
+                FROM trades t
+                JOIN cycles c ON t.cycle_id = c.id
+                JOIN runs r ON c.run_id = r.id
+                WHERE r.instance_id = ?
+                  AND {dry_run_check}
+                  AND t.status = 'paper_trade'
+                  AND t.pnl IS NULL
+            """, (self.instance_id,))
+
+            count = results[0]['count'] if results else 0
+            self.logger.debug(f"[DB Query] Found {count} pending orders for instance {self.instance_id}")
+
+            conn.close()
+            return count
+
+        except Exception as e:
+            self.logger.error(f"Error querying database for pending orders count: {e}")
+            return 0
+
