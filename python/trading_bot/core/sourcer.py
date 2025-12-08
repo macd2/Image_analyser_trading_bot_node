@@ -2905,6 +2905,16 @@ class ChartSourcer:
 
             # Verify that we've navigated to the correct symbol by checking the chart
             try:
+                # Normalize symbol for comparison - extract base symbol without .P suffix
+                expected_base = symbol_text.strip().upper() if symbol_text else ""
+                if expected_base.endswith('.P'):
+                    expected_base = expected_base[:-2]  # Remove .P suffix
+                # Also remove exchange prefix if present (e.g., "BYBIT:")
+                if ':' in expected_base:
+                    expected_base = expected_base.split(':')[-1]
+
+                self.logger.debug(f"Verifying navigation: expected base symbol = {expected_base}")
+
                 # Look for the symbol in the chart header or title
                 chart_symbol_selectors = [
                     '.chart-symbol',
@@ -2918,15 +2928,24 @@ class ChartSourcer:
                         element = await self.page.query_selector(selector)
                         if element:
                             chart_symbol = await element.text_content()
-                            if chart_symbol and symbol_text and symbol_text.strip() in chart_symbol.upper():
-                                self.logger.info(f"✅ Verified navigation to {symbol_text} in chart")
-                                return True
+                            if chart_symbol:
+                                chart_upper = chart_symbol.strip().upper()
+                                # Check if base symbol is in the chart symbol (handles both CAKEUSDT and CAKEUSDT.P)
+                                if expected_base and expected_base in chart_upper:
+                                    self.logger.info(f"✅ Verified navigation to {symbol_text} (base: {expected_base}) in chart")
+                                    return True
                     except Exception:
                         continue
 
+                # Also check the URL as a fallback verification
+                current_url = self.page.url.upper()
+                if expected_base and expected_base in current_url:
+                    self.logger.info(f"✅ URL verification passed for {expected_base}")
+                    return True
+
                 # FIXED: If we can't verify, FAIL instead of assuming success
                 # This prevents capturing the wrong chart and saving with wrong filename
-                self.logger.error(f"❌ Symbol verification FAILED for {symbol_text} - cannot confirm correct chart is displayed")
+                self.logger.error(f"❌ Symbol verification FAILED for {symbol_text} (base: {expected_base}) - cannot confirm correct chart is displayed")
                 self.logger.error("❌ Aborting navigation to prevent wrong chart capture")
                 return False  # DO NOT PROCEED - this is operation critical!
 
