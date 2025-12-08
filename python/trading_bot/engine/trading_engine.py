@@ -196,12 +196,16 @@ class TradingEngine:
         recommendation_id: Optional[str] = None,
         cycle_id: Optional[str] = None,
         timestamp: Optional[datetime] = None,
+        rr_ratio: Optional[float] = None,
     ) -> None:
         """Insert a rejected trade into the database for audit trail."""
         try:
             # Determine side from recommendation
             recommendation = signal.get("recommendation", "").upper()
             side = "Buy" if recommendation in ("BUY", "LONG") else "Sell"
+
+            # Use provided rr_ratio or try to get from signal, default to 0
+            final_rr_ratio = rr_ratio if rr_ratio is not None else signal.get("rr_ratio", 0)
 
             execute(self._db, """
                 INSERT INTO trades (
@@ -225,7 +229,7 @@ class TradingEngine:
                 rejection_reason,
                 self.paper_trading,  # Pass boolean directly
                 signal.get("confidence", 0),
-                signal.get("rr_ratio", 0),
+                final_rr_ratio,
                 signal.get("timeframe"),
                 signal.get("prompt_name"),
                 timestamp.isoformat() if timestamp else datetime.now(timezone.utc).isoformat(),
@@ -309,15 +313,16 @@ class TradingEngine:
                 "timestamp": timestamp,
             }
 
-        # Calculate RR ratio
-        risk = abs(entry - sl)
-        reward = abs(tp - entry)
+        # Calculate RR ratio correctly for both LONG and SHORT
+        is_long = recommendation in ("BUY", "LONG")
+        risk = abs(sl - entry)
+        reward = abs(tp - entry) if is_long else abs(entry - tp)
         rr_ratio = reward / risk if risk > 0 else 0
 
         min_rr = self.config.trading.min_rr
         if rr_ratio < min_rr:
             rejection_reason = f"RR ratio {rr_ratio:.2f} below minimum {min_rr}"
-            self._insert_rejected_trade(trade_id, symbol, signal, rejection_reason, recommendation_id, cycle_id, timestamp)
+            self._insert_rejected_trade(trade_id, symbol, signal, rejection_reason, recommendation_id, cycle_id, timestamp, rr_ratio)
             return {
                 "id": trade_id,
                 "status": "rejected",
