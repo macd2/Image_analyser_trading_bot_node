@@ -106,12 +106,14 @@ export default function FindBestPromptPage() {
     config: { symbols?: string[]; timeframes?: string[]; model?: string; prompts?: string[] };
     total_api_calls: number; duration_sec: number; random_seed: number;
   }>>([]);
+  const [loadingRecentRuns, setLoadingRecentRuns] = useState(true);
   const [selectedRun, setSelectedRun] = useState<{
     id: number; tournament_id: string; started_at: string; finished_at: string;
     status: string; winner: string; win_rate: number; avg_pnl: number; random_seed: number;
     config: Record<string, unknown>; phase_details: Record<string, unknown>; result: Record<string, unknown>;
     total_api_calls: number; duration_sec: number;
   } | null>(null);
+  const [loadingRunId, setLoadingRunId] = useState<string | null>(null);  // Tournament ID being loaded
   const [loadingRunDetails, setLoadingRunDetails] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [verifyModalOpen, setVerifyModalOpen] = useState(false);
@@ -168,20 +170,28 @@ export default function FindBestPromptPage() {
       // Also load recent runs
       fetch('/api/tournament/history?limit=10').then(r => r.json())
         .then(data => setRecentRuns(data.runs || []))
-        .catch(() => {});
-    }).catch(() => setSettingsLoaded(true));
+        .catch(() => {})
+        .finally(() => setLoadingRecentRuns(false));
+    }).catch(() => {
+      setSettingsLoaded(true);
+      setLoadingRecentRuns(false);
+    });
   }, []);
 
   // Reload history after tournament completes
   const reloadHistory = useCallback(() => {
+    setLoadingRecentRuns(true);
     fetch('/api/tournament/history?limit=10').then(r => r.json())
       .then(data => setRecentRuns(data.runs || []))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoadingRecentRuns(false));
   }, []);
 
   // Load full details for a tournament run
   const loadRunDetails = useCallback(async (tournamentId: string) => {
+    setLoadingRunId(tournamentId);  // Open modal immediately with loading state
     setLoadingRunDetails(true);
+    setSelectedRun(null);  // Clear previous run while loading
     try {
       const res = await fetch(`/api/tournament/history?id=${tournamentId}`);
       const data = await res.json();
@@ -619,11 +629,23 @@ export default function FindBestPromptPage() {
       )}
 
       {/* Recent Runs */}
-      {recentRuns.length > 0 && (
-        <div className="bg-slate-800/50 rounded-lg border border-slate-700 p-4">
-          <h3 className="text-white font-medium mb-3 flex items-center gap-2">
-            <TrendingUp size={18} className="text-blue-400" /> Recent Tournament Runs
-          </h3>
+      <div className="bg-slate-800/50 rounded-lg border border-slate-700 p-4">
+        <h3 className="text-white font-medium mb-3 flex items-center gap-2">
+          <TrendingUp size={18} className="text-blue-400" /> Recent Tournament Runs
+          {loadingRecentRuns && <Loader2 size={14} className="animate-spin text-blue-400" />}
+        </h3>
+        {loadingRecentRuns ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="flex flex-col items-center gap-2">
+              <Loader2 size={24} className="animate-spin text-blue-400" />
+              <span className="text-slate-400 text-sm">Loading tournament history...</span>
+            </div>
+          </div>
+        ) : recentRuns.length === 0 ? (
+          <div className="text-center py-8 text-slate-500 text-sm">
+            No tournament runs yet. Start a tournament to see results here.
+          </div>
+        ) : (
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {recentRuns.map(run => (
               <div key={run.id} onClick={() => loadRunDetails(run.tournament_id)}
@@ -650,13 +672,20 @@ export default function FindBestPromptPage() {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Tournament Details Modal */}
-      {selectedRun && (
-        <TournamentDetailModal run={selectedRun} onClose={() => setSelectedRun(null)} loading={loadingRunDetails}
-          copiedField={copiedField} copyToClipboard={copyToClipboard} onVerifyTrades={() => setVerifyModalOpen(true)} />
+      {/* Tournament Details Modal - Show when loading or when data is loaded */}
+      {(loadingRunId || selectedRun) && (
+        <TournamentDetailModal
+          run={selectedRun}
+          onClose={() => { setSelectedRun(null); setLoadingRunId(null); }}
+          loading={loadingRunDetails}
+          loadingId={loadingRunId}
+          copiedField={copiedField}
+          copyToClipboard={copyToClipboard}
+          onVerifyTrades={() => setVerifyModalOpen(true)}
+        />
       )}
 
       {/* Trade Verification Modal */}
@@ -733,20 +762,21 @@ interface TournamentDetailModalProps {
     winner: string; win_rate: number; avg_pnl: number; random_seed: number;
     config: Record<string, unknown>; phase_details: Record<string, unknown>; result: Record<string, unknown>;
     total_api_calls: number; duration_sec: number;
-  };
+  } | null;  // Can be null while loading
   onClose: () => void;
   loading: boolean;
+  loadingId?: string | null;  // Tournament ID being loaded
   copiedField: string | null;
   copyToClipboard: (text: string, field: string) => void;
   onVerifyTrades: () => void;
 }
 
-const TournamentDetailModal = ({ run, onClose, loading, copiedField, copyToClipboard, onVerifyTrades }: TournamentDetailModalProps) => {
-  const config = (run.config || {}) as { symbols?: string[]; timeframes?: string[]; model?: string; prompts?: string[];
+const TournamentDetailModal = ({ run, onClose, loading, loadingId, copiedField, copyToClipboard, onVerifyTrades }: TournamentDetailModalProps) => {
+  const config = (run?.config || {}) as { symbols?: string[]; timeframes?: string[]; model?: string; prompts?: string[];
     images_phase_1?: number; images_phase_2?: number; images_phase_3?: number; elimination_pct?: number;
     ranking_strategy?: string; selection_strategy?: string; image_offset?: number };
-  const result = (run.result || {}) as { rankings?: Array<{ rank: number; prompt: string; win_rate: number; avg_pnl: number; trades: number; wilson_lower?: number }> };
-  const phaseDetails = (run.phase_details || {}) as Record<string, { prompts?: string[]; images?: number; eliminated?: string[] }>;
+  const result = (run?.result || {}) as { rankings?: Array<{ rank: number; prompt: string; win_rate: number; avg_pnl: number; trades: number; wilson_lower?: number }> };
+  const phaseDetails = (run?.phase_details || {}) as Record<string, { prompts?: string[]; images?: number; eliminated?: string[] }>;
 
   const formatDuration = (sec: number) => {
     if (sec < 60) return `${sec.toFixed(0)}s`;
@@ -758,8 +788,12 @@ const TournamentDetailModal = ({ run, onClose, loading, copiedField, copyToClipb
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-slate-900 rounded-xl border border-slate-700 max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl"
         onClick={e => e.stopPropagation()}>
-        {loading ? (
-          <div className="flex items-center justify-center py-20"><Loader2 size={32} className="animate-spin text-blue-400" /></div>
+        {loading || !run ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <Loader2 size={32} className="animate-spin text-blue-400" />
+            <span className="text-slate-400 text-sm">Loading tournament details...</span>
+            {loadingId && <span className="text-slate-500 text-xs font-mono">{loadingId}</span>}
+          </div>
         ) : (
           <>
             {/* Header */}
