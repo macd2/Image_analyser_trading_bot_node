@@ -37,6 +37,9 @@ if not Path(DB_PATH).is_absolute():
 else:
     DB_PATH = Path(DB_PATH)
 
+# Backtest database path (SQLite only - for PostgreSQL, uses same connection)
+BACKTEST_DB_PATH = os.getenv('DATABASE_PATH', str(DB_DIR / "backtests.db"))
+
 
 class UnifiedRow:
     """
@@ -48,8 +51,14 @@ class UnifiedRow:
     def __init__(self, row):
         self._row = row
         # Convert to dict for consistent access
-        if isinstance(row, Mapping):
+        # Handle sqlite3.Row (has keys() method but is not a Mapping)
+        if hasattr(row, 'keys') and callable(row.keys):
+            # sqlite3.Row or dict-like object
+            self._dict = {key: row[key] for key in row.keys()}
+            self._tuple = tuple(row)
+        elif isinstance(row, Mapping):
             self._dict = dict(row)
+            self._tuple = tuple(row.values())
         else:
             # Fallback for tuple/list
             self._dict = {}
@@ -149,17 +158,17 @@ def get_connection():
     """
     Get a database connection.
     Auto-detects SQLite or PostgreSQL based on DB_TYPE env var.
-    
+
     Returns:
         sqlite3.Connection or psycopg2.connection
     """
     if DB_TYPE == 'postgres':
         import psycopg2
         import psycopg2.extras
-        
+
         if not DATABASE_URL:
             raise ValueError("DATABASE_URL not set for PostgreSQL mode")
-        
+
         conn = psycopg2.connect(DATABASE_URL)
         # Use RealDictCursor for dict-like row access (similar to sqlite3.Row)
         conn.cursor_factory = psycopg2.extras.RealDictCursor
@@ -168,6 +177,32 @@ def get_connection():
         conn = sqlite3.connect(str(get_db_path()))
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        return conn
+
+
+def get_backtest_connection():
+    """
+    Get a database connection for backtest operations.
+    For PostgreSQL: uses the same connection as get_connection() (all tables in one DB)
+    For SQLite: uses backtests.db instead of trading.db
+
+    Returns:
+        sqlite3.Connection or psycopg2.connection
+    """
+    if DB_TYPE == 'postgres':
+        # PostgreSQL: same database, different table names (handled by get_table_name)
+        return get_connection()
+    else:
+        # SQLite: separate backtests.db file
+        backtest_path = Path(BACKTEST_DB_PATH)
+        backtest_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(backtest_path), timeout=30)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA busy_timeout=5000;")
+        except Exception:
+            pass
         return conn
 
 
@@ -317,15 +352,23 @@ def get_table_name(logical_name: str) -> str:
     Handles table name differences between SQLite and PostgreSQL.
 
     Args:
-        logical_name: Logical table name (e.g., 'klines_store', 'sessions')
+        logical_name: Logical table name (e.g., 'klines_store', 'sessions', 'tournament_runs')
 
     Returns:
         Actual table name for the current database
     """
     # Table name mappings for PostgreSQL (Supabase managed)
+    # SQLite uses local table names, PostgreSQL uses prefixed names
     table_mappings = {
         'klines_store': 'klines',  # PostgreSQL uses 'klines', SQLite uses 'klines_store'
         'sessions': 'tradingview_sessions',  # PostgreSQL uses 'tradingview_sessions', SQLite uses 'sessions'
+        # Backtest tables: SQLite uses unprefixed names, PostgreSQL uses bt_ prefix
+        'tournament_runs': 'bt_tournament_runs',
+        'runs': 'bt_runs',
+        'run_images': 'bt_run_images',
+        'analyses': 'bt_analyses',
+        'trades': 'bt_trades',
+        'summaries': 'bt_summaries',
     }
 
     if DB_TYPE == 'postgres' and logical_name in table_mappings:
@@ -470,6 +513,7 @@ def add_column_if_missing(conn, table_name: str, column_name: str, column_type: 
 
 __all__ = [
     'get_connection',
+    'get_backtest_connection',
     'get_db_path',
     'execute',
     'query',
@@ -486,5 +530,6 @@ __all__ = [
     'normalize_sql',
     'safe_execute',
     'DB_TYPE',
+    'BACKTEST_DB_PATH',
 ]
 

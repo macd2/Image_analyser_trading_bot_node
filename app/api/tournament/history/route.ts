@@ -35,7 +35,11 @@ print(json.dumps({'runs': runs}))
 `;
 
   return new Promise<Response>((resolve) => {
-    const proc = spawn('python3', ['-c', script], { cwd: pythonDir });
+    // Pass environment variables to Python subprocess (needed for DB_TYPE, DATABASE_URL)
+    const proc = spawn('python3', ['-c', script], {
+      cwd: pythonDir,
+      env: { ...process.env }
+    });
     let stdout = '';
     let stderr = '';
 
@@ -55,10 +59,12 @@ print(json.dumps({'runs': runs}))
       }
     });
 
+    // Increase timeout for single tournament queries (they return large phase_details)
+    const timeoutMs = tournamentId ? 30000 : 10000;
     setTimeout(() => {
       proc.kill();
       resolve(NextResponse.json({ error: 'Timeout' }, { status: 504 }));
-    }, 10000);
+    }, timeoutMs);
   });
 }
 

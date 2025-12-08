@@ -1,5 +1,6 @@
 """
-SQLite-backed store for image backtest runs, images, analyses, trades, and summaries.
+Database-backed store for image backtest runs, images, analyses, trades, and summaries.
+Supports both SQLite (local) and PostgreSQL (Supabase) via centralized DB client.
 Keeps an append-only store (never removes rows) and deduplicates via UNIQUE constraints.
 """
 from __future__ import annotations
@@ -13,12 +14,60 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from .utils import generate_prompt_hash
 
+# Import centralized database client
+import sys
+import os
+# Add project root to path to import trading_bot.db.client
+_project_root = Path(__file__).parent.parent.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root / "python"))
+
+from trading_bot.db.client import (
+    get_backtest_connection,
+    get_table_name,
+    execute as db_execute,
+    query as db_query,
+    query_one as db_query_one,
+    DB_TYPE,
+    BACKTEST_DB_PATH,
+)
+
 
 def generate_run_id() -> str:
     """Generate a unique run ID using UUID"""
     return f"bt_{uuid.uuid4().hex[:12]}"
 
-# Use data/backtests.db relative to project root (V2/prototype)
+
+def _parse_json_column(value: Any) -> Dict[str, Any]:
+    """
+    Parse a JSON/JSONB column value.
+    PostgreSQL returns JSONB as Python dict, SQLite returns as JSON string.
+    """
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value  # PostgreSQL JSONB already parsed
+    if isinstance(value, str):
+        return json.loads(value) if value else {}
+    return {}
+
+
+def _serialize_timestamp(value: Any) -> Optional[str]:
+    """
+    Serialize a timestamp value to ISO string.
+    PostgreSQL returns datetime objects, SQLite returns strings.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value  # Already a string (SQLite)
+    # Handle datetime object (PostgreSQL)
+    if hasattr(value, 'isoformat'):
+        return value.isoformat()
+    return str(value)
+
+
+# Use data/backtests.db relative to project root (V2/prototype) - for backwards compatibility
 DB_PATH = Path(__file__).parent.parent.parent.parent / "data" / "backtests.db"
 
 
@@ -34,6 +83,11 @@ class BacktestStore:
         self._ensure_db()
 
     def _ensure_db(self):
+        # For PostgreSQL (Supabase), tables are managed externally via migrations
+        # Only create tables for SQLite (local development)
+        if DB_TYPE == 'postgres':
+            return
+
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             c = conn.cursor()
@@ -396,22 +450,24 @@ class BacktestStore:
 
 
 
-    def _connect(self) -> sqlite3.Connection:
-	        """SQLite connection with WAL and busy timeout to reduce lock errors."""
-	        conn = sqlite3.connect(self.db_path, timeout=30)
-	        try:
-	            conn.execute("PRAGMA journal_mode=WAL;")
-	        except Exception:
-	            pass
-	        try:
-	            conn.execute("PRAGMA busy_timeout=5000;")  # milliseconds
-	        except Exception:
-	            pass
-	        try:
-	            conn.execute("PRAGMA synchronous=NORMAL;")
-	        except Exception:
-	            pass
-	        return conn
+    def _connect(self):
+        """
+        Get a database connection using centralized client.
+        For PostgreSQL: uses Supabase via DATABASE_URL
+        For SQLite: uses local backtests.db with WAL and busy timeout
+        """
+        return get_backtest_connection()
+
+    def _get_table(self, logical_name: str) -> str:
+        """
+        Get the actual table name for the current database.
+        Uses centralized get_table_name() for consistent mapping.
+
+        Examples:
+            _get_table('tournament_runs') -> 'bt_tournament_runs' (PostgreSQL) or 'tournament_runs' (SQLite)
+            _get_table('runs') -> 'bt_runs' (PostgreSQL) or 'runs' (SQLite)
+        """
+        return get_table_name(logical_name)
 
     def _write_with_retry(self, writer, retries: int = 5, base_sleep: float = 0.05) -> None:
 	        """Run a write operation with retry/backoff on 'database is locked'."""
@@ -797,80 +853,108 @@ class BacktestStore:
         return {"analyses_updated": analyses_updated_total, "trades_updated": trades_updated_total}
 
     # === Tournament APIs ===
+    # These methods use the centralized DB client for SQLite/PostgreSQL support
+
     def tournament_create(self, tournament_id: str, started_at: str, config: dict, random_seed: int) -> int:
         """Create a new tournament run."""
-        with self._connect() as conn:
-            c = conn.cursor()
-            c.execute(
-                """INSERT INTO tournament_runs(tournament_id, started_at, status, random_seed, config_json)
-                   VALUES (?, ?, 'running', ?, ?)""",
-                (tournament_id, started_at, random_seed, json.dumps(config))
-            )
-            conn.commit()
-            return c.lastrowid or 0
+        table = self._get_table('tournament_runs')
+        conn = self._connect()
+        try:
+            sql = f"""INSERT INTO {table}(tournament_id, started_at, status, random_seed, config_json)
+                      VALUES (?, ?, 'running', ?, ?)"""
+            db_execute(conn, sql, (tournament_id, started_at, random_seed, json.dumps(config)))
+            # Get last inserted ID (works differently for SQLite vs PostgreSQL)
+            if DB_TYPE == 'postgres':
+                # For PostgreSQL, query the last inserted ID
+                row = db_query_one(conn, f"SELECT id FROM {table} WHERE tournament_id = ?", (tournament_id,))
+                return row['id'] if row else 0
+            else:
+                cursor = conn.cursor()
+                cursor.execute("SELECT last_insert_rowid()")
+                result = cursor.fetchone()
+                return result[0] if result else 0
+        finally:
+            conn.close()
 
     def tournament_complete(self, tournament_id: str, finished_at: str, status: str,
                            phase_details: dict, result: dict) -> None:
         """Mark tournament as complete with results."""
+        table = self._get_table('tournament_runs')
         winner = result.get('winner', '')
         win_rate = result.get('win_rate', 0)
         avg_pnl = result.get('avg_pnl', 0)
         total_api_calls = result.get('total_api_calls', 0)
         duration_sec = result.get('duration_sec', 0)
-        with self._connect() as conn:
-            c = conn.cursor()
-            c.execute(
-                """UPDATE tournament_runs SET
-                   finished_at = ?, status = ?, phase_details_json = ?, result_json = ?,
-                   winner = ?, win_rate = ?, avg_pnl = ?, total_api_calls = ?, duration_sec = ?
-                   WHERE tournament_id = ?""",
-                (finished_at, status, json.dumps(phase_details), json.dumps(result),
-                 winner, win_rate, avg_pnl, total_api_calls, duration_sec, tournament_id)
-            )
-            conn.commit()
+
+        conn = self._connect()
+        try:
+            sql = f"""UPDATE {table} SET
+                      finished_at = ?, status = ?, phase_details_json = ?, result_json = ?,
+                      winner = ?, win_rate = ?, avg_pnl = ?, total_api_calls = ?, duration_sec = ?
+                      WHERE tournament_id = ?"""
+            db_execute(conn, sql, (
+                finished_at, status, json.dumps(phase_details), json.dumps(result),
+                winner, win_rate, avg_pnl, total_api_calls, duration_sec, tournament_id
+            ))
+        finally:
+            conn.close()
 
     def tournament_list(self, limit: int = 50) -> List[Dict[str, Any]]:
         """List recent tournament runs."""
-        with self._connect() as conn:
-            c = conn.cursor()
-            c.execute(
-                """SELECT id, tournament_id, started_at, finished_at, status, random_seed,
-                          config_json, winner, win_rate, avg_pnl, total_api_calls, duration_sec
-                   FROM tournament_runs ORDER BY id DESC LIMIT ?""",
-                (limit,)
-            )
-            rows = c.fetchall()
+        table = self._get_table('tournament_runs')
+        conn = self._connect()
+        try:
+            sql = f"""SELECT id, tournament_id, started_at, finished_at, status, random_seed,
+                             config_json, winner, win_rate, avg_pnl, total_api_calls, duration_sec
+                      FROM {table} ORDER BY id DESC LIMIT ?"""
+            rows = db_query(conn, sql, (limit,))
             return [
                 {
-                    'id': r[0], 'tournament_id': r[1], 'started_at': r[2], 'finished_at': r[3],
-                    'status': r[4], 'random_seed': r[5],
-                    'config': json.loads(r[6]) if r[6] else {},
-                    'winner': r[7], 'win_rate': r[8], 'avg_pnl': r[9],
-                    'total_api_calls': r[10], 'duration_sec': r[11]
+                    'id': r['id'],
+                    'tournament_id': r['tournament_id'],
+                    'started_at': _serialize_timestamp(r['started_at']),
+                    'finished_at': _serialize_timestamp(r['finished_at']),
+                    'status': r['status'],
+                    'random_seed': r['random_seed'],
+                    'config': _parse_json_column(r['config_json']),
+                    'winner': r['winner'],
+                    'win_rate': r['win_rate'],
+                    'avg_pnl': r['avg_pnl'],
+                    'total_api_calls': r['total_api_calls'],
+                    'duration_sec': r['duration_sec']
                 }
                 for r in rows
             ]
+        finally:
+            conn.close()
 
     def tournament_get(self, tournament_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific tournament run with full details."""
-        with self._connect() as conn:
-            c = conn.cursor()
-            c.execute(
-                """SELECT id, tournament_id, started_at, finished_at, status, random_seed,
-                          config_json, phase_details_json, result_json,
-                          winner, win_rate, avg_pnl, total_api_calls, duration_sec
-                   FROM tournament_runs WHERE tournament_id = ?""",
-                (tournament_id,)
-            )
-            r = c.fetchone()
+        table = self._get_table('tournament_runs')
+        conn = self._connect()
+        try:
+            sql = f"""SELECT id, tournament_id, started_at, finished_at, status, random_seed,
+                             config_json, phase_details_json, result_json,
+                             winner, win_rate, avg_pnl, total_api_calls, duration_sec
+                      FROM {table} WHERE tournament_id = ?"""
+            r = db_query_one(conn, sql, (tournament_id,))
             if not r:
                 return None
             return {
-                'id': r[0], 'tournament_id': r[1], 'started_at': r[2], 'finished_at': r[3],
-                'status': r[4], 'random_seed': r[5],
-                'config': json.loads(r[6]) if r[6] else {},
-                'phase_details': json.loads(r[7]) if r[7] else {},
-                'result': json.loads(r[8]) if r[8] else {},
-                'winner': r[9], 'win_rate': r[10], 'avg_pnl': r[11],
-                'total_api_calls': r[12], 'duration_sec': r[13]
+                'id': r['id'],
+                'tournament_id': r['tournament_id'],
+                'started_at': _serialize_timestamp(r['started_at']),
+                'finished_at': _serialize_timestamp(r['finished_at']),
+                'status': r['status'],
+                'random_seed': r['random_seed'],
+                'config': _parse_json_column(r['config_json']),
+                'phase_details': _parse_json_column(r['phase_details_json']),
+                'result': _parse_json_column(r['result_json']),
+                'winner': r['winner'],
+                'win_rate': r['win_rate'],
+                'avg_pnl': r['avg_pnl'],
+                'total_api_calls': r['total_api_calls'],
+                'duration_sec': r['duration_sec']
             }
+        finally:
+            conn.close()
