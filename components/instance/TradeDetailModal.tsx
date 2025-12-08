@@ -47,7 +47,9 @@ function calculateRR(trade: TradeRow): number | null {
   const { entry_price, stop_loss, take_profit, side } = trade
   if (!entry_price || !stop_loss || !take_profit) return null
 
-  const isLong = side === 'Buy'
+  // Normalize side to handle both 'Buy'/'Sell' and 'LONG'/'SHORT' formats
+  const sideUpper = side?.toUpperCase() || ''
+  const isLong = sideUpper === 'BUY' || sideUpper === 'LONG'
   const risk = isLong ? (entry_price - stop_loss) : (stop_loss - entry_price)
   const reward = isLong ? (take_profit - entry_price) : (entry_price - take_profit)
 
@@ -193,7 +195,9 @@ export function TradeDetailModal({ isOpen, onClose, trade }: TradeDetailModalPro
         // Add markers for entry and fill times
         const markers: any[] = []
         if (trade) {
-          const isLong = trade.side === 'Buy'
+          // Normalize side to handle both 'Buy'/'Sell' and 'LONG'/'SHORT' formats
+          const sideUpper = trade.side?.toUpperCase() || ''
+          const isLong = sideUpper === 'BUY' || sideUpper === 'LONG'
 
           // Helper function to find closest candle to a timestamp
           const findClosestCandle = (targetTime: number) => {
@@ -284,6 +288,10 @@ export function TradeDetailModal({ isOpen, onClose, trade }: TradeDetailModalPro
 
   if (!isOpen || !trade) return null
 
+  // Normalize side to handle both 'Buy'/'Sell' and 'LONG'/'SHORT' formats
+  const sideUpper = trade.side?.toUpperCase() || ''
+  const isLong = sideUpper === 'BUY' || sideUpper === 'LONG'
+
   const setupQuality = trade.confidence ? trade.confidence * 0.4 : 0
   const rrScore = trade.rr_ratio ? Math.min(1, trade.rr_ratio / 3) * 0.25 : 0
   const marketScore = trade.confidence ? trade.confidence * 0.35 : 0
@@ -295,10 +303,10 @@ export function TradeDetailModal({ isOpen, onClose, trade }: TradeDetailModalPro
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
-              {trade.side === 'Buy' ? <TrendingUp className="text-green-400" /> : <TrendingDown className="text-red-400" />}
+              {isLong ? <TrendingUp className="text-green-400" /> : <TrendingDown className="text-red-400" />}
               <h2 className="text-2xl font-bold text-white">{trade.symbol}</h2>
-              <span className={`px-3 py-1 rounded text-sm font-bold ${trade.side === 'Buy' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
-                {trade.side === 'Buy' ? 'LONG' : 'SHORT'}
+              <span className={`px-3 py-1 rounded text-sm font-bold ${isLong ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
+                {isLong ? 'LONG' : 'SHORT'}
               </span>
 
               {/* Trade Type Badge */}

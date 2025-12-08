@@ -287,7 +287,9 @@ export function SimulatorPage() {
     const currentPrice = currentPrices[trade.symbol]
     if (!currentPrice) return { pnl: 0, pnlPercent: 0, currentPrice: null }
 
-    const isLong = trade.side === 'Buy'
+    // Normalize side to handle both 'Buy'/'Sell' and 'LONG'/'SHORT' formats
+    const sideUpper = trade.side?.toUpperCase() || ''
+    const isLong = sideUpper === 'BUY' || sideUpper === 'LONG'
     const priceDiff = isLong ? (currentPrice - trade.entry_price) : (trade.entry_price - currentPrice)
     const pnl = priceDiff * trade.quantity
     const pnlPercent = (priceDiff / trade.entry_price) * 100
@@ -297,7 +299,9 @@ export function SimulatorPage() {
 
   // Check if trade should be closed based on current price
   const shouldCloseTrade = (trade: OpenPaperTrade, currentPrice: number): { shouldClose: boolean; reason: string | null } => {
-    const isLong = trade.side === 'Buy'
+    // Normalize side to handle both 'Buy'/'Sell' and 'LONG'/'SHORT' formats
+    const sideUpper = trade.side?.toUpperCase() || ''
+    const isLong = sideUpper === 'BUY' || sideUpper === 'LONG'
 
     // Check SL
     if (isLong && currentPrice <= trade.stop_loss) {
@@ -542,10 +546,19 @@ export function SimulatorPage() {
                 .map(({ trade, instance_name, run_id, boundary_time: _boundaryTime }) => {
                   const { pnl, pnlPercent, currentPrice } = calculateUnrealizedPnL(trade)
                   const closeCheck = currentPrice ? shouldCloseTrade(trade, currentPrice) : { shouldClose: false, reason: null }
-                  const isLong = trade.side === 'Buy'
+                  // Normalize side to handle both 'Buy'/'Sell' and 'LONG'/'SHORT' formats
+                  const sideUpper = trade.side?.toUpperCase() || ''
+                  const isLong = sideUpper === 'BUY' || sideUpper === 'LONG'
                   const lastChecked = getLastCheckedPrice(trade.id)
+                  // Calculate RR ratio correctly for both LONG and SHORT
                   const rrRatio = trade.rr_ratio || (trade.take_profit && trade.stop_loss && trade.entry_price
-                    ? Math.abs(trade.take_profit - trade.entry_price) / Math.abs(trade.entry_price - trade.stop_loss)
+                    ? (() => {
+                        const risk = Math.abs(trade.stop_loss - trade.entry_price)
+                        const reward = isLong
+                          ? Math.abs(trade.take_profit - trade.entry_price)
+                          : Math.abs(trade.entry_price - trade.take_profit)
+                        return risk > 0 ? reward / risk : null
+                      })()
                     : null)
 
                   return (

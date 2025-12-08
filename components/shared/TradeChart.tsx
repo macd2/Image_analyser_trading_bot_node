@@ -229,6 +229,9 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
     // Markers
     const markers: { time: Time; position: string; color: string; shape: string; text: string }[] = []
     const entryTs = trade.submitted_at || trade.filled_at || trade.created_at
+    // Normalize side to handle both 'Buy'/'Sell' and 'LONG'/'SHORT' formats
+    const sideUpper = trade.side?.toUpperCase() || ''
+    const isLong = sideUpper === 'BUY' || sideUpper === 'LONG'
     if (entryTs) {
       const entryTime = Math.floor(new Date(entryTs).getTime() / 1000)
       const closestEntry = candles.reduce((c, candle) =>
@@ -237,9 +240,9 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
       if (closestEntry) {
         markers.push({
           time: closestEntry.time,
-          position: trade.side === 'Buy' ? 'belowBar' : 'aboveBar',
+          position: isLong ? 'belowBar' : 'aboveBar',
           color: '#3b82f6',
-          shape: trade.side === 'Buy' ? 'arrowUp' : 'arrowDown',
+          shape: isLong ? 'arrowUp' : 'arrowDown',
           text: 'Entry',
         })
       }

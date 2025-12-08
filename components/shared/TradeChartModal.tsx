@@ -23,7 +23,9 @@ function getPriceDecimals(price: number | null | undefined): number {
 export default function TradeChartModal({ isOpen, onClose, trade, mode = 'live' }: TradeChartModalProps) {
   if (!isOpen || !trade) return null
 
-  const isLong = trade.side === 'Buy'
+  // Normalize side to handle both 'Buy'/'Sell' and 'LONG'/'SHORT' formats
+  const sideUpper = trade.side?.toUpperCase() || ''
+  const isLong = sideUpper === 'BUY' || sideUpper === 'LONG'
   const isClosed = trade.status === 'closed' && trade.exit_price
 
   // Calculate required decimal precision from all prices
@@ -50,18 +52,18 @@ export default function TradeChartModal({ isOpen, onClose, trade, mode = 'live' 
   // Calculate Risk %, Reward %, and RR Ratio
   const riskPercent = trade.stop_loss && trade.entry_price
     ? isLong
-      ? ((trade.stop_loss - trade.entry_price) / trade.entry_price) * 100
-      : ((trade.entry_price - trade.stop_loss) / trade.entry_price) * 100
+      ? Math.abs((trade.stop_loss - trade.entry_price) / trade.entry_price) * 100
+      : Math.abs((trade.stop_loss - trade.entry_price) / trade.entry_price) * 100
     : null
 
   const rewardPercent = trade.take_profit && trade.entry_price
     ? isLong
-      ? ((trade.take_profit - trade.entry_price) / trade.entry_price) * 100
-      : ((trade.entry_price - trade.take_profit) / trade.entry_price) * 100
+      ? Math.abs((trade.take_profit - trade.entry_price) / trade.entry_price) * 100
+      : Math.abs((trade.entry_price - trade.take_profit) / trade.entry_price) * 100
     : null
 
   const rrRatio = riskPercent && rewardPercent && riskPercent !== 0
-    ? Math.abs(rewardPercent / riskPercent)
+    ? rewardPercent / riskPercent
     : null
 
   return (
