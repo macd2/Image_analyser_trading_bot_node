@@ -253,7 +253,7 @@ export default function InstancesPage() {
       const res = await fetch('/api/bot/control', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instanceId, action })
+        body: JSON.stringify({ instance_id: instanceId, action })
       })
       if (!res.ok) throw new Error('Action failed')
       await fetchInstances()
