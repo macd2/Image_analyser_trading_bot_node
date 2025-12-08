@@ -354,21 +354,23 @@ export function TradeDetailModal({ isOpen, onClose, trade }: TradeDetailModalPro
             <div className="bg-slate-700 rounded-lg p-4">
               <div className="text-slate-400 text-xs mb-1">Stop Loss</div>
               <div className="text-red-400 font-mono text-lg">${trade.stop_loss.toFixed(4)}</div>
-              <div className="text-slate-500 text-xs mt-1">Risk: {((trade.entry_price - trade.stop_loss) / trade.entry_price * 100).toFixed(2)}%</div>
+              <div className="text-slate-500 text-xs mt-1">Risk: {(Math.abs(trade.stop_loss - trade.entry_price) / trade.entry_price * 100).toFixed(2)}%</div>
             </div>
             <div className="bg-slate-700 rounded-lg p-4">
               <div className="text-slate-400 text-xs mb-1">Take Profit</div>
               <div className="text-green-400 font-mono text-lg">${trade.take_profit.toFixed(4)}</div>
-              <div className="text-slate-500 text-xs mt-1">Reward: {((trade.take_profit - trade.entry_price) / trade.entry_price * 100).toFixed(2)}%</div>
+              <div className="text-slate-500 text-xs mt-1">Reward: {(isLong ? (trade.take_profit - trade.entry_price) : (trade.entry_price - trade.take_profit)) / trade.entry_price * 100).toFixed(2)}%</div>
             </div>
             <div className="bg-slate-700 rounded-lg p-4">
               <div className="text-slate-400 text-xs mb-1">R:R Ratio</div>
               <div className={`font-mono text-lg ${(() => {
-                const rr = trade.rr_ratio ?? calculateRR(trade)
+                // Use trade.rr_ratio if it's a valid number > 0, otherwise calculate
+                const rr = (trade.rr_ratio && trade.rr_ratio > 0) ? trade.rr_ratio : calculateRR(trade)
                 return rr && rr >= 1 ? 'text-green-400' : 'text-yellow-400'
               })()}`}>
                 {(() => {
-                  const rr = trade.rr_ratio ?? calculateRR(trade)
+                  // Use trade.rr_ratio if it's a valid number > 0, otherwise calculate
+                  const rr = (trade.rr_ratio && trade.rr_ratio > 0) ? trade.rr_ratio : calculateRR(trade)
                   return rr ? `1:${rr.toFixed(2)}` : '-'
                 })()}
               </div>
