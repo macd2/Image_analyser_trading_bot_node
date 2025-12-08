@@ -262,9 +262,38 @@ export default function InstancesPage() {
     }
   }
 
-  const handleCreateInstance = () => {
-    // Navigate to bot control or show create modal
-    window.location.href = '/bot'
+  const handleCreateInstance = async () => {
+    // Prompt for instance name
+    const name = prompt('Enter a name for the new instance:')
+    if (!name?.trim()) return
+
+    try {
+      setLoading(true)
+      const res = await fetch('/api/bot/instances', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to create instance')
+      }
+
+      const data = await res.json()
+      console.log(`[INSTANCES] Created new instance: ${data.id}`)
+
+      // Refresh instances list
+      await fetchInstances()
+
+      // Redirect to the new instance detail page
+      window.location.href = `/instances/${data.id}`
+    } catch (err) {
+      console.error('Failed to create instance:', err)
+      alert(`Failed to create instance: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (loading) return <LoadingState text="Loading instances..." />

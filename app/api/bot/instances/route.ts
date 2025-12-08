@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getInstancesWithStatus, getInstancesWithSummary, createInstance, updateInstance, isTradingDbAvailable } from '@/lib/db/trading-db'
 import { v4 as uuidv4 } from 'uuid'
+import { getDefaultInstanceSettings, getDefaultInstanceFields } from '@/lib/config-defaults'
 
 export async function GET(request: NextRequest) {
   try {
@@ -46,19 +47,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Instance name is required' }, { status: 400 })
     }
 
+    // Get default settings and fields
+    const defaultSettings = getDefaultInstanceSettings()
+    const defaultFields = getDefaultInstanceFields()
+
+    // Merge provided settings with defaults (provided settings take precedence)
+    const mergedSettings = settings
+      ? { ...defaultSettings, ...settings }
+      : defaultSettings
+
     const id = uuidv4()
     await createInstance({
       id,
       name,
       prompt_name: prompt_name || null,
       prompt_version: prompt_version || null,
-      min_confidence: min_confidence || null,
-      max_leverage: max_leverage || null,
+      min_confidence: min_confidence ?? defaultFields.min_confidence,
+      max_leverage: max_leverage ?? defaultFields.max_leverage,
       symbols: symbols ? JSON.stringify(symbols) : null,
-      timeframe: timeframe || null,
-      settings: settings ? JSON.stringify(settings) : null,
+      timeframe: timeframe ?? defaultFields.timeframe,
+      settings: JSON.stringify(mergedSettings),
       is_active: 1,
     })
+
+    console.log(`[INSTANCES] Created new instance: ${id} (${name}) with default settings`)
 
     return NextResponse.json({ id, success: true })
   } catch (error) {
