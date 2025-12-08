@@ -297,12 +297,28 @@ class ChartAnalyzer:
             }
 
         # Check database existence FIRST - before ANY processing
-        if self.data_agent.analysis_exists(image_path):
+        # If already analyzed, return the stored recommendation instead of re-analyzing
+        stored_analysis = self.data_agent.get_analysis_by_image_path(image_path)
+        if stored_analysis:
+            print(f"         ♻️ Using cached analysis for {image_path}")
+            # Parse analysis_data (raw_response) if it's a JSON string
+            analysis_data = stored_analysis.get("analysis_data") or "{}"
+            if isinstance(analysis_data, str):
+                try:
+                    analysis_data = json.loads(analysis_data)
+                except json.JSONDecodeError:
+                    analysis_data = {}
             return {
-                "recommendation": "hold",
-                "confidence": 0.0,
-                "summary": f"Analysis for {image_path} already exists. Skipping.",
+                "recommendation": stored_analysis.get("recommendation", "hold"),
+                "confidence": stored_analysis.get("confidence", 0.0),
+                "summary": stored_analysis.get("summary", ""),
+                "analysis": analysis_data if isinstance(analysis_data, dict) else {},
+                "entry_price": stored_analysis.get("entry_price"),
+                "stop_loss": stored_analysis.get("stop_loss"),
+                "take_profit": stored_analysis.get("take_profit"),
+                "risk_reward": stored_analysis.get("risk_reward"),
                 "skipped": True,
+                "cached": True,
                 "error": False
             }
 
@@ -582,12 +598,28 @@ class ChartAnalyzer:
         """Internal method for vision-based analysis (original analyze_chart)."""
         # This contains the original analyze_chart implementation
         # Check database existence FIRST - before ANY processing
-        if self.data_agent.analysis_exists(image_path):
+        # If already analyzed, return the stored recommendation instead of re-analyzing
+        stored_analysis = self.data_agent.get_analysis_by_image_path(image_path)
+        if stored_analysis:
+            print(f"         ♻️ Using cached analysis for {image_path}")
+            # Parse analysis_data (raw_response) if it's a JSON string
+            analysis_data = stored_analysis.get("analysis_data") or "{}"
+            if isinstance(analysis_data, str):
+                try:
+                    analysis_data = json.loads(analysis_data)
+                except json.JSONDecodeError:
+                    analysis_data = {}
             return {
-                "recommendation": "hold",
-                "confidence": 0.0,
-                "summary": f"Analysis for {image_path} already exists. Skipping.",
+                "recommendation": stored_analysis.get("recommendation", "hold"),
+                "confidence": stored_analysis.get("confidence", 0.0),
+                "summary": stored_analysis.get("summary", ""),
+                "analysis": analysis_data if isinstance(analysis_data, dict) else {},
+                "entry_price": stored_analysis.get("entry_price"),
+                "stop_loss": stored_analysis.get("stop_loss"),
+                "take_profit": stored_analysis.get("take_profit"),
+                "risk_reward": stored_analysis.get("risk_reward"),
                 "skipped": True,
+                "cached": True,
                 "error": False
             }
 

@@ -618,8 +618,9 @@ class DataAgent:
             # Extract market condition and direction from analysis
             market_condition = str(analysis.get('market_condition', '')).upper()
             market_direction = str(analysis.get('market_direction', '')).upper()
-            
-            cursor.execute('''
+
+            # Use centralized execute for proper SQLite/PostgreSQL placeholder conversion
+            db_execute(conn, '''
                 INSERT INTO analysis_results
                 (id, symbol, timeframe, recommendation, confidence, summary, evidence,
                  support_level, resistance_level, entry_price, stop_loss, take_profit, direction, rr, risk_factors, analysis_data, analysis_prompt, timestamp, image_path, market_condition, market_direction, prompt_id, market_data)
@@ -649,10 +650,10 @@ class DataAgent:
                 prompt_id,
                 market_data_json
             ))
-            
+
             conn.commit()
             return analysis_id
-        except sqlite3.Error as e:
+        except Exception as e:
             print(f"Database error in store_result: {e}")
             raise
         finally:
@@ -719,7 +720,8 @@ class DataAgent:
                 prompt_id = result.get('prompt_id')
                 market_data = result.get('market_data')
 
-                cursor.execute('''
+                # Use centralized execute for proper SQLite/PostgreSQL placeholder conversion
+                db_execute(conn, '''
                     INSERT INTO latest_recommendations
                     (id, symbol, timeframe, recommendation, confidence, summary,
                      support_level, resistance_level, entry_price, stop_loss, take_profit, direction, rr, risk_factors, analysis_data, timestamp, image_path, market_condition, market_direction, prompt_id, market_data)
@@ -728,9 +730,9 @@ class DataAgent:
                     analysis_id, symbol, timeframe, recommendation, confidence, summary,
                     support_level, resistance_level, entry_price, stop_loss, take_profit, direction, rr, risk_factors, analysis_data, timestamp, image_path, market_condition, market_direction, prompt_id, market_data
                 ))
-            
+
             conn.commit()
-        except sqlite3.Error as e:
+        except Exception as e:
             print(f"Database error in store_latest_recommendations: {e}")
             raise
         finally:
@@ -771,7 +773,11 @@ class DataAgent:
             self._return_connection(conn)
     
     def analysis_exists(self, image_path: str) -> bool:
-        """Check if an analysis for a given image_path already exists."""
+        """Check if an analysis for a given image_path already exists.
+
+        Checks the 'recommendations' table (used by trading_cycle.py) which stores
+        analysis results with chart_path column.
+        """
         conn = self.get_connection()
         try:
             # Normalize the path to handle different formats (with/without ./ prefix)
@@ -779,10 +785,10 @@ class DataAgent:
             if normalized_path.startswith('./'):
                 normalized_path = normalized_path[2:]  # Remove './' prefix
 
-            # Use centralized query_one to handle SQLite/PostgreSQL placeholder conversion
+            # Check recommendations table (used by trading_cycle.py for storing analysis)
             row = query_one(conn, '''
-                SELECT 1 FROM analysis_results
-                WHERE image_path = ?
+                SELECT 1 FROM recommendations
+                WHERE chart_path = ?
                 LIMIT 1
             ''', (normalized_path,))
 
@@ -791,6 +797,40 @@ class DataAgent:
         except Exception as e:
             print(f"Database error in analysis_exists: {e}")
             return False
+        finally:
+            conn.close()
+
+    def get_analysis_by_image_path(self, image_path: str) -> Optional[Dict[str, Any]]:
+        """Get the stored analysis for a specific image path.
+
+        Fetches from 'recommendations' table (used by trading_cycle.py) which stores
+        analysis results with chart_path column.
+        """
+        conn = self.get_connection()
+        try:
+            # Normalize the path to handle different formats (with/without ./ prefix)
+            normalized_path = image_path
+            if normalized_path.startswith('./'):
+                normalized_path = normalized_path[2:]  # Remove './' prefix
+
+            # Query recommendations table (used by trading_cycle.py)
+            row = query_one(conn, '''
+                SELECT id, symbol, timeframe, recommendation, confidence,
+                       entry_price, stop_loss, take_profit, risk_reward,
+                       reasoning as summary, chart_path as image_path,
+                       raw_response as analysis_data, analyzed_at as timestamp
+                FROM recommendations
+                WHERE chart_path = ?
+                ORDER BY analyzed_at DESC LIMIT 1
+            ''', (normalized_path,))
+
+            if row:
+                return dict(row.items())
+            return None
+
+        except Exception as e:
+            print(f"Database error in get_analysis_by_image_path: {e}")
+            return None
         finally:
             conn.close()
     
