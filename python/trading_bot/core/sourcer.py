@@ -974,17 +974,17 @@ class ChartSourcer:
                 await self.page.goto(chart_url, wait_until='commit', timeout=10000)
                 self.logger.info("Chart page navigation initiated")
 
-                # Fallback: Just wait 5 seconds for page to load
+                # Optimized wait time: 3 seconds for page to load
                 # This is more reliable than waiting for networkidle/domcontentloaded
                 # which can timeout on TradingView due to continuous network activity
-                await asyncio.sleep(5)
-                self.logger.info("Chart page assumed loaded after 5 second wait")
+                await asyncio.sleep(3)
+                self.logger.info("Chart page assumed loaded after 3 second wait")
 
             except Exception as nav_error:
                 self.logger.warning(f"Navigation error (continuing anyway): {str(nav_error)}")
                 # Even if navigation fails, wait and try to continue
                 # The page might still be usable
-                await asyncio.sleep(5)
+                await asyncio.sleep(3)
 
             # Check if we hit the "can't open chart layout" error page
             if await self._detect_login_required_page():
@@ -993,7 +993,7 @@ class ChartSourcer:
                     # Re-navigate after successful login
                     self.logger.info("🔄 Retrying navigation after successful login...")
                     await self.page.goto(chart_url, wait_until='commit', timeout=10000)
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(3)
                 else:
                     self.logger.error("❌ Login failed - cannot access chart")
                     return False
@@ -1154,11 +1154,11 @@ class ChartSourcer:
         """Wait for chart data to fully load."""
         if not self.page:
             return False
-        
+
         try:
-            # Wait for the specified time
-            await asyncio.sleep(self.tv_config.screenshot.wait_for_load / 1000)
-            
+            # Reduced wait time for faster chart capture (3s instead of 5s)
+            await asyncio.sleep(3)
+
             # Use a simpler approach that doesn't violate CSP
             # Wait for chart container to be visible and stable
             try:
@@ -1170,11 +1170,9 @@ class ChartSourcer:
                 self.logger.info("Chart container is visible")
             except Exception as e:
                 self.logger.warning(f"Chart container not found: {str(e)}")
-            
-            # Additional wait for chart to stabilize
-            await asyncio.sleep(3)
-            
+
             # Try to wait for loading indicators to disappear using selector-based approach
+            # Reduced timeout from 5s to 2s per selector
             loading_selectors = [
                 '[class*="loading"]',
                 '[class*="spinner"]',
@@ -1182,19 +1180,19 @@ class ChartSourcer:
                 '.loading',
                 '.spinner'
             ]
-            
+
             for selector in loading_selectors:
                 try:
                     # Wait for loading elements to be hidden (if they exist)
-                    await self.page.wait_for_selector(selector, state='hidden', timeout=5000)
+                    await self.page.wait_for_selector(selector, state='hidden', timeout=2000)
                     self.logger.debug(f"Loading indicator {selector} disappeared")
                 except Exception:
                     # Loading indicator might not exist, which is fine
                     pass
-            
+
             self.logger.info("Chart loaded successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Chart loading timeout: {str(e)}")
             # Don't fail completely - chart might still be usable
