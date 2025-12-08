@@ -777,62 +777,108 @@ class DataAgent:
 
         Checks the 'recommendations' table (used by trading_cycle.py) which stores
         analysis results with chart_path column.
+
+        Includes retry logic for transient SSL connection errors in parallel execution.
         """
-        conn = self.get_connection()
-        try:
-            # Normalize the path to handle different formats (with/without ./ prefix)
-            normalized_path = image_path
-            if normalized_path.startswith('./'):
-                normalized_path = normalized_path[2:]  # Remove './' prefix
+        import time
+        max_retries = 3
+        retry_delay = 0.5  # seconds
 
-            # Check recommendations table (used by trading_cycle.py for storing analysis)
-            row = query_one(conn, '''
-                SELECT 1 FROM recommendations
-                WHERE chart_path = ?
-                LIMIT 1
-            ''', (normalized_path,))
+        # Normalize the path to handle different formats (with/without ./ prefix)
+        normalized_path = image_path
+        if normalized_path.startswith('./'):
+            normalized_path = normalized_path[2:]  # Remove './' prefix
 
-            return row is not None
+        for attempt in range(max_retries):
+            conn = None
+            try:
+                conn = self.get_connection()
 
-        except Exception as e:
-            print(f"Database error in analysis_exists: {e}")
-            return False
-        finally:
-            conn.close()
+                # Check recommendations table (used by trading_cycle.py for storing analysis)
+                row = query_one(conn, '''
+                    SELECT 1 FROM recommendations
+                    WHERE chart_path = ?
+                    LIMIT 1
+                ''', (normalized_path,))
+
+                return row is not None
+
+            except Exception as e:
+                error_str = str(e).lower()
+                is_ssl_error = 'ssl' in error_str or 'connection' in error_str
+
+                if is_ssl_error and attempt < max_retries - 1:
+                    # Retry on SSL/connection errors
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                else:
+                    print(f"Database error in analysis_exists: {e}")
+                    return False
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+
+        return False
 
     def get_analysis_by_image_path(self, image_path: str) -> Optional[Dict[str, Any]]:
         """Get the stored analysis for a specific image path.
 
         Fetches from 'recommendations' table (used by trading_cycle.py) which stores
         analysis results with chart_path column.
+
+        Includes retry logic for transient SSL connection errors in parallel execution.
         """
-        conn = self.get_connection()
-        try:
-            # Normalize the path to handle different formats (with/without ./ prefix)
-            normalized_path = image_path
-            if normalized_path.startswith('./'):
-                normalized_path = normalized_path[2:]  # Remove './' prefix
+        import time
+        max_retries = 3
+        retry_delay = 0.5  # seconds
 
-            # Query recommendations table (used by trading_cycle.py)
-            row = query_one(conn, '''
-                SELECT id, symbol, timeframe, recommendation, confidence,
-                       entry_price, stop_loss, take_profit, risk_reward,
-                       reasoning as summary, chart_path as image_path,
-                       raw_response as analysis_data, analyzed_at as timestamp
-                FROM recommendations
-                WHERE chart_path = ?
-                ORDER BY analyzed_at DESC LIMIT 1
-            ''', (normalized_path,))
+        # Normalize the path to handle different formats (with/without ./ prefix)
+        normalized_path = image_path
+        if normalized_path.startswith('./'):
+            normalized_path = normalized_path[2:]  # Remove './' prefix
 
-            if row:
-                return dict(row.items())
-            return None
+        for attempt in range(max_retries):
+            conn = None
+            try:
+                conn = self.get_connection()
 
-        except Exception as e:
-            print(f"Database error in get_analysis_by_image_path: {e}")
-            return None
-        finally:
-            conn.close()
+                # Query recommendations table (used by trading_cycle.py)
+                row = query_one(conn, '''
+                    SELECT id, symbol, timeframe, recommendation, confidence,
+                           entry_price, stop_loss, take_profit, risk_reward,
+                           reasoning as summary, chart_path as image_path,
+                           raw_response as analysis_data, analyzed_at as timestamp
+                    FROM recommendations
+                    WHERE chart_path = ?
+                    ORDER BY analyzed_at DESC LIMIT 1
+                ''', (normalized_path,))
+
+                if row:
+                    return dict(row.items())
+                return None
+
+            except Exception as e:
+                error_str = str(e).lower()
+                is_ssl_error = 'ssl' in error_str or 'connection' in error_str
+
+                if is_ssl_error and attempt < max_retries - 1:
+                    # Retry on SSL/connection errors
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                else:
+                    print(f"Database error in get_analysis_by_image_path: {e}")
+                    return None
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+
+        return None
     
     def get_all_latest_analysis(self) -> List[Dict[str, Any]]:
         """Get the most recent analysis for each symbol/timeframe pair."""
