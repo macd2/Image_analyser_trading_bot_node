@@ -116,7 +116,10 @@ export function SimulatorPage() {
   // Connect to real-time updates
   const { tickers } = useRealtime()
 
-  // Get current prices from real-time tickers
+  // Track fetched prices for symbols not in WebSocket tickers
+  const [fetchedPrices, setFetchedPrices] = useState<Record<string, number>>({})
+
+  // Get current prices from real-time tickers + fetched prices
   const currentPrices = useMemo(() => {
     const prices: Record<string, number> = {}
     if (tickers) {
@@ -124,8 +127,14 @@ export function SimulatorPage() {
         prices[ticker.symbol] = parseFloat(ticker.lastPrice)
       })
     }
+    // Merge in fetched prices for symbols not in WebSocket
+    Object.entries(fetchedPrices).forEach(([symbol, price]) => {
+      if (!prices[symbol]) {
+        prices[symbol] = price
+      }
+    })
     return prices
-  }, [tickers])
+  }, [tickers, fetchedPrices])
 
   const fetchMonitorStatus = useCallback(async () => {
     try {
@@ -135,6 +144,23 @@ export function SimulatorPage() {
       setMonitorStatus(data)
     } catch (err) {
       console.error('Failed to fetch monitor status:', err)
+    }
+  }, [])
+
+  // Fetch price for a specific symbol from Bybit API
+  const fetchPriceForSymbol = useCallback(async (symbol: string) => {
+    try {
+      const res = await fetch(`/api/bot/ticker?symbol=${symbol}`)
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.lastPrice) {
+        setFetchedPrices(prev => ({
+          ...prev,
+          [symbol]: parseFloat(data.lastPrice)
+        }))
+      }
+    } catch (err) {
+      console.error(`Failed to fetch price for ${symbol}:`, err)
     }
   }, [])
 
@@ -174,13 +200,34 @@ export function SimulatorPage() {
       if (!res.ok) throw new Error('Failed to fetch open trades')
       const data = await res.json()
       setOpenTrades(data.instances || [])
+
+      // Fetch prices for symbols that don't have ticker data
+      const symbolsNeedingPrices = new Set<string>()
+      data.instances?.forEach((instance: InstanceWithRuns) => {
+        instance.runs.forEach(run => {
+          run.cycles.forEach(cycle => {
+            cycle.trades.forEach(trade => {
+              // Only fetch if we don't have ticker data for this symbol
+              if (!tickers || !tickers[trade.symbol]) {
+                symbolsNeedingPrices.add(trade.symbol)
+              }
+            })
+          })
+        })
+      })
+
+      // Fetch prices for missing symbols
+      symbolsNeedingPrices.forEach(symbol => {
+        fetchPriceForSymbol(symbol)
+      })
+
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch open trades')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [tickers, fetchPriceForSymbol])
 
   const fetchClosedTrades = useCallback(async () => {
     try {
