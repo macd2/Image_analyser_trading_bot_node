@@ -1143,7 +1143,7 @@ class ChartSourcer:
                 except Exception:
                     continue
             
-            self.logger.warning(f"Could not set timeframe to {timeframe}")
+            self.logger.warning(f"⚠️ Could not set timeframe to {timeframe} via UI buttons - chart may use default timeframe (consider using URL interval parameter)")
             return False
             
         except Exception as e:
