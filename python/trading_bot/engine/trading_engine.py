@@ -59,22 +59,27 @@ class TradingEngine:
         self.testnet = testnet
         self.paper_trading = paper_trading
         self.run_id = run_id  # Track parent run for audit trail
-        
+        self.instance_id = instance_id  # Store instance_id for StateManager
+
+        # Database connection (needed before StateManager)
+        self._db = get_connection()
+
         # Core components
-        self.state_manager = StateManager()
+        # StateManager now supports paper trading mode (uses database instead of WebSocket)
+        self.state_manager = StateManager(
+            db_connection=self._db,
+            paper_trading=self.paper_trading,
+            instance_id=self.instance_id
+        )
         self.order_executor = OrderExecutor(testnet=testnet)
         self.position_sizer = PositionSizer(
             order_executor=self.order_executor,
             risk_percentage=self.config.trading.risk_percentage,
             min_position_value=self.config.trading.min_position_value_usd,
         )
-        
+
         # WebSocket manager (initialized on start)
         self.ws_manager: Optional[BybitWebSocketManager] = None
-        
-        # Database connection
-        self._db = get_connection()
-        self.state_manager._db = self._db
         
         # Engine state
         self._running = False

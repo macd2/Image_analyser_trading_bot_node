@@ -125,6 +125,7 @@ class TradingBot:
             testnet=self.testnet,
             paper_trading=self.paper_trading,
             run_id=self.run_id,  # Pass run_id for audit trail
+            instance_id=self.instance_id,  # Pass instance_id for StateManager paper trading support
         )
 
         # Initialize trading cycle (chart capture + analysis)
