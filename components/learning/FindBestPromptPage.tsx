@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Trophy, Square, Settings, Loader2, Crown, Medal, Award, TrendingUp, Zap, X, Clock, Target, BarChart3, ChevronRight, Copy, Check, Eye } from 'lucide-react';
 import TradeVerificationModal from './TradeVerificationModal';
+import { PageLoader } from '@/components/ui/page-loader';
 
 interface TournamentConfig {
   prompts: string[];
@@ -293,6 +294,11 @@ export default function FindBestPromptPage() {
   const estimatedCalls = activePrompts.length * (imagesPhase1 +
     Math.ceil(activePrompts.length * (100-eliminationPct)/100) * imagesPhase2 +
     Math.min(3, Math.ceil(activePrompts.length * ((100-eliminationPct)/100)**2)) * imagesPhase3);
+
+  // Show loading state while initial data is being fetched
+  if (!settingsLoaded) {
+    return <PageLoader message="Loading tournament configuration..." />;
+  }
 
   return (
     <div className="p-6 space-y-6">
