@@ -2,13 +2,14 @@ import { Server as HTTPServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { BybitWebSocket, TickerData, PositionData, WalletData } from './bybit-ws';
 import { processMonitor, ProcessStatusUpdate } from './process-monitor';
-import { updateRunStatusByInstanceId, getRunningRuns, getRunningRunByInstanceId } from '../db/trading-db';
+import { updateRunStatusByInstanceId, getRunningRuns, getRunningRunByInstanceId, getInstances } from '../db/trading-db';
 import { restoreProcessStates } from '../process-state';
 
 let io: SocketIOServer | null = null;
 let bybit: BybitWebSocket | null = null;
 
-const WATCHLIST = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT'];
+// Dynamic watchlist - will be populated from active instances
+let currentWatchlist: string[] = [];
 
 // Store latest data
 const tickers: Record<string, TickerData> = {};
@@ -17,6 +18,59 @@ let wallet: WalletData | null = null;
 
 export function getSocketServer(): SocketIOServer | null {
   return io;
+}
+
+/**
+ * Get all unique symbols from active instances
+ */
+async function getSymbolsFromInstances(): Promise<string[]> {
+  try {
+    const instances = await getInstances(true); // Get active instances only
+    const symbolsSet = new Set<string>();
+
+    for (const instance of instances) {
+      if (instance.symbols) {
+        try {
+          const symbols = JSON.parse(instance.symbols);
+          if (Array.isArray(symbols)) {
+            symbols.forEach(s => symbolsSet.add(s));
+          }
+        } catch (e) {
+          console.error(`[Socket.io] Failed to parse symbols for instance ${instance.name}:`, e);
+        }
+      }
+    }
+
+    const symbolsList = Array.from(symbolsSet);
+    console.log(`[Socket.io] Found ${symbolsList.length} unique symbols from ${instances.length} active instances:`, symbolsList);
+    return symbolsList;
+  } catch (error) {
+    console.error('[Socket.io] Failed to get symbols from instances:', error);
+    // Fallback to common symbols
+    return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+  }
+}
+
+/**
+ * Update WebSocket subscriptions with new symbol list
+ */
+export async function updateWatchlist(): Promise<void> {
+  const newSymbols = await getSymbolsFromInstances();
+
+  // Only update if symbols changed
+  const symbolsChanged = JSON.stringify(newSymbols.sort()) !== JSON.stringify(currentWatchlist.sort());
+
+  if (symbolsChanged && bybit) {
+    console.log('[Socket.io] Watchlist changed, reconnecting with new symbols...');
+    currentWatchlist = newSymbols;
+
+    // Reconnect with new symbols
+    try {
+      await bybit.connectPublic(currentWatchlist);
+    } catch (error) {
+      console.error('[Socket.io] Failed to update watchlist:', error);
+    }
+  }
 }
 
 /**
@@ -40,34 +94,46 @@ export function initSocketServer(httpServer: HTTPServer): SocketIOServer {
   initProcessMonitor();
 
   // Initialize Bybit WebSocket with error handling
-  try {
-    const hasApiKey = !!process.env.BYBIT_API_KEY;
-    const hasApiSecret = !!process.env.BYBIT_API_SECRET;
+  const initBybitConnection = async () => {
+    try {
+      const hasApiKey = !!process.env.BYBIT_API_KEY;
+      const hasApiSecret = !!process.env.BYBIT_API_SECRET;
 
-    console.log('[Socket.io] Bybit credentials check:', {
-      hasApiKey,
-      hasApiSecret,
-      testnet: process.env.BYBIT_TESTNET === 'true'
-    });
+      console.log('[Socket.io] Bybit credentials check:', {
+        hasApiKey,
+        hasApiSecret,
+        testnet: process.env.BYBIT_TESTNET === 'true'
+      });
 
-    bybit = new BybitWebSocket({
-      apiKey: process.env.BYBIT_API_KEY,
-      apiSecret: process.env.BYBIT_API_SECRET,
-      testnet: process.env.BYBIT_TESTNET === 'true'
-    });
+      bybit = new BybitWebSocket({
+        apiKey: process.env.BYBIT_API_KEY,
+        apiSecret: process.env.BYBIT_API_SECRET,
+        testnet: process.env.BYBIT_TESTNET === 'true'
+      });
 
-    // Connect to Bybit (will handle errors internally and reconnect)
-    bybit.connectPublic(WATCHLIST).catch(() => {
-      // Silently catch - reconnect logic will handle it
-    });
-    if (hasApiKey && hasApiSecret) {
-      console.log('[Socket.io] Connecting to Bybit private stream for wallet updates...');
-      bybit.connectPrivate().catch(() => {
+      // Get symbols from active instances
+      currentWatchlist = await getSymbolsFromInstances();
+
+      // Connect to Bybit with dynamic watchlist
+      bybit.connectPublic(currentWatchlist).catch(() => {
         // Silently catch - reconnect logic will handle it
       });
-    } else {
-      console.warn('[Socket.io] ⚠️ No Bybit API credentials - wallet updates will NOT be available via WebSocket');
+
+      if (hasApiKey && hasApiSecret) {
+        console.log('[Socket.io] Connecting to Bybit private stream for wallet updates...');
+        bybit.connectPrivate().catch(() => {
+          // Silently catch - reconnect logic will handle it
+        });
+      } else {
+        console.warn('[Socket.io] ⚠️ No Bybit API credentials - wallet updates will NOT be available via WebSocket');
+      }
+    } catch (error) {
+      console.error('[Socket.io] Failed to initialize Bybit connection:', error);
     }
+  };
+
+  // Initialize connection asynchronously
+  initBybitConnection();
     // Forward ticker updates
     bybit.on('ticker', (data: TickerData) => {
       tickers[data.symbol] = data;

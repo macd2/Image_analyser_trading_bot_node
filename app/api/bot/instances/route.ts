@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getInstancesWithStatus, getInstancesWithSummary, createInstance, updateInstance, isTradingDbAvailable } from '@/lib/db/trading-db'
 import { v4 as uuidv4 } from 'uuid'
 import { getDefaultInstanceSettings, getDefaultInstanceFields } from '@/lib/config-defaults'
+import { updateWatchlist } from '@/lib/ws/socket-server'
 
 export async function GET(request: NextRequest) {
   try {
@@ -72,6 +73,9 @@ export async function POST(request: Request) {
 
     console.log(`[INSTANCES] Created new instance: ${id} (${name}) with default settings`)
 
+    // Update WebSocket watchlist with new symbols
+    await updateWatchlist()
+
     return NextResponse.json({ id, success: true })
   } catch (error) {
     console.error('Failed to create instance:', error)
@@ -107,6 +111,11 @@ export async function PATCH(request: NextRequest) {
     }
 
     await updateInstance(id, instanceUpdates)
+
+    // Update WebSocket watchlist if symbols changed
+    if (updates.symbols !== undefined) {
+      await updateWatchlist()
+    }
 
     // Return updated instance
     const instances = await getInstancesWithStatus()
