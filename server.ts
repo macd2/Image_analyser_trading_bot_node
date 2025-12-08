@@ -21,7 +21,7 @@ function getSimulatorStatus(): { running: boolean } {
 }
 
 // Update simulator status after check
-function updateSimulatorStatus(tradesChecked: number, tradesClosed: number) {
+function updateSimulatorStatus(tradesChecked: number, tradesClosed: number, results: unknown[] = []) {
   try {
     const current = getSimulatorStatus();
     const updated = {
@@ -29,7 +29,8 @@ function updateSimulatorStatus(tradesChecked: number, tradesClosed: number) {
       last_check: new Date().toISOString(),
       trades_checked: tradesChecked,
       trades_closed: tradesClosed,
-      next_check: Date.now() / 1000 + AUTO_CLOSE_INTERVAL_MS / 1000
+      next_check: Date.now() / 1000 + AUTO_CLOSE_INTERVAL_MS / 1000,
+      results: results.slice(0, 20) // Keep last 20 results for UI
     };
     fs.writeFileSync(STATUS_FILE, JSON.stringify(updated, null, 2));
   } catch {
@@ -52,7 +53,7 @@ async function runAutoCloseCheck(baseUrl: string) {
 
     if (res.ok) {
       const data = await res.json();
-      updateSimulatorStatus(data.checked || 0, data.closed || 0);
+      updateSimulatorStatus(data.checked || 0, data.closed || 0, data.results || []);
       if (data.closed > 0) {
         console.log(`  ➜  Simulator: Auto-closed ${data.closed} trade(s)`);
       }

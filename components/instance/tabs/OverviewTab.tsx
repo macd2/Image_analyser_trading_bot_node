@@ -211,8 +211,8 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
 
   useEffect(() => {
     fetchData()
-    // Poll every 2 seconds for faster log updates
-    const interval = setInterval(fetchData, 2000)
+    // Poll every 5 seconds (logs come via Socket.IO in real-time)
+    const interval = setInterval(fetchData, 5000)
     return () => clearInterval(interval)
   }, [instanceId])
 

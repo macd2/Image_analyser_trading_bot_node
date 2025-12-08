@@ -62,7 +62,15 @@ export function BotStateProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setLogs = useCallback((newLogs: string[]) => {
-    setLogsState(newLogs.slice(-1000))
+    // Only update if logs actually changed (avoid re-renders)
+    setLogsState(prev => {
+      const sliced = newLogs.slice(-1000)
+      // Fast check: if same length and last entry is same, skip update
+      if (prev.length === sliced.length && prev[prev.length - 1] === sliced[sliced.length - 1]) {
+        return prev
+      }
+      return sliced
+    })
   }, [])
 
   const setStderrLogs = useCallback((newLogs: string[]) => {
