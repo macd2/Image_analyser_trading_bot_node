@@ -64,14 +64,19 @@ async function getHistoricalCandles(
     // Bybit allows max 200 candles per request
     const limit = Math.min(candlesNeeded, 200);
 
-    const res = await fetch(
-      `https://api.bybit.com/v5/market/kline?category=linear&symbol=${apiSymbol}&interval=${interval}&start=${startTime}&limit=${limit}`
-    );
+    const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${apiSymbol}&interval=${interval}&start=${startTime}&limit=${limit}`;
+    const res = await fetch(url);
 
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.error(`[Auto-Close] Bybit API error for ${symbol}: ${res.status} ${res.statusText}`);
+      return [];
+    }
 
     const data: KlineResult = await res.json();
-    if (data.retCode !== 0 || !data.result?.list) return [];
+    if (data.retCode !== 0 || !data.result?.list) {
+      console.error(`[Auto-Close] Bybit returned error for ${symbol}: retCode=${data.retCode}`);
+      return [];
+    }
 
     // Parse candles - Bybit returns newest first, so reverse
     const candles: Candle[] = data.result.list.map(c => ({
@@ -86,6 +91,29 @@ async function getHistoricalCandles(
   } catch (e) {
     console.error(`Failed to get candles for ${symbol}:`, e);
     return [];
+  }
+}
+
+/**
+ * Get current ticker price from Bybit as fallback
+ */
+async function getCurrentPrice(symbol: string): Promise<number> {
+  try {
+    const apiSymbol = symbol.endsWith('.P') ? symbol.slice(0, -2) : symbol;
+    const res = await fetch(
+      `https://api.bybit.com/v5/market/tickers?category=linear&symbol=${apiSymbol}`
+    );
+
+    if (!res.ok) return 0;
+
+    const data = await res.json();
+    if (data.retCode === 0 && data.result?.list?.[0]?.lastPrice) {
+      return parseFloat(data.result.list[0].lastPrice);
+    }
+    return 0;
+  } catch (e) {
+    console.error(`Failed to get current price for ${symbol}:`, e);
+    return 0;
   }
 }
 
@@ -203,11 +231,15 @@ export async function POST() {
       const candles = await getHistoricalCandles(trade.symbol, timeframe, createdAt);
 
       if (candles.length === 0) {
+        // Fallback: get current price from ticker API
+        const currentPrice = await getCurrentPrice(trade.symbol);
+        console.log(`[Auto-Close] No candles for ${trade.symbol}, using ticker price: ${currentPrice}`);
+
         results.push({
           trade_id: trade.id,
           symbol: trade.symbol,
           action: 'checked',
-          current_price: 0,
+          current_price: currentPrice,
           candles_checked: 0,
           checked_at: new Date().toISOString()
         });

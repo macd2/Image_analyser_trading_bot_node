@@ -20,13 +20,14 @@
 
 ----
 
-[ ] we need  a new service the job of this advisor is to inject extra context in to the popmt before seding it to tha ssitant the bot loop must wait for this advisor to complete it must be fully tracable for the logtrail
-[ ] the advisor must work with candle data only ad should use import pandas_ta as ta
-and must be intergrated with global database layer. The job is to perform classic ta based on configurable strategies. the first strategy to integrate is:
+[ ] we need  a new service the job of this advisor is to inject extra context in to the prompt before seding it to the assitant. the bot loop must wait for this advisor to complete it must be fully tracable for the logtrail
+[ ] it must also be plugged in after we got the reccomendation from the ai so we can ad extra info
+[ ] the advisor must work with candle data only and should use import pandas_ta as ta 
+[ ] advisor must be intergrated with global database layer. The job is to perform classic ta based on configurable strategies. the first strategy to integrate is:
 docs/Strategies/trade_entry_strategies_E3lYZsy8nYE_HH_LL_alex_strat.md
-[ ] this advisor needs a ui and must beable to store end retrieve settings find a flexible format for how to standrdize strategies so we can load and store different strategies 
 [ ] instance needs a setting for which strategy to use for advisor. 
-
+[ ] the architecture should be nodes based so we can combine strategies or individual functions the advisor needs its own page and the ui should show and make this node systhe editable. 
+[ ] one streategy we need is: docs/Strategies/market regime_check.py
 
 [ ]
 ## 🔍 Investigation Complete: OpenAI Credit Exhaustion Error Handling
