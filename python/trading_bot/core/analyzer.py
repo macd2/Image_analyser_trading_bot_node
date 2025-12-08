@@ -317,7 +317,7 @@ class ChartAnalyzer:
                 "stop_loss": stored_analysis.get("stop_loss"),
                 "take_profit": stored_analysis.get("take_profit"),
                 "risk_reward": stored_analysis.get("risk_reward"),
-                "skipped": True,
+                "skipped": False,  # NOT skipped - we have valid cached data to use
                 "cached": True,
                 "error": False
             }
@@ -618,7 +618,7 @@ class ChartAnalyzer:
                 "stop_loss": stored_analysis.get("stop_loss"),
                 "take_profit": stored_analysis.get("take_profit"),
                 "risk_reward": stored_analysis.get("risk_reward"),
-                "skipped": True,
+                "skipped": False,  # NOT skipped - we have valid cached data to use
                 "cached": True,
                 "error": False
             }
