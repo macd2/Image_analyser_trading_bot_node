@@ -614,7 +614,7 @@ class TradingCycle:
         return result
 
     def _build_signal(self, analysis: Dict[str, Any], recommendation: str, confidence: float) -> Optional[Dict[str, Any]]:
-        """Build trading signal from analysis."""
+        """Build trading signal from analysis with price sanity check."""
         try:
             entry = float(analysis.get("entry_price", 0))
             tp = float(analysis.get("take_profit", 0))
@@ -623,6 +623,36 @@ class TradingCycle:
             if not all([entry, tp, sl]):
                 logger.warning("   ⚠️ Missing price levels in analysis")
                 return None
+
+            # PRICE SANITY CHECK: Verify AI-extracted price is reasonable
+            # Compare entry_price from AI with last_price from market data
+            market_data = analysis.get("market_data_snapshot", {})
+            last_price_raw = market_data.get("last_price")
+
+            if last_price_raw and last_price_raw != 'N/A':
+                try:
+                    market_price = float(last_price_raw)
+                    if market_price > 0:
+                        # Calculate deviation percentage
+                        deviation = abs(entry - market_price) / market_price * 100
+
+                        # Allow up to 20% deviation (configurable threshold)
+                        # This accounts for limit orders slightly away from current price
+                        MAX_PRICE_DEVIATION_PERCENT = 20.0
+
+                        if deviation > MAX_PRICE_DEVIATION_PERCENT:
+                            symbol = analysis.get("symbol", "UNKNOWN")
+                            logger.error(f"   ❌ PRICE SANITY CHECK FAILED for {symbol}!")
+                            logger.error(f"      AI Entry: ${entry:.6f}")
+                            logger.error(f"      Market Price: ${market_price:.6f}")
+                            logger.error(f"      Deviation: {deviation:.1f}% (max allowed: {MAX_PRICE_DEVIATION_PERCENT}%)")
+                            logger.error(f"      🚫 Signal REJECTED to prevent wrong chart price being used")
+                            return None
+                        else:
+                            logger.info(f"   ✅ Price sanity check passed (deviation: {deviation:.2f}%)")
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"   ⚠️ Could not validate price sanity: {e}")
+                    # Continue anyway - better to trade than miss opportunity due to parse error
 
             return {
                 "recommendation": recommendation,

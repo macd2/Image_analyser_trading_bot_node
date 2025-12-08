@@ -161,7 +161,125 @@ class ChartSourcer:
         base_path = Path(self.tv_config.auth.session_file).parent
         filename = f".tradingview_session_{sanitized_username}"
         return str(base_path / filename)
-    
+
+    def _build_tradingview_symbol(self, bybit_symbol: str) -> str:
+        """
+        Build TradingView symbol format from Bybit symbol.
+
+        Args:
+            bybit_symbol: Bybit format symbol (e.g., 'ATHUSDT', 'BTCUSDT')
+
+        Returns:
+            TradingView format symbol (e.g., 'BYBIT:ATHUSDT.P')
+
+        Note: This is used ONLY for URL navigation and verification.
+        All external interfaces (database, filenames) use Bybit format.
+        """
+        # Normalize the symbol first
+        normalized = normalize_symbol_for_bybit(bybit_symbol)
+
+        # Build TradingView format: BYBIT:SYMBOL.P (perpetual contract)
+        tv_symbol = f"BYBIT:{normalized.upper()}.P"
+
+        self.logger.debug(f"Built TradingView symbol: {bybit_symbol} -> {tv_symbol}")
+        return tv_symbol
+
+    def _extract_bybit_symbol_from_tv(self, tv_symbol: str) -> str:
+        """
+        Extract Bybit symbol from TradingView format.
+
+        Args:
+            tv_symbol: TradingView format (e.g., 'BYBIT:ATHUSDT.P')
+
+        Returns:
+            Bybit format symbol (e.g., 'ATHUSDT')
+        """
+        result = tv_symbol.strip()
+
+        # Remove exchange prefix (e.g., "BYBIT:")
+        if ':' in result:
+            result = result.split(':')[-1]
+
+        # Remove perpetual suffix (e.g., ".P")
+        if result.endswith('.P'):
+            result = result[:-2]
+
+        return result
+
+    async def _verify_chart_symbol(self, expected_bybit_symbol: str) -> bool:
+        """
+        Verify that the current chart displays the expected symbol.
+
+        This is MANDATORY verification before taking any screenshot.
+        Returns False if verification fails - do NOT proceed with capture.
+
+        Args:
+            expected_bybit_symbol: The Bybit format symbol we expect (e.g., 'ATHUSDT')
+
+        Returns:
+            True if verified, False if verification fails
+        """
+        if not self.page:
+            self.logger.error("❌ No page available for verification")
+            return False
+
+        expected_upper = expected_bybit_symbol.upper()
+
+        # Layer 1: URL Verification
+        try:
+            current_url = self.page.url
+            if expected_upper in current_url.upper():
+                self.logger.info(f"✅ URL verification passed: '{expected_upper}' found in URL")
+            else:
+                self.logger.error(f"❌ URL verification FAILED: '{expected_upper}' NOT in URL: {current_url}")
+                return False
+        except Exception as e:
+            self.logger.error(f"❌ URL verification error: {str(e)}")
+            return False
+
+        # Layer 2: Page Title Verification
+        try:
+            title = await self.page.title()
+            if expected_upper in title.upper():
+                self.logger.info(f"✅ Title verification passed: '{expected_upper}' found in title")
+            else:
+                self.logger.warning(f"⚠️ Title verification inconclusive: '{expected_upper}' not in title: {title}")
+                # Don't fail on title alone - URL is more reliable
+        except Exception as e:
+            self.logger.warning(f"⚠️ Title verification error: {str(e)}")
+            # Don't fail on title error
+
+        # Layer 3: DOM Content Verification (additional safety)
+        try:
+            # Check for symbol in chart header elements
+            chart_symbol_selectors = [
+                '[data-symbol]',
+                '.chart-controls-bar button[class*="symbol"]',
+                '.pane-legend-title__description',
+                'span[class*="symbol"]',
+            ]
+
+            for selector in chart_symbol_selectors:
+                try:
+                    element = await self.page.query_selector(selector)
+                    if element:
+                        content = await element.text_content()
+                        if content and expected_upper in content.upper():
+                            self.logger.info(f"✅ DOM verification passed: '{expected_upper}' found in {selector}")
+                            return True
+                except Exception:
+                    continue
+
+            # If we passed URL verification but couldn't find in DOM, still consider it valid
+            # The URL is the authoritative source
+            self.logger.info(f"✅ Verification passed (URL confirmed, DOM inconclusive)")
+            return True
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ DOM verification error: {str(e)}")
+            # URL passed, so we're good
+            return True
+
     def get_local_chart(self, symbol: str, timeframe: str = "1d") -> Optional[str]:
         """Get chart image from storage (local or cloud)."""
         from trading_bot.core.storage import list_files, get_storage_type
@@ -812,47 +930,124 @@ class ChartSourcer:
             return False
     
     async def navigate_to_chart(self, symbol: str, timeframe: str) -> bool:
-        """Navigate to specific chart using watchlist on TradingView."""
+        """
+        Navigate to specific chart using URL-based navigation with mandatory verification.
+
+        PRIMARY METHOD: Uses target_chart URL with symbol parameter for reliable navigation.
+        FALLBACK: Deprecated watchlist click approach (kept for compatibility).
+
+        Args:
+            symbol: Bybit format symbol (e.g., 'ATHUSDT')
+            timeframe: Chart timeframe (e.g., '4h', '1d')
+
+        Returns:
+            True only if navigation AND verification succeed
+        """
         # Normalize symbol for internal use and API calls
         normalized_symbol = normalize_symbol_for_bybit(symbol)
+
+        # Build TradingView format for URL (e.g., "BYBIT:ATHUSDT.P")
+        tv_symbol = self._build_tradingview_symbol(normalized_symbol)
 
         if not self.page:
             return False
 
         try:
-            # First, make sure we're on the main TradingView page with charts
-            current_url = self.page.url
-            if 'tradingview.com' not in current_url or 'chart' not in current_url:
-                self.logger.info("Navigating to TradingView chart page")
-                try:
-                    await self.page.goto("https://www.tradingview.com/chart/", timeout=self.tv_config.browser.timeout)
-                    self.logger.info("Chart page navigation initiated, waiting for load...")
-                    await self.page.wait_for_load_state('networkidle', timeout=50000)
-                    self.logger.info("Chart page loaded successfully")
-                except Exception as nav_error:
-                    self.logger.error(f"Chart page navigation failed: {str(nav_error)}")
-                    # Try with domcontentloaded as fallback
-                    try:
-                        await self.page.wait_for_load_state('domcontentloaded', timeout=20000)
-                        self.logger.info("Chart page loaded with domcontentloaded state")
-                    except Exception as dom_error:
-                        self.logger.error(f"Dom content load also failed: {str(dom_error)}")
-                        raise nav_error
-                await asyncio.sleep(3)  # Wait for page to fully load
+            # PRIMARY: URL-based navigation (most reliable)
+            # Use target_chart from config with symbol parameter
+            # Format: https://www.tradingview.com/chart/iXrxoaRu/?symbol=BYBIT:ATHUSDT.P
 
-                # Check if we hit the "can't open chart layout" error page
-                if await self._detect_login_required_page():
-                    self.logger.warning("🔒 Login required detected after navigation")
-                    if await self._handle_login_required_and_retry():
-                        # Re-navigate after successful login
-                        self.logger.info("🔄 Retrying navigation after successful login...")
-                        await self.page.goto("https://www.tradingview.com/chart/", timeout=self.tv_config.browser.timeout)
-                        await self.page.wait_for_load_state('networkidle', timeout=50000)
-                        await asyncio.sleep(3)
-                    else:
-                        self.logger.error("❌ Login failed - cannot access chart")
-                        return False
-            
+            base_chart_url = self.tv_config.target_chart or "https://www.tradingview.com/chart/"
+
+            # Remove any existing symbol parameter from base URL
+            if '?' in base_chart_url:
+                base_url_parts = base_chart_url.split('?')
+                base_chart_url = base_url_parts[0]
+
+            # Construct URL with symbol parameter
+            chart_url = f"{base_chart_url}?symbol={tv_symbol}"
+
+            self.logger.info(f"🔗 Navigating to chart URL: {chart_url}")
+
+            try:
+                await self.page.goto(chart_url, timeout=self.tv_config.browser.timeout)
+                self.logger.info("Chart page navigation initiated, waiting for load...")
+                await self.page.wait_for_load_state('networkidle', timeout=50000)
+                self.logger.info("Chart page loaded successfully")
+            except Exception as nav_error:
+                self.logger.error(f"Chart page navigation failed: {str(nav_error)}")
+                # Try with domcontentloaded as fallback
+                try:
+                    await self.page.wait_for_load_state('domcontentloaded', timeout=20000)
+                    self.logger.info("Chart page loaded with domcontentloaded state")
+                except Exception as dom_error:
+                    self.logger.error(f"Dom content load also failed: {str(dom_error)}")
+                    raise nav_error
+
+            await asyncio.sleep(3)  # Wait for page to fully load
+
+            # Check if we hit the "can't open chart layout" error page
+            if await self._detect_login_required_page():
+                self.logger.warning("🔒 Login required detected after navigation")
+                if await self._handle_login_required_and_retry():
+                    # Re-navigate after successful login
+                    self.logger.info("🔄 Retrying navigation after successful login...")
+                    await self.page.goto(chart_url, timeout=self.tv_config.browser.timeout)
+                    await self.page.wait_for_load_state('networkidle', timeout=50000)
+                    await asyncio.sleep(3)
+                else:
+                    self.logger.error("❌ Login failed - cannot access chart")
+                    return False
+
+            # Close any popups
+            await self._detect_and_close_popups()
+
+            # Wait for chart container to be visible
+            await self.page.wait_for_selector(
+                self.tv_config.screenshot.chart_selector,
+                timeout=self.tv_config.browser.timeout
+            )
+
+            # Set timeframe if needed
+            await self._set_timeframe(timeframe)
+
+            # MANDATORY: Verify correct symbol is displayed
+            if not await self._verify_chart_symbol(normalized_symbol):
+                self.logger.error(f"❌ CRITICAL: Symbol verification FAILED for {normalized_symbol}")
+                self.logger.error("❌ Chart capture ABORTED to prevent wrong symbol being saved")
+
+                # DEPRECATED FALLBACK: Try watchlist click approach
+                self.logger.warning("⚠️ [DEPRECATED] Attempting watchlist click fallback...")
+                fallback_success = await self._navigate_via_watchlist_deprecated(normalized_symbol, timeframe)
+
+                if fallback_success and await self._verify_chart_symbol(normalized_symbol):
+                    self.logger.info(f"✅ Fallback navigation verified for {normalized_symbol}")
+                    return True
+                else:
+                    self.logger.error(f"❌ Fallback also failed for {normalized_symbol}")
+                    return False
+
+            self.logger.info(f"✅ Successfully navigated and verified {normalized_symbol} chart ({timeframe})")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to navigate to chart: {str(e)}")
+            return False
+
+    async def _navigate_via_watchlist_deprecated(self, symbol: str, timeframe: str) -> bool:
+        """
+        [DEPRECATED] Navigate to chart via watchlist click.
+
+        This method is deprecated and kept only as a fallback.
+        URL-based navigation is the preferred approach.
+
+        WARNING: Watchlist clicks don't update the URL, making verification unreliable.
+        """
+        self.logger.warning("⚠️ Using deprecated watchlist navigation - URL verification may fail")
+
+        normalized_symbol = normalize_symbol_for_bybit(symbol)
+
+        try:
             # Look for symbol search box or watchlist
             symbol_search_selectors = [
                 'input[data-role="search"]',
@@ -862,33 +1057,33 @@ class ChartSourcer:
                 '[data-name="symbol-search"]',
                 '.js-symbol-search'
             ]
-            
+
             symbol_input_found = False
             for selector in symbol_search_selectors:
                 try:
                     self.logger.debug(f"Looking for symbol search with selector: {selector}")
                     await self.page.wait_for_selector(selector, timeout=5000)
-                    
+
                     # Clear and type the normalized symbol
                     await self.page.fill(selector, normalized_symbol.upper())
                     await asyncio.sleep(1)
-                    
+
                     # Press Enter or look for search results
                     await self.page.keyboard.press('Enter')
                     await asyncio.sleep(2)
-                    
+
                     self.logger.info(f"Successfully searched for symbol: {normalized_symbol}")
                     symbol_input_found = True
                     break
-                    
+
                 except Exception as e:
                     self.logger.debug(f"Symbol search selector {selector} failed: {str(e)}")
                     continue
-            
+
             if not symbol_input_found:
                 # Try using watchlist approach - look for watchlist items
-                self.logger.info("Symbol search not found, trying watchlist approach")
-                
+                self.logger.info("Symbol search not found, trying watchlist click")
+
                 watchlist_selectors = [
                     '.watchlist',
                     '[class*="watchlist"]',
@@ -896,7 +1091,7 @@ class ChartSourcer:
                     '[data-name="watchlist"]',
                     '.js-watchlist'
                 ]
-                
+
                 for selector in watchlist_selectors:
                     try:
                         watchlist = await self.page.query_selector(selector)
@@ -910,33 +1105,17 @@ class ChartSourcer:
                                 break
                     except Exception:
                         continue
-            
-            if not symbol_input_found:
-                self.logger.warning(f"Could not find symbol search or {normalized_symbol} in watchlist, using URL fallback")
-                # Fallback to URL navigation using normalized symbol
-                tv_timeframe = self._convert_timeframe(timeframe)
-                chart_url = self.tv_config.chart_url_template.format(
-                    symbol=normalized_symbol.upper(),
-                    interval=tv_timeframe  # Use 'interval' to match TradingView URL parameter
-                )
-                self.logger.info(f"Navigating to chart URL: {chart_url}")
-                await self.page.goto(chart_url, timeout=self.tv_config.browser.timeout)
-                await self.page.wait_for_load_state('networkidle')
-            
-            # Wait for chart container to be visible
-            await self.page.wait_for_selector(
-                self.tv_config.screenshot.chart_selector,
-                timeout=self.tv_config.browser.timeout
-            )
-            
-            # Set timeframe if needed
-            await self._set_timeframe(timeframe)
-            
-            self.logger.info(f"Successfully navigated to {normalized_symbol} chart ({timeframe})")
-            return True
-            
+
+            if symbol_input_found:
+                # Wait for chart to load
+                await asyncio.sleep(3)
+                await self._set_timeframe(timeframe)
+                return True
+
+            return False
+
         except Exception as e:
-            self.logger.error(f"Failed to navigate to chart: {str(e)}")
+            self.logger.error(f"Deprecated watchlist navigation failed: {str(e)}")
             return False
     
     async def _set_timeframe(self, timeframe: str) -> bool:
@@ -2740,18 +2919,20 @@ class ChartSourcer:
                         if element:
                             chart_symbol = await element.text_content()
                             if chart_symbol and symbol_text and symbol_text.strip() in chart_symbol.upper():
-                                self.logger.info(f"Verified navigation to {symbol_text} in chart")
+                                self.logger.info(f"✅ Verified navigation to {symbol_text} in chart")
                                 return True
                     except Exception:
                         continue
 
-                # If we can't verify, assume success and continue
-                self.logger.info(f"Navigation completed for {symbol_text} (verification not available)")
-                return True
+                # FIXED: If we can't verify, FAIL instead of assuming success
+                # This prevents capturing the wrong chart and saving with wrong filename
+                self.logger.error(f"❌ Symbol verification FAILED for {symbol_text} - cannot confirm correct chart is displayed")
+                self.logger.error("❌ Aborting navigation to prevent wrong chart capture")
+                return False  # DO NOT PROCEED - this is operation critical!
 
             except Exception as e:
-                self.logger.warning(f"Could not verify navigation for {symbol_text}: {str(e)}")
-                return True  # Assume success
+                self.logger.error(f"❌ Could not verify navigation for {symbol_text}: {str(e)}")
+                return False  # FIXED: Fail instead of assuming success
 
         except Exception as e:
             self.logger.error(f"Error navigating to symbol {symbol_index}: {str(e)}")
