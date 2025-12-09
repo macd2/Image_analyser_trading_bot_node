@@ -653,11 +653,35 @@ export function SimulatorPage() {
                               {closeCheck.reason}
                             </span>
                           )}
-                          <span className="text-xs text-slate-500">{new Date(trade.created_at).toLocaleString()}</span>
                         </div>
                       </div>
 
-                      {/* Row 2: Prices + PnL */}
+                      {/* Row 2: Times */}
+                      <div className="flex items-center gap-4 mb-2 text-[11px]">
+                        <div className="flex items-center gap-1">
+                          <span className="text-blue-400">📡 Signal:</span>
+                          <span className="text-slate-300">{new Date(trade.created_at).toLocaleString()}</span>
+                        </div>
+                        {trade.fill_time && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-orange-400">✅ Filled:</span>
+                            <span className="text-slate-300">{new Date(trade.fill_time).toLocaleString()}</span>
+                          </div>
+                        )}
+                        {!trade.fill_time && trade.filled_at && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-orange-400">✅ Filled:</span>
+                            <span className="text-slate-300">{new Date(trade.filled_at).toLocaleString()}</span>
+                          </div>
+                        )}
+                        {!trade.fill_time && !trade.filled_at && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-yellow-500">⏳ Pending fill</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Row 3: Prices + PnL */}
                       <div className="flex items-center gap-6 flex-wrap">
                         <div className="flex items-center gap-4 text-sm">
                           <div><span className="text-slate-400">Entry:</span> <span className="text-white font-mono">${trade.entry_price?.toFixed(4)}</span></div>
@@ -844,11 +868,30 @@ export function SimulatorPage() {
                               ({trade.pnl >= 0 ? '+' : ''}${trade.pnl?.toFixed(2)})
                             </span>
                           </div>
-                          <span className="text-xs text-slate-500">{new Date(trade.closed_at).toLocaleString()}</span>
                         </div>
                       </div>
 
-                      {/* Row 2: Prices */}
+                      {/* Row 2: Times */}
+                      <div className="flex items-center gap-4 mb-2 text-[11px]">
+                        <div className="flex items-center gap-1">
+                          <span className="text-blue-400">📡 Signal:</span>
+                          <span className="text-slate-300">{new Date(trade.created_at).toLocaleString()}</span>
+                        </div>
+                        {(trade.fill_time || trade.filled_at) && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-orange-400">✅ Filled:</span>
+                            <span className="text-slate-300">{new Date(trade.fill_time || trade.filled_at!).toLocaleString()}</span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1">
+                          <span className={trade.exit_reason === 'tp_hit' ? 'text-green-400' : 'text-red-400'}>
+                            {trade.exit_reason === 'tp_hit' ? '🎯' : '🛑'} Exit:
+                          </span>
+                          <span className="text-slate-300">{new Date(trade.closed_at).toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      {/* Row 3: Prices */}
                       <div className="flex items-center gap-6 text-sm">
                         <div><span className="text-slate-400">Entry:</span> <span className="text-white font-mono">${trade.entry_price?.toFixed(4)}</span></div>
                         <div><span className="text-slate-400">Exit:</span> <span className={`font-mono ${isWin ? 'text-green-400' : 'text-red-400'}`}>${trade.exit_price?.toFixed(4)}</span></div>
