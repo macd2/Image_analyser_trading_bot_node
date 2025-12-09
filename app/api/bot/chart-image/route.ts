@@ -6,6 +6,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import { readFile, fileExists, getStorageType } from '@/lib/storage';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
