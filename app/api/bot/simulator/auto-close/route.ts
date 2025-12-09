@@ -24,6 +24,13 @@ interface Candle {
   close: number;
 }
 
+interface FillResult {
+  filled: boolean;
+  fillPrice: number | null;
+  fillTimestamp: number | null;
+  fillCandleIndex: number;
+}
+
 interface ExitResult {
   hit: boolean;
   reason: 'tp_hit' | 'sl_hit' | null;
@@ -118,18 +125,46 @@ async function getCurrentPrice(symbol: string): Promise<number> {
 }
 
 /**
+ * Find the first candle where entry price was touched (trade fill)
+ * For LONG: entry price must be touched (low <= entry <= high)
+ * For SHORT: entry price must be touched (low <= entry <= high)
+ */
+function findFillCandle(
+  candles: Candle[],
+  entryPrice: number
+): FillResult {
+  for (let i = 0; i < candles.length; i++) {
+    const candle = candles[i];
+    // Entry is filled when price touches entry level
+    if (candle.low <= entryPrice && entryPrice <= candle.high) {
+      return {
+        filled: true,
+        fillPrice: entryPrice,
+        fillTimestamp: candle.timestamp,
+        fillCandleIndex: i
+      };
+    }
+  }
+  return { filled: false, fillPrice: null, fillTimestamp: null, fillCandleIndex: -1 };
+}
+
+/**
  * Check historical candles for SL/TP hit
  * Returns the first candle where SL or TP was hit
+ * IMPORTANT: Only checks candles AFTER the fill candle
  */
 function checkHistoricalSLTP(
   candles: Candle[],
   isLong: boolean,
   stopLoss: number,
-  takeProfit: number
+  takeProfit: number,
+  startFromIndex: number = 0
 ): ExitResult {
   const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : 0;
 
-  for (const candle of candles) {
+  // Start checking from the candle AFTER fill
+  for (let i = startFromIndex; i < candles.length; i++) {
+    const candle = candles[i];
     // For each candle, check if high/low crossed SL or TP
     // We need to determine which was hit FIRST within the candle
 
@@ -206,8 +241,9 @@ export async function POST() {
     const results: Array<{
       trade_id: string;
       symbol: string;
-      action: 'checked' | 'closed';
+      action: 'checked' | 'closed' | 'filled';
       current_price: number;
+      fill_timestamp?: string;
       exit_reason?: string;
       exit_timestamp?: string;
       pnl?: number;
@@ -216,6 +252,7 @@ export async function POST() {
     }> = [];
 
     let closedCount = 0;
+    let filledCount = 0;
 
     for (const trade of openTrades) {
       const isLong = trade.side === 'Buy';
@@ -246,16 +283,65 @@ export async function POST() {
         continue;
       }
 
-      // Check historical candles for SL/TP hit
-      const exitResult = checkHistoricalSLTP(candles, isLong, stopLoss, takeProfit);
+      // STEP 1: Check if trade is already filled or find fill candle
+      let fillCandleIndex = 0;
+      const alreadyFilled = trade.status === 'filled' && trade.filled_at;
+
+      if (alreadyFilled) {
+        // Trade already filled - find the fill candle index to start SL/TP check from
+        const filledAtMs = new Date(trade.filled_at as string).getTime();
+        fillCandleIndex = candles.findIndex(c => c.timestamp >= filledAtMs);
+        if (fillCandleIndex === -1) fillCandleIndex = 0;
+      } else {
+        // Find fill candle (first candle where entry price was touched)
+        const fillResult = findFillCandle(candles, entryPrice);
+
+        if (!fillResult.filled) {
+          // Trade not filled yet - still pending
+          const currentPrice = candles[candles.length - 1].close;
+          results.push({
+            trade_id: trade.id,
+            symbol: trade.symbol,
+            action: 'checked',
+            current_price: currentPrice,
+            candles_checked: candles.length,
+            checked_at: new Date().toISOString()
+          });
+          continue;
+        }
+
+        // Trade is now filled - update database with fill info
+        const fillTime = new Date(fillResult.fillTimestamp!).toISOString();
+        await dbExecute(`
+          UPDATE trades SET
+            fill_price = ?,
+            fill_time = ?,
+            filled_at = ?,
+            status = 'filled'
+          WHERE id = ?
+        `, [
+          fillResult.fillPrice,
+          fillTime,
+          fillTime,
+          trade.id
+        ]);
+
+        filledCount++;
+        fillCandleIndex = fillResult.fillCandleIndex + 1; // Start SL/TP check from NEXT candle
+        console.log(`[Auto-Close] ${trade.symbol} FILLED at ${fillResult.fillPrice} on ${fillTime}`);
+      }
+
+      // STEP 2: Check for SL/TP hit starting from candle AFTER fill
+      const exitResult = checkHistoricalSLTP(candles, isLong, stopLoss, takeProfit, fillCandleIndex);
 
       if (exitResult.hit && exitResult.exitPrice && exitResult.reason) {
-        // Calculate P&L
+        // Calculate P&L using fill price (which equals entry price for limit orders)
+        const fillPrice = trade.fill_price || entryPrice;
         const qty = trade.quantity || 1;
         const pnl = isLong
-          ? (exitResult.exitPrice - entryPrice) * qty
-          : (entryPrice - exitResult.exitPrice) * qty;
-        const pnlPercent = entryPrice > 0 ? (pnl / (entryPrice * qty)) * 100 : 0;
+          ? (exitResult.exitPrice - fillPrice) * qty
+          : (fillPrice - exitResult.exitPrice) * qty;
+        const pnlPercent = fillPrice > 0 ? (pnl / (fillPrice * qty)) * 100 : 0;
 
         // Get exit timestamp as ISO string
         const exitTime = exitResult.exitTimestamp
@@ -297,7 +383,7 @@ export async function POST() {
         results.push({
           trade_id: trade.id,
           symbol: trade.symbol,
-          action: 'checked',
+          action: alreadyFilled ? 'checked' : 'filled',
           current_price: exitResult.currentPrice,
           candles_checked: candles.length,
           checked_at: new Date().toISOString()
@@ -308,8 +394,9 @@ export async function POST() {
     return NextResponse.json({
       success: true,
       checked: openTrades.length,
+      filled: filledCount,
       closed: closedCount,
-      method: 'historical_candles',
+      method: 'historical_candles_with_fill',
       results
     });
   } catch (error) {

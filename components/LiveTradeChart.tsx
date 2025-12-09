@@ -15,9 +15,12 @@ interface Trade {
   status: string
   submitted_at: string | null
   filled_at: string | null
+  fill_time?: string | null  // When price touched entry (simulated fill)
+  fill_price?: number | null // Price at which trade was filled
   closed_at: string | null
   created_at: string
   timeframe: string | null
+  exit_reason?: string | null
 }
 
 interface LiveTradeChartProps {
@@ -260,50 +263,62 @@ export default function LiveTradeChart({ trade, height = 400 }: LiveTradeChartPr
       })
     }
 
-    // Add markers for trade events
+    // Add markers for trade events - Signal, Fill, Exit
     const markers: any[] = []
+    const isLong = trade.side === 'Buy'
 
-    // Add entry marker (use submitted_at, filled_at, or created_at)
-    const entryTimestamp = trade.submitted_at || trade.filled_at || trade.created_at
-    if (entryTimestamp) {
-      const entryTime = Math.floor(new Date(entryTimestamp).getTime() / 1000)
-
-      // Find the closest candle to the entry time
-      const closestCandle = candles.reduce((closest, candle) => {
+    // Helper to find closest candle
+    const findClosestCandle = (timestamp: number) =>
+      candles.reduce((closest, candle) => {
         const candleTime = candle.time as number
         const closestTime = closest ? (closest.time as number) : 0
-        return Math.abs(candleTime - entryTime) < Math.abs(closestTime - entryTime) ? candle : closest
+        return Math.abs(candleTime - timestamp) < Math.abs(closestTime - timestamp) ? candle : closest
       }, candles[0])
 
-      if (closestCandle) {
+    // 1. Signal marker - when the trade signal was created
+    const signalTs = trade.created_at
+    if (signalTs) {
+      const signalTime = Math.floor(new Date(signalTs).getTime() / 1000)
+      const closestSignal = findClosestCandle(signalTime)
+      if (closestSignal) {
         markers.push({
-          time: closestCandle.time,
-          position: trade.side === 'Buy' ? 'belowBar' : 'aboveBar',
+          time: closestSignal.time,
+          position: 'belowBar',
           color: '#3b82f6',
-          shape: trade.side === 'Buy' ? 'arrowUp' : 'arrowDown',
-          text: trade.filled_at ? 'Filled' : 'Entry',
+          shape: 'circle',
+          text: 'Signal',
         })
       }
     }
 
-    // Add exit marker
+    // 2. Fill marker - when entry price was touched (simulated fill)
+    const fillTs = trade.fill_time || trade.filled_at
+    if (fillTs) {
+      const fillTime = Math.floor(new Date(fillTs).getTime() / 1000)
+      const closestFill = findClosestCandle(fillTime)
+      if (closestFill) {
+        markers.push({
+          time: closestFill.time,
+          position: isLong ? 'belowBar' : 'aboveBar',
+          color: '#f59e0b',
+          shape: isLong ? 'arrowUp' : 'arrowDown',
+          text: 'Fill',
+        })
+      }
+    }
+
+    // 3. Exit marker - when trade was closed (SL/TP hit)
     if (trade.closed_at && trade.exit_price) {
       const closedTime = Math.floor(new Date(trade.closed_at).getTime() / 1000)
-
-      // Find the closest candle to the exit time
-      const closestCandle = candles.reduce((closest, candle) => {
-        const candleTime = candle.time as number
-        const closestTime = closest ? (closest.time as number) : 0
-        return Math.abs(candleTime - closedTime) < Math.abs(closestTime - closedTime) ? candle : closest
-      }, candles[0])
-
-      if (closestCandle) {
+      const closestExit = findClosestCandle(closedTime)
+      if (closestExit) {
+        const isWin = trade.exit_reason === 'tp_hit'
         markers.push({
-          time: closestCandle.time,
-          position: trade.side === 'Buy' ? 'aboveBar' : 'belowBar',
-          color: '#f59e0b',
-          shape: trade.side === 'Buy' ? 'arrowDown' : 'arrowUp',
-          text: 'Exit',
+          time: closestExit.time,
+          position: isLong ? 'aboveBar' : 'belowBar',
+          color: isWin ? '#22c55e' : '#ef4444',
+          shape: isLong ? 'arrowDown' : 'arrowUp',
+          text: isWin ? 'TP Hit' : 'SL Hit',
         })
       }
     }

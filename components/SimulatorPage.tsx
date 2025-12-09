@@ -32,6 +32,8 @@ interface OpenPaperTrade {
   status: string
   created_at: string
   filled_at: string | null
+  fill_time: string | null  // When price touched entry (simulated fill)
+  fill_price: number | null // Price at which trade was filled
   submitted_at: string | null
   timeframe: string | null
   confidence: number | null
@@ -91,6 +93,9 @@ interface ClosedTrade {
   pnl_percent: number
   exit_reason: string
   created_at: string
+  filled_at: string | null
+  fill_time: string | null
+  fill_price: number | null
   closed_at: string
   timeframe: string | null
   instance_name: string
@@ -771,6 +776,9 @@ export function SimulatorPage() {
                           exit_price: trade.exit_price,
                           status: 'closed',
                           created_at: trade.created_at,
+                          filled_at: trade.filled_at,
+                          fill_time: trade.fill_time,
+                          fill_price: trade.fill_price,
                           closed_at: trade.closed_at,
                           timeframe: trade.timeframe,
                           dry_run: trade.dry_run ?? 1,
@@ -811,6 +819,9 @@ export function SimulatorPage() {
                                 exit_price: trade.exit_price,
                                 status: 'closed',
                                 created_at: trade.created_at,
+                                filled_at: trade.filled_at,
+                                fill_time: trade.fill_time,
+                                fill_price: trade.fill_price,
                                 closed_at: trade.closed_at,
                                 timeframe: trade.timeframe,
                                 dry_run: trade.dry_run ?? 1,

@@ -14,6 +14,9 @@ interface ClosedTrade {
   pnl_percent: number;
   exit_reason: string;
   created_at: string;
+  filled_at: string | null;
+  fill_time: string | null;
+  fill_price: number | null;
   closed_at: string;
   timeframe: string;
   instance_name: string;
@@ -37,6 +40,9 @@ export async function GET() {
         t.pnl_percent,
         t.exit_reason,
         t.created_at,
+        t.filled_at,
+        t.fill_time,
+        t.fill_price,
         t.closed_at,
         COALESCE(t.timeframe, rec.timeframe) as timeframe,
         i.name as instance_name,

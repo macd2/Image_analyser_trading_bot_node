@@ -15,6 +15,8 @@ export interface TradeData {
   status: string
   submitted_at?: string | null
   filled_at?: string | null
+  fill_time?: string | null  // When price touched entry (simulated fill)
+  fill_price?: number | null // Price at which trade was filled
   closed_at?: string | null
   created_at: string
   timeframe?: string | null
@@ -226,40 +228,62 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
       series.createPriceLine({ price: trade.exit_price, color: '#f59e0b', lineWidth: 2, lineStyle: 0, title: `Exit ${formatPrice(trade.exit_price)}` })
     }
 
-    // Markers
+    // Markers - Signal (when created), Fill (when entry touched), Exit (when closed)
     const markers: { time: Time; position: string; color: string; shape: string; text: string }[] = []
-    const entryTs = trade.submitted_at || trade.filled_at || trade.created_at
     // Normalize side to handle both 'Buy'/'Sell' and 'LONG'/'SHORT' formats
     const sideUpper = trade.side?.toUpperCase() || ''
     const isLong = sideUpper === 'BUY' || sideUpper === 'LONG'
-    if (entryTs) {
-      const entryTime = Math.floor(new Date(entryTs).getTime() / 1000)
-      const closestEntry = candles.reduce((c, candle) =>
-        Math.abs((candle.time as number) - entryTime) < Math.abs((c.time as number) - entryTime) ? candle : c
+
+    // Helper to find closest candle
+    const findClosestCandle = (timestamp: number) =>
+      candles.reduce((c, candle) =>
+        Math.abs((candle.time as number) - timestamp) < Math.abs((c.time as number) - timestamp) ? candle : c
       , candles[0])
-      if (closestEntry) {
+
+    // 1. Signal marker - when the trade signal was created
+    const signalTs = trade.created_at
+    if (signalTs) {
+      const signalTime = Math.floor(new Date(signalTs).getTime() / 1000)
+      const closestSignal = findClosestCandle(signalTime)
+      if (closestSignal) {
         markers.push({
-          time: closestEntry.time,
-          position: isLong ? 'belowBar' : 'aboveBar',
+          time: closestSignal.time,
+          position: 'belowBar',
           color: '#3b82f6',
-          shape: isLong ? 'arrowUp' : 'arrowDown',
-          text: 'Entry',
+          shape: 'circle',
+          text: 'Signal',
         })
       }
     }
 
+    // 2. Fill marker - when entry price was touched (simulated fill)
+    const fillTs = trade.fill_time || trade.filled_at
+    if (fillTs) {
+      const fillTime = Math.floor(new Date(fillTs).getTime() / 1000)
+      const closestFill = findClosestCandle(fillTime)
+      if (closestFill) {
+        markers.push({
+          time: closestFill.time,
+          position: isLong ? 'belowBar' : 'aboveBar',
+          color: '#f59e0b',
+          shape: isLong ? 'arrowUp' : 'arrowDown',
+          text: 'Fill',
+        })
+      }
+    }
+
+    // 3. Exit marker - when trade was closed (SL/TP hit)
     if (trade.closed_at && trade.exit_price) {
       const closedTime = Math.floor(new Date(trade.closed_at).getTime() / 1000)
-      const closestExit = candles.reduce((c, candle) =>
-        Math.abs((candle.time as number) - closedTime) < Math.abs((c.time as number) - closedTime) ? candle : c
-      , candles[0])
+      const closestExit = findClosestCandle(closedTime)
       if (closestExit) {
+        const isWin = trade.exit_reason === 'tp_hit'
         markers.push({
           time: closestExit.time,
-          position: trade.side === 'Buy' ? 'aboveBar' : 'belowBar',
-          color: '#f59e0b',
-          shape: trade.side === 'Buy' ? 'arrowDown' : 'arrowUp',
-          text: 'Exit',
+          position: isLong ? 'aboveBar' : 'belowBar',
+          color: isWin ? '#22c55e' : '#ef4444',
+          shape: isLong ? 'arrowDown' : 'arrowUp',
+          text: isWin ? 'TP Hit' : 'SL Hit',
         })
       }
     }

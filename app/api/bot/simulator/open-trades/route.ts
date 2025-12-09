@@ -17,6 +17,8 @@ export interface OpenPaperTrade {
   status: string;
   created_at: string;
   filled_at: string | null;
+  fill_time: string | null;  // When price touched entry (simulated fill)
+  fill_price: number | null; // Price at which trade was filled
   submitted_at: string | null;
   timeframe: string | null;
   confidence: number | null;
@@ -57,6 +59,8 @@ interface OpenTradeRow {
   status: string;
   created_at: string;
   filled_at: string | null;
+  fill_time: string | null;
+  fill_price: number | null;
   submitted_at: string | null;
   timeframe: string | null;
   confidence: number | null;
@@ -166,6 +170,8 @@ export async function GET(_request: NextRequest) {
         status: trade.status,
         created_at: trade.created_at,
         filled_at: trade.filled_at,
+        fill_time: trade.fill_time,
+        fill_price: trade.fill_price,
         submitted_at: trade.submitted_at,
         timeframe: trade.timeframe,
         confidence: trade.confidence,
