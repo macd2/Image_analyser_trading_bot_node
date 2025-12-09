@@ -9,6 +9,7 @@ __pycache__/
 # Coding Agents
 .augment
 .continue
+.augment
 
 
 *.pem
