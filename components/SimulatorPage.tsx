@@ -65,18 +65,24 @@ interface InstanceWithRuns {
   runs: RunWithCycles[]
 }
 
+// Per-timeframe max open bars configuration
+type MaxOpenBarsConfig = Record<string, number>
+
 interface MonitorStatus {
   running: boolean
   last_check: string | null
   trades_checked: number
   trades_closed: number
+  trades_cancelled?: number
+  max_open_bars?: MaxOpenBarsConfig  // Per-timeframe max bars (0 = disabled for that timeframe)
   next_check: number
   results: Array<{
     trade_id: string
     symbol: string
-    action: 'checked' | 'closed'
+    action: 'checked' | 'closed' | 'cancelled'
     current_price: number
     checked_at?: string
+    bars_open?: number
   }>
 }
 
@@ -103,16 +109,25 @@ interface ClosedTrade {
   dry_run?: number | null
 }
 
+// Cancelled trades have same structure as closed trades
+type CancelledTrade = ClosedTrade
+
+// Timeframes we support for max open bars config
+const TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d'] as const
+
 export function SimulatorPage() {
   const [stats, setStats] = useState<SimulatorStats | null>(null)
   const [openTrades, setOpenTrades] = useState<InstanceWithRuns[]>([])
   const [closedTrades, setClosedTrades] = useState<ClosedTrade[]>([])
+  const [cancelledTrades, setCancelledTrades] = useState<CancelledTrade[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [autoClosing, setAutoClosing] = useState(false)
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null)
   const [monitorLoading, setMonitorLoading] = useState(false)
+  const [maxOpenBarsConfig, setMaxOpenBarsConfig] = useState<MaxOpenBarsConfig>({})  // Per-timeframe
+  const [savingMaxBars, setSavingMaxBars] = useState(false)
 
   // Modal state for trade chart
   const [selectedTrade, setSelectedTrade] = useState<TradeData | null>(null)
@@ -147,6 +162,10 @@ export function SimulatorPage() {
       if (!res.ok) throw new Error('Failed to fetch monitor status')
       const data = await res.json()
       setMonitorStatus(data)
+      // Sync max_open_bars config from monitor status
+      if (data.max_open_bars && typeof data.max_open_bars === 'object') {
+        setMaxOpenBarsConfig(data.max_open_bars)
+      }
     } catch (err) {
       console.error('Failed to fetch monitor status:', err)
     }
@@ -245,6 +264,17 @@ export function SimulatorPage() {
     }
   }, [])
 
+  const fetchCancelledTrades = useCallback(async () => {
+    try {
+      const res = await fetch('/api/bot/simulator/cancelled-trades')
+      if (!res.ok) throw new Error('Failed to fetch cancelled trades')
+      const data = await res.json()
+      setCancelledTrades(data.trades || [])
+    } catch (err) {
+      console.error('Failed to fetch cancelled trades:', err)
+    }
+  }, [])
+
   const triggerAutoClose = useCallback(async () => {
     setAutoClosing(true)
     try {
@@ -268,11 +298,15 @@ export function SimulatorPage() {
       await fetchStats()
       await fetchOpenTrades()
       await fetchClosedTrades()
+      await fetchCancelledTrades()
       await fetchMonitorStatus()
 
       // Show result
       if (data.closed > 0) {
         console.log(`Auto-closed ${data.closed} trades`)
+      }
+      if (data.cancelled > 0) {
+        console.log(`Cancelled ${data.cancelled} trades (max bars exceeded)`)
       }
     } catch (err) {
       console.error('Auto-close error:', err)
@@ -280,14 +314,25 @@ export function SimulatorPage() {
     } finally {
       setAutoClosing(false)
     }
-  }, [fetchStats, fetchOpenTrades, fetchClosedTrades, fetchMonitorStatus])
+  }, [fetchStats, fetchOpenTrades, fetchClosedTrades, fetchCancelledTrades, fetchMonitorStatus])
 
-  // Initial fetch - load current state (server already handles background)
+  // Initial fetch - load current state AND trigger fresh check on page load
   useEffect(() => {
-    fetchStats()
-    fetchOpenTrades()
-    fetchClosedTrades()
-    fetchMonitorStatus()
+    const initialize = async () => {
+      // First fetch current data
+      await Promise.all([
+        fetchStats(),
+        fetchOpenTrades(),
+        fetchClosedTrades(),
+        fetchCancelledTrades(),
+        fetchMonitorStatus()
+      ])
+
+      // Then trigger a fresh auto-close check to ensure data is current
+      // This ensures we don't show stale "last check" timestamps
+      triggerAutoClose()
+    }
+    initialize()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-refresh UI data when autoRefresh is enabled
@@ -298,11 +343,12 @@ export function SimulatorPage() {
       fetchStats()
       fetchOpenTrades()
       fetchClosedTrades()
+      fetchCancelledTrades()
       fetchMonitorStatus()
     }, 5000)
 
     return () => clearInterval(refreshInterval)
-  }, [autoRefresh, fetchStats, fetchOpenTrades, fetchClosedTrades, fetchMonitorStatus])
+  }, [autoRefresh, fetchStats, fetchOpenTrades, fetchClosedTrades, fetchCancelledTrades, fetchMonitorStatus])
 
   // Get last checked price for a trade from monitor results
   const getLastCheckedPrice = (tradeId: string): { price: number; checkedAt: string } | null => {
@@ -331,7 +377,15 @@ export function SimulatorPage() {
   }
 
   // Check if trade should be closed based on current price
+  // IMPORTANT: Only applies to FILLED trades - pending fill trades cannot hit TP/SL yet
   const shouldCloseTrade = (trade: OpenPaperTrade, currentPrice: number): { shouldClose: boolean; reason: string | null } => {
+    // Trade must be filled before it can hit TP/SL
+    // A trade is filled if it has fill_time, filled_at, or status === 'filled'
+    const isFilled = trade.fill_time || trade.filled_at || trade.status === 'filled'
+    if (!isFilled) {
+      return { shouldClose: false, reason: null }
+    }
+
     // Normalize side to handle both 'Buy'/'Sell' and 'LONG'/'SHORT' formats
     const sideUpper = trade.side?.toUpperCase() || ''
     const isLong = sideUpper === 'BUY' || sideUpper === 'LONG'
@@ -476,6 +530,68 @@ export function SimulatorPage() {
         </CardContent>
       </Card>
 
+      {/* Simulator Settings - Per-Timeframe Max Open Bars */}
+      <Card className="bg-slate-800 border-slate-700">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Clock className="w-4 h-4 text-orange-400" />
+            Max Open Bars per Timeframe
+            <span className="text-slate-500 text-xs font-normal">(0 = disabled, trade never cancelled)</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-5 gap-3 mb-4">
+            {TIMEFRAMES.map(tf => (
+              <div key={tf} className="flex items-center gap-2">
+                <label className="text-slate-400 text-xs w-8">{tf}</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={maxOpenBarsConfig[tf] ?? 0}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value) || 0
+                    setMaxOpenBarsConfig(prev => ({ ...prev, [tf]: val }))
+                  }}
+                  className="w-16 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm text-center"
+                />
+              </div>
+            ))}
+          </div>
+          <Button
+            size="sm"
+            disabled={savingMaxBars}
+            onClick={async () => {
+              setSavingMaxBars(true)
+              try {
+                const res = await fetch('/api/bot/simulator/monitor', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'set-max-bars', max_open_bars: maxOpenBarsConfig })
+                })
+                if (!res.ok) throw new Error('Failed to save')
+                await fetchMonitorStatus()
+              } catch (err) {
+                console.error('Failed to save max open bars:', err)
+                setError(err instanceof Error ? err.message : 'Failed to save')
+              } finally {
+                setSavingMaxBars(false)
+              }
+            }}
+            variant="default"
+            className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50"
+          >
+            {savingMaxBars ? (
+              <>
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              'Save Max Bars Settings'
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
       {/* By Instance Stats */}
       {Object.keys(stats.by_instance).length > 0 && (
         <Card className="bg-slate-800 border-slate-700">
@@ -519,13 +635,25 @@ export function SimulatorPage() {
                 {monitorStatus.results.map((result, idx) => (
                   <div key={idx} className="flex items-center gap-2">
                     <span className="text-slate-500">[{new Date(result.checked_at || Date.now()).toLocaleTimeString()}]</span>
-                    <span className={result.action === 'closed' ? 'text-yellow-400' : 'text-slate-400'}>
-                      {result.action === 'closed' ? '🔔 CLOSED' : '✓ Checked'}
+                    <span className={
+                      result.action === 'closed' ? 'text-yellow-400' :
+                      result.action === 'cancelled' ? 'text-orange-400' :
+                      'text-slate-400'
+                    }>
+                      {result.action === 'closed' ? '🔔 CLOSED' :
+                       result.action === 'cancelled' ? '⏱️ CANCELLED' :
+                       '✓ Checked'}
                     </span>
                     <span className="text-white">{result.symbol}</span>
                     <span className="text-blue-400">@ ${result.current_price.toFixed(4)}</span>
+                    {result.bars_open !== undefined && (
+                      <span className="text-slate-500">({result.bars_open} bars)</span>
+                    )}
                     {result.action === 'closed' && (
                       <span className="text-yellow-300">→ Trade closed!</span>
+                    )}
+                    {result.action === 'cancelled' && (
+                      <span className="text-orange-300">→ Max bars exceeded!</span>
                     )}
                   </div>
                 ))}
@@ -540,6 +668,7 @@ export function SimulatorPage() {
                 Last check: {new Date(monitorStatus.last_check).toLocaleString()} |
                 Checked: {monitorStatus.trades_checked} |
                 Closed: {monitorStatus.trades_closed}
+                {monitorStatus.trades_cancelled ? ` | Cancelled: ${monitorStatus.trades_cancelled}` : ''}
               </div>
             )}
           </div>
@@ -578,7 +707,9 @@ export function SimulatorPage() {
                 .sort((a, b) => new Date(b.trade.created_at).getTime() - new Date(a.trade.created_at).getTime())
                 .map(({ trade, instance_name, run_id, boundary_time: _boundaryTime }) => {
                   const { pnl, pnlPercent, currentPrice } = calculateUnrealizedPnL(trade)
-                  const closeCheck = currentPrice ? shouldCloseTrade(trade, currentPrice) : { shouldClose: false, reason: null }
+                  // Check if trade is filled before checking for SL/TP
+                  const isFilled = trade.status === 'filled' || trade.fill_time !== null || trade.filled_at !== null
+                  const closeCheck = isFilled && currentPrice ? shouldCloseTrade(trade, currentPrice) : { shouldClose: false, reason: null }
                   // Normalize side to handle both 'Buy'/'Sell' and 'LONG'/'SHORT' formats
                   const sideUpper = trade.side?.toUpperCase() || ''
                   const isLong = sideUpper === 'BUY' || sideUpper === 'LONG'
@@ -906,6 +1037,98 @@ export function SimulatorPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Cancelled Trades Section */}
+      {cancelledTrades.length > 0 && (
+        <Card className="bg-slate-800 border-slate-700">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-orange-400" />
+              Cancelled Trades ({cancelledTrades.length})
+              <span className="text-xs text-slate-500 font-normal ml-2">Max bars exceeded</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {[...cancelledTrades]
+                .sort((a, b) => new Date(b.closed_at).getTime() - new Date(a.closed_at).getTime())
+                .map(trade => {
+                  const isWin = trade.pnl > 0
+                  const isLong = trade.side === 'Buy'
+
+                  return (
+                    <div
+                      key={trade.id}
+                      className="p-4 rounded-lg border-2 bg-orange-900/20 border-orange-600 cursor-pointer hover:brightness-110 transition-all"
+                      onClick={() => {
+                        setSelectedTrade({
+                          id: trade.id,
+                          symbol: trade.symbol,
+                          side: trade.side,
+                          entry_price: trade.entry_price,
+                          stop_loss: trade.stop_loss,
+                          take_profit: trade.take_profit,
+                          exit_price: trade.exit_price,
+                          status: 'cancelled',
+                          created_at: trade.created_at,
+                          filled_at: trade.filled_at,
+                          fill_time: trade.fill_time,
+                          fill_price: trade.fill_price,
+                          closed_at: trade.closed_at,
+                          timeframe: trade.timeframe,
+                          dry_run: trade.dry_run ?? 1,
+                          exit_reason: trade.exit_reason
+                        })
+                        setChartMode('historical')
+                      }}
+                    >
+                      {/* Row 1: Symbol + Side + Cancelled Badge + P&L */}
+                      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                        <div className="flex items-center gap-3">
+                          <span className="font-bold text-white text-xl">{trade.symbol}</span>
+                          <span className={`text-xs px-2 py-1 rounded font-semibold ${isLong ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+                            {trade.side}
+                          </span>
+                          <span className="text-sm px-3 py-1 rounded font-bold bg-orange-500 text-white">
+                            ⏱️ CANCELLED
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`text-2xl font-bold ${isWin ? 'text-green-400' : 'text-red-400'}`}>
+                            {isWin ? '+' : ''}{trade.pnl?.toFixed(2)} USD
+                          </span>
+                          <span className={`text-sm ${isWin ? 'text-green-400' : 'text-red-400'}`}>
+                            ({isWin ? '+' : ''}{trade.pnl_percent?.toFixed(2)}%)
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Row 2: Dates */}
+                      <div className="flex items-center gap-4 text-xs mb-2">
+                        <div className="flex items-center gap-1">
+                          <span className="text-slate-400">Created:</span>
+                          <span className="text-slate-300">{new Date(trade.created_at).toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-orange-400">⏱️ Cancelled:</span>
+                          <span className="text-slate-300">{new Date(trade.closed_at).toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      {/* Row 3: Prices */}
+                      <div className="flex items-center gap-6 text-sm">
+                        <div><span className="text-slate-400">Entry:</span> <span className="text-white font-mono">${trade.entry_price?.toFixed(4)}</span></div>
+                        <div><span className="text-slate-400">Exit:</span> <span className={`font-mono ${isWin ? 'text-green-400' : 'text-red-400'}`}>${trade.exit_price?.toFixed(4)}</span></div>
+                        <div><span className="text-slate-500">TP:</span> <span className="text-slate-400 font-mono">${trade.take_profit?.toFixed(4)}</span></div>
+                        <div><span className="text-slate-500">SL:</span> <span className="text-slate-400 font-mono">${trade.stop_loss?.toFixed(4)}</span></div>
+                      </div>
+                    </div>
+                  )
+                })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Trade Chart Modal */}
       <TradeChartModal

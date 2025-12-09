@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
 
     const instance = instances[0];
     // Safely parse settings (could be string, object, or null)
-    let settings = {};
+    let settings: Record<string, unknown> = {};
     if (instance.settings) {
       if (typeof instance.settings === 'string') {
         try {
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
           console.warn('Failed to parse settings string:', e);
         }
       } else if (typeof instance.settings === 'object') {
-        settings = instance.settings;
+        settings = instance.settings as Record<string, unknown>;
       }
     }
     const mode = settings.paper_trading === false ? 'live' : 'paper';

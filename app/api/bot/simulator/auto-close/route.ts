@@ -2,11 +2,39 @@
  * Auto-Close Paper Trades API
  * POST /api/bot/simulator/auto-close - Check and close paper trades based on HISTORICAL candle data
  * Fetches all candles from trade creation to now and checks each for SL/TP hit
+ * Also checks for max_open_bars setting to cancel stale trades
  * Uses existing trading-db.ts and Bybit API directly - no Python needed
  */
 
 import { NextResponse } from 'next/server';
 import { dbQuery, dbExecute, isTradingDbAvailable, TradeRow } from '@/lib/db/trading-db';
+import fs from 'fs';
+import path from 'path';
+
+// Read max_open_bars from simulator status file (per-timeframe config)
+const STATUS_FILE = path.join(process.cwd(), 'data', 'simulator_status.json');
+
+type MaxOpenBarsConfig = Record<string, number>;
+
+function getMaxOpenBarsConfig(): MaxOpenBarsConfig {
+  try {
+    if (fs.existsSync(STATUS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf-8'));
+      if (typeof data.max_open_bars === 'object' && data.max_open_bars !== null) {
+        return data.max_open_bars;
+      }
+    }
+  } catch {
+    // Ignore errors, return default
+  }
+  return {}; // Empty = all disabled
+}
+
+function getMaxOpenBarsForTimeframe(timeframe: string): number {
+  const config = getMaxOpenBarsConfig();
+  // Try exact match first, then normalized (1D -> 1d)
+  return config[timeframe] ?? config[timeframe.toLowerCase()] ?? 0;
+}
 
 interface KlineResult {
   retCode: number;
@@ -325,18 +353,23 @@ export async function POST() {
     const results: Array<{
       trade_id: string;
       symbol: string;
-      action: 'checked' | 'closed' | 'filled';
+      action: 'checked' | 'closed' | 'filled' | 'cancelled';
       current_price: number;
       fill_timestamp?: string;
       exit_reason?: string;
       exit_timestamp?: string;
       pnl?: number;
       candles_checked?: number;
+      bars_open?: number;
       checked_at?: string;
     }> = [];
 
     let closedCount = 0;
     let filledCount = 0;
+    let cancelledCount = 0;
+
+    // Get max_open_bars config (per-timeframe)
+    const maxOpenBarsConfig = getMaxOpenBarsConfig();
 
     for (const trade of openTrades) {
       const isLong = trade.side === 'Buy';
@@ -344,6 +377,9 @@ export async function POST() {
       const stopLoss = trade.stop_loss || 0;
       const takeProfit = trade.take_profit || 0;
       const timeframe = trade.timeframe || '1h';
+
+      // Get max open bars for this trade's timeframe (0 = disabled)
+      const maxOpenBars = getMaxOpenBarsForTimeframe(timeframe);
 
       // Parse trade creation time
       const createdAt = new Date(trade.created_at).getTime();
@@ -381,14 +417,55 @@ export async function POST() {
         const fillResult = findFillCandle(candles, entryPrice);
 
         if (!fillResult.filled) {
-          // Trade not filled yet - still pending
+          // Trade not filled yet - check if it's pending_fill and been waiting too long
           const currentPrice = candles[candles.length - 1].close;
+          const barsPending = candles.length;  // Bars since trade creation
+
+          // Only apply max bars cancellation to pending_fill status (entry was touched)
+          // paper_trade status means entry wasn't touched yet, keep waiting
+          if (trade.status === 'pending_fill' && maxOpenBars > 0 && barsPending >= maxOpenBars) {
+            // Cancel trade - been pending fill too long
+            const cancelTime = new Date().toISOString();
+
+            await dbExecute(`
+              UPDATE trades SET
+                exit_price = ?,
+                exit_reason = 'max_bars_exceeded',
+                closed_at = ?,
+                pnl = 0,
+                pnl_percent = 0,
+                status = 'cancelled'
+              WHERE id = ?
+            `, [
+              currentPrice,
+              cancelTime,
+              trade.id
+            ]);
+
+            cancelledCount++;
+            console.log(`[Auto-Close] ${trade.symbol} CANCELLED (pending_fill) after ${barsPending} bars (max: ${maxOpenBars})`);
+
+            results.push({
+              trade_id: trade.id,
+              symbol: trade.symbol,
+              action: 'cancelled',
+              current_price: currentPrice,
+              exit_reason: 'max_bars_exceeded',
+              candles_checked: candles.length,
+              bars_open: barsPending,
+              checked_at: new Date().toISOString()
+            });
+            continue;
+          }
+
+          // Still pending (paper_trade or pending_fill under limit)
           results.push({
             trade_id: trade.id,
             symbol: trade.symbol,
             action: 'checked',
             current_price: currentPrice,
             candles_checked: candles.length,
+            bars_open: barsPending,
             checked_at: new Date().toISOString()
           });
           continue;
@@ -417,6 +494,9 @@ export async function POST() {
 
       // STEP 2: Check for SL/TP hit starting from candle AFTER fill
       const exitResult = checkHistoricalSLTP(candles, isLong, stopLoss, takeProfit, fillCandleIndex);
+
+      // Calculate bars since fill (for max_open_bars check)
+      const barsOpen = candles.length - fillCandleIndex;
 
       if (exitResult.hit && exitResult.exitPrice && exitResult.reason) {
         // Calculate P&L using fill price (which equals entry price for limit orders)
@@ -461,6 +541,55 @@ export async function POST() {
           exit_timestamp: exitTime,
           pnl: Math.round(pnl * 100) / 100,
           candles_checked: candles.length,
+          bars_open: barsOpen,
+          checked_at: new Date().toISOString()
+        });
+      } else if (maxOpenBars > 0 && barsOpen >= maxOpenBars) {
+        // STEP 3: Check for max bars exceeded - cancel the trade
+        // Trade has been open too long without hitting TP/SL
+        const currentPrice = exitResult.currentPrice;
+        const fillPrice = trade.fill_price || entryPrice;
+        const qty = trade.quantity || 1;
+
+        // Calculate unrealized P&L at cancellation
+        const pnl = isLong
+          ? (currentPrice - fillPrice) * qty
+          : (fillPrice - currentPrice) * qty;
+        const pnlPercent = fillPrice > 0 ? (pnl / (fillPrice * qty)) * 100 : 0;
+
+        const cancelTime = new Date().toISOString();
+
+        // Update trade as cancelled with exit at current price
+        await dbExecute(`
+          UPDATE trades SET
+            exit_price = ?,
+            exit_reason = 'max_bars_exceeded',
+            closed_at = ?,
+            pnl = ?,
+            pnl_percent = ?,
+            status = 'cancelled'
+          WHERE id = ?
+        `, [
+          currentPrice,
+          cancelTime,
+          Math.round(pnl * 100) / 100,
+          Math.round(pnlPercent * 100) / 100,
+          trade.id
+        ]);
+
+        cancelledCount++;
+        console.log(`[Auto-Close] ${trade.symbol} CANCELLED after ${barsOpen} bars (max: ${maxOpenBars})`);
+
+        results.push({
+          trade_id: trade.id,
+          symbol: trade.symbol,
+          action: 'cancelled',
+          current_price: currentPrice,
+          exit_reason: 'max_bars_exceeded',
+          exit_timestamp: cancelTime,
+          pnl: Math.round(pnl * 100) / 100,
+          candles_checked: candles.length,
+          bars_open: barsOpen,
           checked_at: new Date().toISOString()
         });
       } else {
@@ -470,6 +599,7 @@ export async function POST() {
           action: alreadyFilled ? 'checked' : 'filled',
           current_price: exitResult.currentPrice,
           candles_checked: candles.length,
+          bars_open: barsOpen,
           checked_at: new Date().toISOString()
         });
       }
@@ -480,6 +610,8 @@ export async function POST() {
       checked: openTrades.length,
       filled: filledCount,
       closed: closedCount,
+      cancelled: cancelledCount,
+      max_open_bars: maxOpenBarsConfig,
       method: 'historical_candles_with_fill',
       results
     });

@@ -10,27 +10,46 @@ import path from 'path'
 // Store status in a JSON file since Next.js API routes are stateless
 const STATUS_FILE = path.join(process.cwd(), 'data', 'simulator_status.json')
 
+// Per-timeframe max open bars configuration
+type MaxOpenBarsConfig = Record<string, number>  // e.g. { "1h": 24, "4h": 12, "1d": 5 }
+
 interface MonitorStatus {
   running: boolean
   last_check: string | null
   trades_checked: number
   trades_closed: number
+  trades_cancelled?: number
   next_check: number | null
+  // Simulator settings - per-timeframe max open bars (0 = disabled for that timeframe)
+  max_open_bars?: MaxOpenBarsConfig
   results: Array<{
     trade_id: string
     symbol: string
-    action: 'checked' | 'closed'
+    action: 'checked' | 'closed' | 'cancelled'
     current_price: number
     checked_at?: string
     exit_reason?: string
     pnl?: number
+    bars_open?: number
   }>
+}
+
+// Default per-timeframe max open bars (0 = disabled)
+const DEFAULT_MAX_OPEN_BARS: MaxOpenBarsConfig = {
+  '1m': 0, '3m': 0, '5m': 0, '15m': 0, '30m': 0,
+  '1h': 0, '2h': 0, '4h': 0, '6h': 0, '12h': 0,
+  '1d': 0, '1D': 0
 }
 
 function getStatus(): MonitorStatus {
   try {
     if (fs.existsSync(STATUS_FILE)) {
-      return JSON.parse(fs.readFileSync(STATUS_FILE, 'utf-8'))
+      const data = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf-8'))
+      // Ensure max_open_bars has default values for all timeframes
+      return {
+        ...data,
+        max_open_bars: { ...DEFAULT_MAX_OPEN_BARS, ...(data.max_open_bars || {}) }
+      }
     }
   } catch (e) {
     console.error('Failed to read status file:', e)
@@ -40,7 +59,9 @@ function getStatus(): MonitorStatus {
     last_check: null,
     trades_checked: 0,
     trades_closed: 0,
+    trades_cancelled: 0,
     next_check: null,
+    max_open_bars: { ...DEFAULT_MAX_OPEN_BARS },
     results: []
   }
 }
@@ -146,9 +167,39 @@ export async function POST(request: NextRequest) {
         error: 'Auto-close returned non-ok response'
       }, { status: 500 })
 
+    } else if (action === 'set-max-bars') {
+      // Update max_open_bars setting - supports per-timeframe config
+      // Can receive: { timeframe: "1h", max_bars: 24 } OR { max_open_bars: { "1h": 24, "4h": 12 } }
+      const { max_open_bars, timeframe, max_bars } = body
+      const status = getStatus()
+
+      if (timeframe && typeof max_bars === 'number') {
+        // Update single timeframe
+        status.max_open_bars = {
+          ...status.max_open_bars,
+          [timeframe]: max_bars
+        }
+      } else if (typeof max_open_bars === 'object' && max_open_bars !== null) {
+        // Update multiple timeframes at once
+        status.max_open_bars = {
+          ...status.max_open_bars,
+          ...max_open_bars
+        }
+      }
+
+      saveStatus(status)
+
+      return NextResponse.json({
+        success: true,
+        message: timeframe
+          ? `Max open bars for ${timeframe} set to ${max_bars}`
+          : 'Max open bars updated',
+        max_open_bars: status.max_open_bars
+      })
+
     } else {
       return NextResponse.json(
-        { error: 'Invalid action. Use "start", "stop", "update", or "force-run"' },
+        { error: 'Invalid action. Use "start", "stop", "update", "force-run", or "set-max-bars"' },
         { status: 400 }
       )
     }
