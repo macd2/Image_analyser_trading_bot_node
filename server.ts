@@ -9,7 +9,7 @@ const STATUS_FILE = path.join(process.cwd(), 'data', 'simulator_status.json');
 const AUTO_CLOSE_INTERVAL_MS = 30000; // Check every 30 seconds
 
 // Read simulator status
-function getSimulatorStatus(): { running: boolean } {
+function getSimulatorStatus(): { running: boolean; last_check?: string | null } {
   try {
     if (fs.existsSync(STATUS_FILE)) {
       return JSON.parse(fs.readFileSync(STATUS_FILE, 'utf-8'));
@@ -21,14 +21,16 @@ function getSimulatorStatus(): { running: boolean } {
 }
 
 // Update simulator status after check
-function updateSimulatorStatus(tradesChecked: number, tradesClosed: number, results: unknown[] = []) {
+function updateSimulatorStatus(tradesChecked: number, tradesClosed: number, results: unknown[] = [], tradesFilled: number = 0) {
   try {
     const current = getSimulatorStatus();
     const updated = {
       ...current,
+      running: true, // Always ensure running after a check
       last_check: new Date().toISOString(),
       trades_checked: tradesChecked,
       trades_closed: tradesClosed,
+      trades_filled: tradesFilled,
       next_check: Date.now() / 1000 + AUTO_CLOSE_INTERVAL_MS / 1000,
       results: results.slice(0, 20) // Keep last 20 results for UI
     };
@@ -38,11 +40,12 @@ function updateSimulatorStatus(tradesChecked: number, tradesClosed: number, resu
   }
 }
 
-// Background auto-close check
+// Background auto-close check - respects status.running from UI toggle
+// When auto mode is ON in UI, this runs regardless of which page user is on
 async function runAutoCloseCheck(baseUrl: string) {
   const status = getSimulatorStatus();
   if (!status.running) {
-    return; // Monitor is paused
+    return; // Auto mode is OFF in UI
   }
 
   try {
@@ -53,9 +56,9 @@ async function runAutoCloseCheck(baseUrl: string) {
 
     if (res.ok) {
       const data = await res.json();
-      updateSimulatorStatus(data.checked || 0, data.closed || 0, data.results || []);
-      if (data.closed > 0) {
-        console.log(`  ➜  Simulator: Auto-closed ${data.closed} trade(s)`);
+      updateSimulatorStatus(data.checked || 0, data.closed || 0, data.results || [], data.filled || 0);
+      if (data.closed > 0 || data.filled > 0) {
+        console.log(`  ➜  Simulator: Filled ${data.filled || 0}, Closed ${data.closed} trade(s)`);
       }
     }
   } catch (err) {

@@ -282,7 +282,7 @@ export function SimulatorPage() {
     }
   }, [fetchStats, fetchOpenTrades, fetchClosedTrades, fetchMonitorStatus])
 
-  // Initial fetch - just load data, server handles background auto-close
+  // Initial fetch - load current state (server already handles background)
   useEffect(() => {
     fetchStats()
     fetchOpenTrades()
@@ -290,16 +290,18 @@ export function SimulatorPage() {
     fetchMonitorStatus()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-refresh UI data only (no auto-close triggering - server handles that)
+  // Auto-refresh UI data when autoRefresh is enabled
   useEffect(() => {
     if (!autoRefresh) return
-    const interval = setInterval(() => {
+
+    const refreshInterval = setInterval(() => {
       fetchStats()
       fetchOpenTrades()
       fetchClosedTrades()
       fetchMonitorStatus()
     }, 5000)
-    return () => clearInterval(interval)
+
+    return () => clearInterval(refreshInterval)
   }, [autoRefresh, fetchStats, fetchOpenTrades, fetchClosedTrades, fetchMonitorStatus])
 
   // Get last checked price for a trade from monitor results

@@ -105,9 +105,50 @@ export async function POST(request: NextRequest) {
         ...status
       })
 
+    } else if (action === 'force-run') {
+      // Force run auto-close immediately
+      const protocol = request.headers.get('x-forwarded-proto') || 'http'
+      const host = request.headers.get('host') || 'localhost:3000'
+      const baseUrl = `${protocol}://${host}`
+
+      try {
+        const res = await fetch(`${baseUrl}/api/bot/simulator/auto-close`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          const updated = getStatus()
+          updated.last_check = new Date().toISOString()
+          updated.trades_checked = data.checked || 0
+          updated.trades_closed = data.closed || 0
+          updated.results = data.results || []
+          updated.next_check = Date.now() / 1000 + 30
+          saveStatus(updated)
+
+          return NextResponse.json({
+            success: true,
+            message: 'Forced auto-close run',
+            ...data
+          })
+        }
+      } catch (err) {
+        return NextResponse.json({
+          success: false,
+          error: 'Failed to run auto-close',
+          details: String(err)
+        }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        success: false,
+        error: 'Auto-close returned non-ok response'
+      }, { status: 500 })
+
     } else {
       return NextResponse.json(
-        { error: 'Invalid action. Use "start", "stop", or "update"' },
+        { error: 'Invalid action. Use "start", "stop", "update", or "force-run"' },
         { status: 400 }
       )
     }
