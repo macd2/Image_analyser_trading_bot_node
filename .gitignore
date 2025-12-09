@@ -6,6 +6,11 @@ __pycache__/
 # C extensions
 *.so
 
+# Coding Agents
+.augment
+.continue
+
+
 *.pem
 *.csv
 *.jpg
