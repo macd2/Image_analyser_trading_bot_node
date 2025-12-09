@@ -20,8 +20,11 @@ interface SettingsModalProps {
 interface ConfigItem {
   key: string
   value: string
+  hasValue: boolean
   type: 'string' | 'number' | 'boolean' | 'json'
   category: string
+  group?: string | null
+  order?: number
   description: string | null
   tooltip?: string | null
 }
@@ -111,6 +114,32 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
   const filteredConfig = config.filter(c => c.category === activeCategory)
   const hasPendingChanges = Object.keys(pendingChanges).length > 0
 
+  // Group settings by their group property
+  const groupedConfig = filteredConfig.reduce((acc, item) => {
+    const group = item.group || 'General'
+    if (!acc[group]) acc[group] = []
+    acc[group].push(item)
+    return acc
+  }, {} as Record<string, ConfigItem[]>)
+
+  // Get ordered group names (sorted by the prefix number if present, then alphabetically)
+  const groupOrder = Object.keys(groupedConfig).sort((a, b) => {
+    // "General" always first
+    if (a === 'General') return -1
+    if (b === 'General') return 1
+    // Otherwise sort naturally (the "1.", "2.", etc prefixes will sort correctly)
+    return a.localeCompare(b)
+  })
+
+  // Helper to get display name and indentation level from group name
+  const getGroupDisplay = (groupName: string) => {
+    // Check for hierarchy indicators like "2. ├─" or "2. └─"
+    const isChild = groupName.includes('├─') || groupName.includes('└─')
+    // Remove the prefix numbers and tree characters for display
+    const displayName = groupName.replace(/^\d+\.\s*(├─|└─)?\s*/, '')
+    return { displayName, isChild }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl bg-slate-900 border-slate-700 text-white">
@@ -148,36 +177,74 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
                   </div>
                 )}
 
-                <div className="space-y-3">
-                  {filteredConfig.map(item => {
-                    const shortKey = item.key.split('.').pop() || item.key
-                    const currentValue = pendingChanges[item.key] ?? item.value
-                    const isChanged = pendingChanges[item.key] !== undefined
-                    const isBoolean = item.value === 'true' || item.value === 'false'
+                <div className="space-y-4">
+                  {groupOrder.map(groupName => {
+                    const { displayName, isChild } = getGroupDisplay(groupName)
 
                     return (
-                      <div key={item.key} className={`p-3 rounded-lg border ${isChanged ? 'bg-amber-900/20 border-amber-600/50' : 'bg-slate-800/50 border-slate-700/50'}`}>
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <label className="text-sm text-slate-300 font-medium">{shortKey.replace(/_/g, ' ')}</label>
-                            {item.tooltip && (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 cursor-help" />
-                                </TooltipTrigger>
-                                <TooltipContent className="max-w-xs bg-slate-800 border-slate-600 text-slate-200">
-                                  <p className="text-xs">{item.tooltip}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
-                          </div>
-                          {isBoolean ? (
-                            <Switch checked={currentValue === 'true'} onCheckedChange={(checked) => handleChange(item.key, checked ? 'true' : 'false')} />
-                          ) : (
-                            <input type="text" value={currentValue} onChange={(e) => handleChange(item.key, e.target.value)} className="w-32 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white text-right" />
-                          )}
+                      <div key={groupName} className={`space-y-2 ${isChild ? 'ml-4 pl-3 border-l-2 border-slate-700' : ''}`}>
+                        {/* Group Header */}
+                        <h3 className={`text-xs font-semibold uppercase tracking-wider border-b pb-1 ${
+                          isChild
+                            ? 'text-slate-500 border-slate-700/50'
+                            : 'text-slate-400 border-slate-700'
+                        }`}>
+                          {displayName}
+                        </h3>
+
+                        {/* Group Items */}
+                        <div className="space-y-2">
+                          {groupedConfig[groupName].map(item => {
+                            const shortKey = item.key.split('.').pop() || item.key
+                            const currentValue = pendingChanges[item.key] ?? item.value
+                            const isChanged = pendingChanges[item.key] !== undefined
+                            const isBoolean = item.type === 'boolean'
+                            const hasNoValue = !item.hasValue && !isChanged
+
+                            return (
+                              <div key={item.key} className={`p-2.5 rounded-lg border ${
+                                isChanged
+                                  ? 'bg-amber-900/20 border-amber-600/50'
+                                  : hasNoValue
+                                    ? 'bg-slate-900/30 border-slate-700/30 opacity-60'
+                                    : 'bg-slate-800/50 border-slate-700/50'
+                              }`}>
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <label className="text-sm text-slate-300 font-medium truncate">
+                                      {shortKey.replace(/_/g, ' ')}
+                                    </label>
+                                    {hasNoValue && <span className="text-xs text-slate-500">(not set)</span>}
+                                    {item.tooltip && (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 cursor-help flex-shrink-0" />
+                                        </TooltipTrigger>
+                                        <TooltipContent className="max-w-xs bg-slate-800 border-slate-600 text-slate-200">
+                                          <p className="text-xs">{item.tooltip}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    )}
+                                  </div>
+                                  {isBoolean ? (
+                                    <Switch
+                                      checked={currentValue === 'true'}
+                                      onCheckedChange={(checked) => handleChange(item.key, checked ? 'true' : 'false')}
+                                    />
+                                  ) : (
+                                    <input
+                                      type="text"
+                                      value={currentValue}
+                                      placeholder={hasNoValue ? 'Enter value...' : ''}
+                                      onChange={(e) => handleChange(item.key, e.target.value)}
+                                      className="w-40 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white text-right placeholder:text-slate-600"
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
-                        {item.description && <p className="text-xs text-slate-500 mt-1">{item.description}</p>}
                       </div>
                     )
                   })}
