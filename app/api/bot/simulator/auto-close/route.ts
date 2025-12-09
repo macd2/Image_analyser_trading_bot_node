@@ -52,37 +52,110 @@ const TIMEFRAME_MS: Record<string, number> = {
 };
 
 /**
- * Fetch historical candles from trade creation to now
+ * Store candles to klines table (upsert - ON CONFLICT DO NOTHING)
+ */
+async function storeCandles(
+  symbol: string,
+  timeframe: string,
+  candles: Candle[]
+): Promise<void> {
+  if (candles.length === 0) return;
+
+  const normSymbol = symbol.endsWith('.P') ? symbol.slice(0, -2) : symbol;
+
+  // Insert each candle (ON CONFLICT DO NOTHING for duplicates)
+  for (const c of candles) {
+    try {
+      await dbExecute(
+        `INSERT INTO klines (symbol, timeframe, category, start_time, open_price, high_price, low_price, close_price, volume, turnover)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (symbol, timeframe, start_time) DO NOTHING`,
+        [normSymbol, timeframe, 'linear', c.timestamp, c.open, c.high, c.low, c.close, 0, 0]
+      );
+    } catch {
+      // Ignore duplicate key errors
+    }
+  }
+}
+
+/**
+ * Fetch candles from database first, then API if missing
+ * Always stores fetched candles to database for future use
  */
 async function getHistoricalCandles(
   symbol: string,
   timeframe: string,
   startTime: number // Unix timestamp in ms
 ): Promise<Candle[]> {
-  try {
-    const apiSymbol = symbol.endsWith('.P') ? symbol.slice(0, -2) : symbol;
-    const interval = TIMEFRAME_MAP[timeframe] || '60';
-    const now = Date.now();
+  const normSymbol = symbol.endsWith('.P') ? symbol.slice(0, -2) : symbol;
+  const now = Date.now();
 
-    // Calculate how many candles we need
-    const tfMs = TIMEFRAME_MS[timeframe] || 3600000;
-    const candlesNeeded = Math.ceil((now - startTime) / tfMs) + 1;
+  // First, try to get candles from database
+  const dbCandles = await dbQuery<{
+    start_time: number;
+    open_price: number;
+    high_price: number;
+    low_price: number;
+    close_price: number;
+  }>(
+    `SELECT start_time, open_price, high_price, low_price, close_price
+     FROM klines
+     WHERE symbol = ? AND timeframe = ? AND start_time >= ? AND start_time <= ?
+     ORDER BY start_time ASC`,
+    [normSymbol, timeframe, startTime, now]
+  );
+
+  // Calculate how many candles we should have
+  const tfMs = TIMEFRAME_MS[timeframe] || 3600000;
+  const expectedCandles = Math.ceil((now - startTime) / tfMs);
+
+  // If we have enough candles from DB, use them
+  if (dbCandles.length >= expectedCandles * 0.8) { // 80% threshold
+    console.log(`[Auto-Close] Using ${dbCandles.length} cached candles for ${symbol} ${timeframe}`);
+    return dbCandles.map(c => ({
+      timestamp: c.start_time,
+      open: c.open_price,
+      high: c.high_price,
+      low: c.low_price,
+      close: c.close_price
+    }));
+  }
+
+  // Otherwise fetch from Bybit API
+  console.log(`[Auto-Close] Fetching candles from Bybit for ${symbol} ${timeframe} (had ${dbCandles.length}, need ~${expectedCandles})`);
+
+  try {
+    const apiSymbol = normSymbol;
+    const interval = TIMEFRAME_MAP[timeframe] || '60';
 
     // Bybit allows max 200 candles per request
-    const limit = Math.min(candlesNeeded, 200);
+    const limit = Math.min(expectedCandles + 5, 200);
 
     const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${apiSymbol}&interval=${interval}&start=${startTime}&limit=${limit}`;
     const res = await fetch(url);
 
     if (!res.ok) {
       console.error(`[Auto-Close] Bybit API error for ${symbol}: ${res.status} ${res.statusText}`);
-      return [];
+      // Fall back to whatever we have in DB
+      return dbCandles.map(c => ({
+        timestamp: c.start_time,
+        open: c.open_price,
+        high: c.high_price,
+        low: c.low_price,
+        close: c.close_price
+      }));
     }
 
     const data: KlineResult = await res.json();
     if (data.retCode !== 0 || !data.result?.list) {
       console.error(`[Auto-Close] Bybit returned error for ${symbol}: retCode=${data.retCode}`);
-      return [];
+      return dbCandles.map(c => ({
+        timestamp: c.start_time,
+        open: c.open_price,
+        high: c.high_price,
+        low: c.low_price,
+        close: c.close_price
+      }));
     }
 
     // Parse candles - Bybit returns newest first, so reverse
@@ -94,10 +167,21 @@ async function getHistoricalCandles(
       close: parseFloat(c[4])
     })).reverse(); // Oldest first for chronological checking
 
+    // Store fetched candles to database for future use
+    await storeCandles(symbol, timeframe, candles);
+    console.log(`[Auto-Close] Stored ${candles.length} candles to database for ${symbol} ${timeframe}`);
+
     return candles;
   } catch (e) {
     console.error(`Failed to get candles for ${symbol}:`, e);
-    return [];
+    // Fall back to DB candles
+    return dbCandles.map(c => ({
+      timestamp: c.start_time,
+      open: c.open_price,
+      high: c.high_price,
+      low: c.low_price,
+      close: c.close_price
+    }));
   }
 }
 
