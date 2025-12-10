@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db/client';
+import { getProcessState, isProcessAlive } from '@/lib/process-state';
 
 export const dynamic = 'force-dynamic';
 
 export interface CycleStatusResponse {
+  is_running: boolean;
   current_cycle: {
     id: string;
     cycle_number: number;
@@ -38,21 +40,26 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Check if bot is running for this instance
+    const processState = getProcessState(instanceId);
+    const isRunning = processState ? isProcessAlive(processState.pid) : false;
+
     // Get current run for the instance
     const runs = await query<{
       id: string;
       started_at: string;
       status: string;
     }>(`
-      SELECT id, started_at, status 
-      FROM runs 
+      SELECT id, started_at, status
+      FROM runs
       WHERE instance_id = ? AND status = 'running'
-      ORDER BY started_at DESC 
+      ORDER BY started_at DESC
       LIMIT 1
     `, [instanceId]);
 
     if (runs.length === 0) {
       return NextResponse.json({
+        is_running: isRunning,
         current_cycle: null,
         cycle_stats: { total_cycles: 0, successful_cycles: 0, avg_cycle_duration_minutes: 0, last_cycle_completed: null }
       });
@@ -202,6 +209,7 @@ export async function GET(request: NextRequest) {
     }
 
     const response: CycleStatusResponse = {
+      is_running: isRunning,
       current_cycle: currentCycle,
       cycle_stats: cycleStats
     };

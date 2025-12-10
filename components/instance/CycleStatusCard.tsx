@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Camera, Eye, Shield, Zap, Coffee, Clock, CheckCircle, Circle, TrendingUp, BarChart3 } from 'lucide-react'
+import { Camera, Eye, Shield, Zap, Coffee, Clock, CheckCircle, Circle, TrendingUp, BarChart3, Power } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { LoadingState } from '@/components/shared'
 
@@ -10,6 +10,7 @@ interface CycleStatusCardProps {
 }
 
 interface CycleStatus {
+  is_running: boolean
   current_cycle: {
     id: string
     cycle_number: number
@@ -63,7 +64,7 @@ export function CycleStatusCard({ instanceId }: CycleStatusCardProps) {
 
   useEffect(() => {
     fetchStatus()
-    const interval = setInterval(fetchStatus, 5000) // Refresh every 5 seconds
+    const interval = setInterval(fetchStatus, 2000) // Refresh every 2 seconds for near real-time
     return () => clearInterval(interval)
   }, [instanceId])
 
@@ -84,8 +85,34 @@ export function CycleStatusCard({ instanceId }: CycleStatusCardProps) {
   if (loading) return <LoadingState text="Loading cycle status..." />
   if (error) return <div className="text-red-400 text-sm">Error: {error}</div>
 
+  const isRunning = status?.is_running ?? false
   const currentCycle = status?.current_cycle
   const cycleStats = status?.cycle_stats
+
+  // Bot not running - show placeholder with consistent height
+  if (!isRunning) {
+    return (
+      <Card className="bg-slate-800 border-slate-700">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Clock className="w-4 h-4 text-slate-500" />
+              Trading Cycle Status
+            </CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <div className="w-12 h-12 rounded-full bg-slate-700/50 flex items-center justify-center mb-3">
+              <Power className="w-6 h-6 text-slate-500" />
+            </div>
+            <div className="text-slate-400 font-medium mb-1">Bot Not Running</div>
+            <div className="text-xs text-slate-500">Start the bot to see trading cycle status</div>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card className="bg-slate-800 border-slate-700">
