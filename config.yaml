@@ -70,7 +70,6 @@ tradingview:
   base_url: "https://www.tradingview.com"
   login_url: "https://www.tradingview.com/accounts/signin/"
   chart_url_template: "https://www.tradingview.com/chart/?symbol={symbol}&interval={timeframe}"
-  target_chart: "https://www.tradingview.com/chart/iXrxoaRu/"
 
   browser:
     headless: true
