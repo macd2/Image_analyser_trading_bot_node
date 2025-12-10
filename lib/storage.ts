@@ -21,6 +21,21 @@ export function getLocalBasePath(): string {
   return path.join(process.cwd(), 'data', 'charts');
 }
 
+/**
+ * Resolve a relative path safely, ensuring it stays within the base directory.
+ * Throws an error if path traversal is attempted.
+ */
+function resolveLocalPath(relativePath: string): string {
+  const basePath = getLocalBasePath();
+  const resolved = path.resolve(basePath, relativePath);
+  // Ensure resolved path is within basePath
+  if (!resolved.startsWith(basePath)) {
+    console.warn(`[Security] Path traversal attempt: ${relativePath} -> ${resolved}`);
+    throw new Error('Path traversal attempt detected');
+  }
+  return resolved;
+}
+
 let supabaseClient: ReturnType<typeof createClient> | null = null;
 
 export function getSupabaseClient() {
@@ -48,7 +63,7 @@ export async function readFile(filePath: string): Promise<Buffer | null> {
 
   if (storageType === 'local') {
     try {
-      const fullPath = path.join(getLocalBasePath(), filePath);
+      const fullPath = resolveLocalPath(filePath);
       if (!fs.existsSync(fullPath)) {
         return null;
       }
@@ -84,8 +99,13 @@ export async function fileExists(filePath: string): Promise<boolean> {
   const storageType = getStorageType();
 
   if (storageType === 'local') {
-    const fullPath = path.join(getLocalBasePath(), filePath);
-    return fs.existsSync(fullPath);
+    try {
+      const fullPath = resolveLocalPath(filePath);
+      return fs.existsSync(fullPath);
+    } catch (error) {
+      // If path traversal attempt, treat as not existing
+      return false;
+    }
   } else {
     try {
       const supabase = getSupabaseClient();
