@@ -34,7 +34,7 @@ from trading_bot.core.utils import seconds_until_next_boundary, get_current_cycl
 from trading_bot.core.error_logger import setup_error_logging, set_run_id, set_cycle_id, clear_cycle_id
 from trading_bot.core.event_emitter import get_event_emitter, BotEvent
 from trading_bot.db.init_trading_db import init_database, get_connection
-from trading_bot.db.client import execute, query, query_one
+from trading_bot.db.client import execute, query, query_one, release_connection
 
 # Configure logging
 # Force unbuffered output to ensure logs appear immediately in Railway/Docker
@@ -312,8 +312,10 @@ class TradingBot:
         # End the run
         self._end_run(status="stopped", reason=reason)
 
+        # Release database connection back to pool (PostgreSQL) or close (SQLite)
         if self._db:
-            self._db.close()
+            release_connection(self._db)
+            self._db = None
 
         logger.info("Trading bot stopped")
 

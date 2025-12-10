@@ -584,8 +584,25 @@ class TradingCycle:
         result["confidence"] = confidence
         result["analysis"] = analysis
 
-        # Record recommendation
-        rec_id = self._record_recommendation(result, analysis)
+        # Record recommendation - CRITICAL: Must succeed before trade execution
+        # Retry up to 3 times to ensure data integrity
+        rec_id = None
+        max_retries = 3
+        for attempt in range(max_retries):
+            rec_id = self._record_recommendation(result, analysis)
+            if rec_id is not None:
+                break
+            if attempt < max_retries - 1:
+                logger.warning(f"   ⚠️ Recommendation recording failed (attempt {attempt + 1}/{max_retries}), retrying...")
+                import time
+                time.sleep(0.5)  # Brief delay before retry
+
+        if rec_id is None:
+            logger.error(f"   ❌ CRITICAL: Failed to record recommendation after {max_retries} attempts - cannot proceed with trade")
+            result["skipped"] = True
+            result["skip_reason"] = "recommendation_recording_failed"
+            return result
+
         result["recommendation_id"] = rec_id
 
         # Check if actionable signal
@@ -669,7 +686,7 @@ class TradingCycle:
             logger.error(f"Failed to build signal: {e}")
             return None
 
-    def _record_recommendation(self, result: Dict[str, Any], analysis: Dict[str, Any]) -> str:
+    def _record_recommendation(self, result: Dict[str, Any], analysis: Dict[str, Any]) -> Optional[str]:
         """Record recommendation to database with full audit trail for reproducibility.
 
         Stores everything needed to reproduce the trade decision:
@@ -678,6 +695,9 @@ class TradingCycle:
         - analysis_prompt: The exact prompt used
         - model_name: Which model made the decision
         - prompt_version: Which prompt version was used
+
+        Returns:
+            recommendation_id if successful, None if failed
         """
         import json
         rec_id = str(uuid.uuid4())[:8]
@@ -747,9 +767,19 @@ class TradingCycle:
                 now_iso,  # created_at - explicit to match format with other tables
             ))
             logger.info(f"📝 Recorded recommendation {rec_id} with full audit trail (prompt: {prompt_name}, model: {model_name})")
+            return rec_id
         except Exception as e:
-            logger.error(f"Failed to record recommendation: {e}", exc_info=True)
-        return rec_id
+            # Log detailed error information for debugging
+            logger.error(f"Failed to record recommendation {rec_id}: {type(e).__name__}: {e}")
+            logger.error(f"   Symbol: {result.get('symbol')}, Cycle: {result.get('cycle_id')}")
+
+            # Check if it's a connection error that might be retryable
+            error_str = str(e).lower()
+            if any(keyword in error_str for keyword in ['connection', 'closed', 'timeout', 'pool']):
+                logger.error(f"   Connection error detected - this is retryable")
+
+            # Return None to indicate failure - caller should handle this
+            return None
 
     def _record_cycle_start(self, cycle_id: str, cycle_start: datetime) -> None:
         """Record cycle start to database (so recommendations can reference it)."""

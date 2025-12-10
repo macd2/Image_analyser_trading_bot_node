@@ -148,8 +148,9 @@ class TradingEngine:
             # Don't call disconnect() - let the shared manager handle it
             self.ws_manager = None
 
+        # Release database connection back to pool (PostgreSQL) or close (SQLite)
         if self._db:
-            self._db.close()
+            release_connection(self._db)
             self._db = None
 
         logger.info("Trading engine stopped")

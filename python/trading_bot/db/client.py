@@ -22,10 +22,15 @@ import sqlite3
 from pathlib import Path
 from typing import Any, List, Tuple, Optional, Union
 from collections.abc import Mapping
+import threading
 
 # Database configuration
 DB_TYPE = os.getenv('DB_TYPE', 'sqlite')
 DATABASE_URL = os.getenv('DATABASE_URL', '')
+
+# PostgreSQL connection pool (singleton)
+_pg_pool = None
+_pg_pool_lock = threading.Lock()
 
 # Unified data folder at project root: ./data/
 # Path resolution: client.py -> db -> trading_bot -> python -> PROJECT_ROOT -> data
@@ -154,22 +159,59 @@ def get_db_path() -> Path:
     return db_path
 
 
+def _get_pg_pool():
+    """
+    Get or create PostgreSQL connection pool (singleton).
+    Thread-safe connection pooling for multi-instance support.
+
+    Returns:
+        psycopg2.pool.ThreadedConnectionPool
+    """
+    global _pg_pool
+
+    if _pg_pool is None:
+        with _pg_pool_lock:
+            # Double-check locking pattern
+            if _pg_pool is None:
+                from psycopg2 import pool
+                from psycopg2 import extensions
+
+                if not DATABASE_URL:
+                    raise ValueError("DATABASE_URL not set for PostgreSQL mode")
+
+                # Create a threaded connection pool
+                # minconn=2, maxconn=20 allows multiple instances to hold connections
+                # Each instance (TradingEngine + TradingCycle) holds 2 connections
+                # So 20 connections supports ~10 instances running in parallel
+                _pg_pool = pool.ThreadedConnectionPool(
+                    minconn=2,
+                    maxconn=20,
+                    dsn=DATABASE_URL
+                )
+
+    return _pg_pool
+
+
 def get_connection():
     """
     Get a database connection.
     Auto-detects SQLite or PostgreSQL based on DB_TYPE env var.
 
+    For PostgreSQL: Returns a connection from the connection pool
+    For SQLite: Returns a new connection (SQLite handles concurrency internally)
+
     Returns:
         sqlite3.Connection or psycopg2.connection
+
+    IMPORTANT: For PostgreSQL, you MUST call putconn() when done to return
+    the connection to the pool. Use the context manager pattern or try/finally.
     """
     if DB_TYPE == 'postgres':
-        import psycopg2
         import psycopg2.extras
 
-        if not DATABASE_URL:
-            raise ValueError("DATABASE_URL not set for PostgreSQL mode")
+        pool = _get_pg_pool()
+        conn = pool.getconn()
 
-        conn = psycopg2.connect(DATABASE_URL)
         # Use RealDictCursor for dict-like row access (similar to sqlite3.Row)
         conn.cursor_factory = psycopg2.extras.RealDictCursor
         return conn
@@ -178,6 +220,24 @@ def get_connection():
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
+
+
+def release_connection(conn):
+    """
+    Release a database connection back to the pool (PostgreSQL only).
+    For SQLite, this closes the connection.
+
+    Args:
+        conn: Database connection to release
+    """
+    if conn is None:
+        return
+
+    if DB_TYPE == 'postgres':
+        pool = _get_pg_pool()
+        pool.putconn(conn)
+    else:
+        conn.close()
 
 
 def get_backtest_connection():
@@ -260,7 +320,12 @@ def execute(conn, sql: str, params: Tuple = (), auto_commit: bool = True) -> int
             return cursor.rowcount
     except Exception as e:
         if auto_commit:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except Exception as rollback_error:
+                # If rollback fails, connection is likely dead
+                import logging
+                logging.getLogger(__name__).error(f"Rollback failed: {rollback_error}")
         raise  # Re-raise the exception after rollback
 
 
@@ -513,6 +578,7 @@ def add_column_if_missing(conn, table_name: str, column_name: str, column_type: 
 
 __all__ = [
     'get_connection',
+    'release_connection',
     'get_backtest_connection',
     'get_db_path',
     'execute',
