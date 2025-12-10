@@ -136,13 +136,22 @@ export async function getSummaryStats(): Promise<{
     WHERE outcome IS NOT NULL AND LOWER(outcome) NOT IN ('pending', 'expired')
   `;
   const results = await query<{
-    totalTrades: number;
-    totalWins: number;
-    overallWinRate: number;
-    totalPnl: number;
-    uniquePrompts: number;
-    uniqueSymbols: number;
+    totaltrades: number;
+    totalwins: number;
+    overallwinrate: number;
+    totalpnl: number;
+    uniqueprompts: number;
+    uniquesymbols: number;
   }>(sql);
-  return results[0] || { totalTrades: 0, totalWins: 0, overallWinRate: 0, totalPnl: 0, uniquePrompts: 0, uniqueSymbols: 0 };
+  const row = results[0];
+  // Ensure numeric types (PostgreSQL returns strings for aggregates and lowercase column names)
+  return {
+    totalTrades: Number(row?.totaltrades) || 0,
+    totalWins: Number(row?.totalwins) || 0,
+    overallWinRate: Number(row?.overallwinrate) || 0,
+    totalPnl: Number(row?.totalpnl) || 0,
+    uniquePrompts: Number(row?.uniqueprompts) || 0,
+    uniqueSymbols: Number(row?.uniquesymbols) || 0,
+  };
 }
 

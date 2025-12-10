@@ -272,7 +272,7 @@ class ConfigV2:
             bybit=cls._load_bybit(yaml_data, db_config),
             trading=cls._load_trading(db_config),
             file_management=cls._load_file_management(yaml_data),
-            tradingview=cls._load_tradingview(yaml_data),
+            tradingview=cls._load_tradingview(yaml_data, db_config),
         )
 
     @classmethod
@@ -460,12 +460,40 @@ class ConfigV2:
             ) if cc else None,
         )
 
-    @staticmethod
-    def _load_tradingview(yaml_data: dict) -> Optional[TradingViewConfig]:
-        """Load TradingView config from YAML."""
+    @classmethod
+    def _load_tradingview(cls, yaml_data: dict, db_config: Optional[dict] = None) -> Optional[TradingViewConfig]:
+        """Load TradingView config from YAML and instance settings (db_config)."""
         tv = yaml_data.get('tradingview', {})
         if not tv:
             return None
+
+        # Helper to get value with instance settings priority
+        def get_value(key: str, default):
+            if db_config is not None:
+                db_key = f'tradingview.{key}'
+                if db_key in db_config:
+                    return db_config[db_key]
+            return tv.get(key, default)
+
+        # Determine if TradingView is enabled (default True)
+        enabled = get_value('enabled', True)
+        
+        # Chart URL template can fallback to YAML
+        chart_url_template = get_value('chart_url_template', 'https://www.tradingview.com/chart/?symbol=BYBIT:{symbol}.P&interval={interval}')
+        
+        # Target chart is REQUIRED from instance settings when TradingView is enabled
+        target_chart = ''
+        if enabled:
+            if db_config is not None:
+                target_chart = db_config.get('tradingview.target_chart')
+            if not target_chart:
+                raise ConfigurationError(
+                    "Missing required config: tradingview.target_chart. "
+                    "Set via dashboard when TradingView is enabled."
+                )
+        else:
+            # If disabled, target_chart can be empty (fallback to YAML or empty)
+            target_chart = get_value('target_chart', '')
 
         browser_data = tv.get('browser', {})
         screenshot_data = tv.get('screenshot', {})
@@ -473,9 +501,9 @@ class ConfigV2:
         auth_data = tv.get('auth', {})
 
         return TradingViewConfig(
-            enabled=tv.get('enabled', True),
-            target_chart=tv.get('target_chart', ''),
-            chart_url_template=tv.get('chart_url_template', 'https://www.tradingview.com/chart/?symbol=BYBIT:{symbol}.P&interval={interval}'),
+            enabled=enabled,
+            target_chart=target_chart,
+            chart_url_template=chart_url_template,
             browser=TradingViewBrowserConfig(
                 headless=browser_data.get('headless', True),
                 timeout=browser_data.get('timeout', 300000),

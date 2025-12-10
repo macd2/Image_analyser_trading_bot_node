@@ -161,6 +161,8 @@ class TradeTracker:
                 f"Trade closed: {trade.symbol} PnL: {trade.pnl:.2f} "
                 f"({trade.pnl_percent:.2f}%)"
             )
+            # Update run aggregates
+            self._update_run_aggregates_on_trade_close(trade.trade_id, trade.pnl)
         
         self._persist_trade(trade)
     
@@ -196,6 +198,27 @@ class TradeTracker:
         except Exception as e:
             logger.error(f"Failed to persist trade: {e}")
     
+    def _update_run_aggregates_on_trade_close(self, trade_id: str, pnl: float) -> None:
+        """Update run aggregates (win_count, loss_count, total_pnl) when a trade closes."""
+        if not self._db:
+            return
+        try:
+            is_win = pnl > 0
+            is_loss = pnl < 0
+            execute(self._db, """
+                UPDATE runs
+                SET total_pnl = total_pnl + ?,
+                    win_count = win_count + ?,
+                    loss_count = loss_count + ?
+                WHERE id = (
+                    SELECT run_id FROM trades WHERE id = ?
+                )
+            """, (pnl, 1 if is_win else 0, 1 if is_loss else 0, trade_id))
+            self._db.commit()
+            logger.debug(f"Updated run aggregates for trade {trade_id} (pnl: {pnl})")
+        except Exception as e:
+            logger.error(f"Failed to update run aggregates: {e}")
+
     def get_trade(self, trade_id: str) -> Optional[TradeRecord]:
         """Get trade by ID."""
         return self._trades.get(trade_id)

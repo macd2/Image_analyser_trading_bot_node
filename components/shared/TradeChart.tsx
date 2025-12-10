@@ -43,13 +43,52 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const [candles, setCandles] = useState<CandlestickData<Time>[]>([])
-  const [loading, setLoading] = useState(true)
+  const [chartReady, setChartReady] = useState(false)
+  const [dataRendered, setDataRendered] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [wsEnabled, setWsEnabled] = useState(false)
   const [priceDecimals, setPriceDecimals] = useState<number>(4)
   const initialLoadRef = useRef(true)
 
+  // Show loading until data is rendered on chart (or there's an error)
+  const loading = !dataRendered && !error
+
   const getBybitInterval = (tf: string | null): string => TIMEFRAME_MAP[tf || '1h'] || '60'
+
+  // Track if component is mounted to avoid state updates after unmount
+  const isMountedRef = useRef(true)
+
+  // Reset state when trade changes
+  useEffect(() => {
+    console.log('[TradeChart] Trade changed, resetting state for:', trade.symbol)
+    setCandles([])
+    setDataRendered(false)
+    setError(null)
+    setWsEnabled(false)
+    initialLoadRef.current = true
+
+    // Cleanup resize handler before destroying chart
+    if (resizeHandlerRef.current) {
+      window.removeEventListener('resize', resizeHandlerRef.current)
+      resizeHandlerRef.current = null
+    }
+
+    // Destroy existing chart so it can be recreated fresh
+    if (chartRef.current) {
+      console.log('[TradeChart] Destroying old chart')
+      try {
+        chartRef.current.remove()
+      } catch (e) {
+        console.warn('[TradeChart] Error removing chart:', e)
+      }
+      chartRef.current = null
+      candleSeriesRef.current = null
+      setChartReady(false)
+    }
+  }, [trade.id, trade.symbol])
+
+  // Store resize handler in ref for cleanup
+  const resizeHandlerRef = useRef<(() => void) | null>(null)
 
   // Helper to get decimals from a price
   const getDecimalsFromPrice = (price: number | null | undefined): number => {
@@ -95,11 +134,10 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
       if (!tradeTimestamp) {
         console.error('[TradeChart] No timestamp available')
         setError('No timestamp available')
-        setLoading(false)
         return
       }
 
-      setLoading(true)
+      setDataRendered(false)
       setError(null)
 
       try {
@@ -139,8 +177,6 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
       } catch (err) {
         console.error('[TradeChart] Fetch error:', err)
         setError('Failed to fetch candles')
-      } finally {
-        setLoading(false)
       }
     }
 
@@ -148,12 +184,13 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
     return () => setWsEnabled(false)
   }, [trade.symbol, trade.submitted_at, trade.filled_at, trade.created_at, trade.closed_at, trade.timeframe, mode, tradePriceDecimals])
 
-  // Create chart
+  // Create chart - recreate when chartReady is false (after reset) or on mount
   useEffect(() => {
-    if (!chartContainerRef.current || chartRef.current) return
+    // Skip if chart already exists or container not ready
+    if (chartReady || !chartContainerRef.current || chartRef.current) return
 
     const timer = setTimeout(() => {
-      if (!chartContainerRef.current) return
+      if (!chartContainerRef.current || chartRef.current) return
       console.log('[TradeChart] Creating chart')
       const chart = createChart(chartContainerRef.current, {
         layout: { background: { color: '#0f172a' }, textColor: '#94a3b8' },
@@ -172,58 +209,79 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
         localization: { priceFormatter: (price: number) => price.toFixed(priceDecimals) },
       })
       chartRef.current = chart
-      console.log('[TradeChart] Chart created')
+      setChartReady(true)
+      console.log('[TradeChart] Chart created and ready')
 
+      // Create and store resize handler for cleanup
       const handleResize = () => {
         if (chartContainerRef.current && chartRef.current) {
           chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth, height })
         }
       }
+      resizeHandlerRef.current = handleResize
       window.addEventListener('resize', handleResize)
-
-      return () => {
-        window.removeEventListener('resize', handleResize)
-        if (chartRef.current) { chartRef.current.remove(); chartRef.current = null }
-      }
     }, 100)
 
     return () => clearTimeout(timer)
-  }, [height, priceDecimals])
+  }, [chartReady, height, priceDecimals])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      console.log('[TradeChart] Unmounting, cleaning up')
+      isMountedRef.current = false
+      if (resizeHandlerRef.current) {
+        window.removeEventListener('resize', resizeHandlerRef.current)
+      }
+      if (chartRef.current) {
+        try {
+          chartRef.current.remove()
+        } catch (e) {
+          console.warn('[TradeChart] Error removing chart on unmount:', e)
+        }
+        chartRef.current = null
+      }
+    }
+  }, [])
 
   // Set data and add price lines/markers
   useEffect(() => {
-    console.log('[TradeChart] Data effect - chartRef:', !!chartRef.current, 'candles:', candles.length)
-    if (!chartRef.current || candles.length === 0) return
+    console.log('[TradeChart] Data effect - chartReady:', chartReady, 'chartRef:', !!chartRef.current, 'candles:', candles.length)
+    if (!chartReady || !chartRef.current || candles.length === 0) return
 
-    // Remove old series if it exists
-    if (candleSeriesRef.current) {
-      console.log('[TradeChart] Removing old series')
-      chartRef.current.removeSeries(candleSeriesRef.current)
-      candleSeriesRef.current = null
-    }
+    try {
+      // Remove old series if it exists
+      if (candleSeriesRef.current && chartRef.current) {
+        console.log('[TradeChart] Removing old series')
+        chartRef.current.removeSeries(candleSeriesRef.current)
+        candleSeriesRef.current = null
+      }
 
-    console.log('[TradeChart] Adding new series with', candles.length, 'candles')
-    const series = chartRef.current.addSeries(CandlestickSeries, {
-      upColor: '#22c55e', downColor: '#ef4444',
-      borderUpColor: '#22c55e', borderDownColor: '#ef4444',
-      wickUpColor: '#22c55e', wickDownColor: '#ef4444',
-    })
-    candleSeriesRef.current = series
-    series.setData(candles)
-    console.log('[TradeChart] Data set on series')
+      if (!chartRef.current) return // Chart may have been disposed
 
-    const formatPrice = (p: number) => p.toFixed(priceDecimals)
+      console.log('[TradeChart] Adding new series with', candles.length, 'candles')
+      const series = chartRef.current.addSeries(CandlestickSeries, {
+        upColor: '#22c55e', downColor: '#ef4444',
+        borderUpColor: '#22c55e', borderDownColor: '#ef4444',
+        wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+      })
+      candleSeriesRef.current = series
+      series.setData(candles)
+      console.log('[TradeChart] Data set on series')
 
-    // Price lines
-    if (trade.entry_price) {
-      series.createPriceLine({ price: trade.entry_price, color: '#3b82f6', lineWidth: 2, lineStyle: 2, title: `Entry ${formatPrice(trade.entry_price)}` })
-    }
-    if (trade.stop_loss) {
-      series.createPriceLine({ price: trade.stop_loss, color: '#ef4444', lineWidth: 1, lineStyle: 1, title: `SL ${formatPrice(trade.stop_loss)}` })
-    }
-    if (trade.take_profit) {
-      series.createPriceLine({ price: trade.take_profit, color: '#22c55e', lineWidth: 1, lineStyle: 1, title: `TP ${formatPrice(trade.take_profit)}` })
-    }
+      const formatPrice = (p: number) => p.toFixed(priceDecimals)
+
+      // Price lines
+      if (trade.entry_price) {
+        series.createPriceLine({ price: trade.entry_price, color: '#3b82f6', lineWidth: 2, lineStyle: 2, title: `Entry ${formatPrice(trade.entry_price)}` })
+      }
+      if (trade.stop_loss) {
+        series.createPriceLine({ price: trade.stop_loss, color: '#ef4444', lineWidth: 1, lineStyle: 1, title: `SL ${formatPrice(trade.stop_loss)}` })
+      }
+      if (trade.take_profit) {
+        series.createPriceLine({ price: trade.take_profit, color: '#22c55e', lineWidth: 1, lineStyle: 1, title: `TP ${formatPrice(trade.take_profit)}` })
+      }
     if (trade.exit_price) {
       series.createPriceLine({ price: trade.exit_price, color: '#f59e0b', lineWidth: 2, lineStyle: 0, title: `Exit ${formatPrice(trade.exit_price)}` })
     }
@@ -293,15 +351,27 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
       createSeriesMarkers(series, markers as any)
     }
 
-    if (initialLoadRef.current) {
-      chartRef.current.timeScale().fitContent()
-      initialLoadRef.current = false
+      if (initialLoadRef.current && chartRef.current) {
+        chartRef.current.timeScale().fitContent()
+        initialLoadRef.current = false
+      }
+
+      // Wait for the chart to actually render before hiding loading spinner
+      // Check isMountedRef to avoid state updates after unmount
+      requestAnimationFrame(() => {
+        if (isMountedRef.current) {
+          setDataRendered(true)
+          console.log('[TradeChart] Data rendered successfully')
+        }
+      })
+    } catch (e) {
+      console.warn('[TradeChart] Error setting data on chart (may be disposed):', e)
     }
-  }, [candles, trade, priceDecimals])
+  }, [candles, trade, priceDecimals, chartReady])
 
   return (
-    <div className="relative w-full" style={{ height }}>
-      <div ref={chartContainerRef} className="w-full h-full rounded-lg overflow-hidden" />
+    <div className="relative w-full bg-slate-900" style={{ height }}>
+      <div ref={chartContainerRef} className="w-full h-full rounded-lg overflow-hidden bg-[#0f172a]" />
       {mode === 'live' && wsEnabled && (
         <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-green-900/80 px-2 py-1 rounded text-xs text-green-400">
           <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
@@ -309,7 +379,7 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
         </div>
       )}
       {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80 rounded-lg">
+        <div className="absolute inset-0 flex items-center justify-center bg-[#0f172a] rounded-lg z-10">
           <div className="text-white flex flex-col items-center gap-2">
             <div className="animate-spin w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full" />
             <div className="text-sm">Loading chart...</div>
@@ -317,7 +387,7 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
         </div>
       )}
       {error && !loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80 rounded-lg">
+        <div className="absolute inset-0 flex items-center justify-center bg-[#0f172a] rounded-lg z-10">
           <div className="text-red-400 text-sm">{error}</div>
         </div>
       )}

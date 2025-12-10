@@ -339,10 +339,41 @@ export interface InstanceSummary extends InstanceWithStatus {
   win_count: number;
   loss_count: number;
   win_rate: number;
+  expected_value: number; // EV = (win_rate × avg_win) - (loss_rate × avg_loss)
+  avg_win: number;
+  avg_loss: number;
   config: {
     use_testnet: boolean;
     paper_trading: boolean;
   };
+  running_duration_hours?: number;
+  latest_cycle?: {
+    charts_captured: number;
+    recommendations_generated: number;
+    trades_executed: number;
+  };
+  // NEW: Detailed breakdown for live vs dry
+  live_closed: number;
+  live_open: number;
+  live_wins: number;
+  live_losses: number;
+  live_pnl: number;
+  live_ev: number;
+  dry_closed: number;
+  dry_open: number;
+  dry_wins: number;
+  dry_losses: number;
+  dry_pnl: number;
+  dry_ev: number;
+  // Signal quality metrics
+  last_cycle_symbols: string[];
+  actionable_percent: number;
+  actionable_count: number;
+  total_recs: number;
+  avg_confidence: number;
+  avg_risk_reward: number;
+  // Recent logs (last 3)
+  recent_logs: { timestamp: string; level: string; message: string }[];
 }
 
 /**
@@ -354,63 +385,171 @@ export async function getInstancesWithSummary(): Promise<InstanceSummary[]> {
 
   const results: InstanceSummary[] = [];
   for (const instance of instances) {
-    // Get stats from actual trades table
     // Use DB-specific dry_run comparison (boolean for PostgreSQL, integer for SQLite)
     const liveComparison = getDryRunComparison(true);
-    const paperComparison = getDryRunComparison(false);
+    const dryComparison = getDryRunComparison(false);
 
+    // Get detailed stats for both live and dry trades
     const stats = await dbQueryOne<{
-      live_trades: number;
-      dry_run_trades: number;
-      live_pnl: number;
-      live_wins: number;
-      live_losses: number;
+      live_closed: number; live_open: number;
+      live_wins: number; live_losses: number;
+      live_pnl: number; live_avg_win: number; live_avg_loss: number;
+      dry_closed: number; dry_open: number;
+      dry_wins: number; dry_losses: number;
+      dry_pnl: number; dry_avg_win: number; dry_avg_loss: number;
     }>(`
       SELECT
-        COUNT(CASE WHEN ${liveComparison} THEN 1 END) as live_trades,
-        COUNT(CASE WHEN ${paperComparison} THEN 1 END) as dry_run_trades,
+        COUNT(CASE WHEN ${liveComparison} AND t.status IN ('closed', 'filled') THEN 1 END) as live_closed,
+        COUNT(CASE WHEN ${liveComparison} AND t.status IN ('pending', 'submitted', 'pending_fill') THEN 1 END) as live_open,
+        COUNT(CASE WHEN ${liveComparison} AND t.status IN ('closed', 'filled') AND t.pnl > 0 THEN 1 END) as live_wins,
+        COUNT(CASE WHEN ${liveComparison} AND t.status IN ('closed', 'filled') AND t.pnl < 0 THEN 1 END) as live_losses,
         COALESCE(SUM(CASE WHEN ${liveComparison} AND t.pnl IS NOT NULL THEN t.pnl ELSE 0 END), 0) as live_pnl,
-        COUNT(CASE WHEN ${liveComparison} AND t.pnl > 0 THEN 1 END) as live_wins,
-        COUNT(CASE WHEN ${liveComparison} AND t.pnl < 0 THEN 1 END) as live_losses
+        COALESCE(AVG(CASE WHEN ${liveComparison} AND t.pnl > 0 THEN t.pnl END), 0) as live_avg_win,
+        COALESCE(AVG(CASE WHEN ${liveComparison} AND t.pnl < 0 THEN ABS(t.pnl) END), 0) as live_avg_loss,
+        COUNT(CASE WHEN ${dryComparison} AND t.status IN ('closed', 'filled') THEN 1 END) as dry_closed,
+        COUNT(CASE WHEN ${dryComparison} AND t.status IN ('pending', 'submitted', 'pending_fill', 'paper_trade') THEN 1 END) as dry_open,
+        COUNT(CASE WHEN ${dryComparison} AND t.status IN ('closed', 'filled') AND t.pnl > 0 THEN 1 END) as dry_wins,
+        COUNT(CASE WHEN ${dryComparison} AND t.status IN ('closed', 'filled') AND t.pnl < 0 THEN 1 END) as dry_losses,
+        COALESCE(SUM(CASE WHEN ${dryComparison} AND t.pnl IS NOT NULL THEN t.pnl ELSE 0 END), 0) as dry_pnl,
+        COALESCE(AVG(CASE WHEN ${dryComparison} AND t.pnl > 0 THEN t.pnl END), 0) as dry_avg_win,
+        COALESCE(AVG(CASE WHEN ${dryComparison} AND t.pnl < 0 THEN ABS(t.pnl) END), 0) as dry_avg_loss
       FROM trades t
       JOIN cycles c ON t.cycle_id = c.id
       JOIN runs r ON c.run_id = r.id
       WHERE r.instance_id = ?
-        AND t.status NOT IN ('rejected', 'cancelled', 'error')
-    `, [instance.id]) || { live_trades: 0, dry_run_trades: 0, live_pnl: 0, live_wins: 0, live_losses: 0 };
+    `, [instance.id]) || {
+      live_closed: 0, live_open: 0, live_wins: 0, live_losses: 0, live_pnl: 0, live_avg_win: 0, live_avg_loss: 0,
+      dry_closed: 0, dry_open: 0, dry_wins: 0, dry_losses: 0, dry_pnl: 0, dry_avg_win: 0, dry_avg_loss: 0
+    };
 
-    // Parse instance settings
+    // Parse instance settings (PostgreSQL returns JSONB as object, SQLite returns string)
     let instanceSettings: Record<string, unknown> = {};
     if (instance.settings) {
-      try {
-        instanceSettings = JSON.parse(instance.settings);
-      } catch {
-        // Ignore parse errors
+      if (typeof instance.settings === 'string') {
+        try { instanceSettings = JSON.parse(instance.settings); } catch { /* ignore */ }
+      } else if (typeof instance.settings === 'object') {
+        instanceSettings = instance.settings as Record<string, unknown>;
       }
     }
 
-    // Win rate based on live trades only
-    const winRate = (stats.live_wins + stats.live_losses) > 0
-      ? (stats.live_wins / (stats.live_wins + stats.live_losses)) * 100
-      : 0;
+    // Ensure numeric types (PostgreSQL returns strings)
+    const liveClosed = Number(stats.live_closed) || 0;
+    const liveOpen = Number(stats.live_open) || 0;
+    const liveWins = Number(stats.live_wins) || 0;
+    const liveLosses = Number(stats.live_losses) || 0;
+    const livePnl = Number(stats.live_pnl) || 0;
+    const liveAvgWin = Number(stats.live_avg_win) || 0;
+    const liveAvgLoss = Number(stats.live_avg_loss) || 0;
+    const dryClosed = Number(stats.dry_closed) || 0;
+    const dryOpen = Number(stats.dry_open) || 0;
+    const dryWins = Number(stats.dry_wins) || 0;
+    const dryLosses = Number(stats.dry_losses) || 0;
+    const dryPnl = Number(stats.dry_pnl) || 0;
+    const dryAvgWin = Number(stats.dry_avg_win) || 0;
+    const dryAvgLoss = Number(stats.dry_avg_loss) || 0;
 
-    // Get config from instance settings
+    // Calculate EV for live trades
+    const liveTotal = liveWins + liveLosses;
+    const liveWinDec = liveTotal > 0 ? liveWins / liveTotal : 0;
+    const liveLossDec = liveTotal > 0 ? liveLosses / liveTotal : 0;
+    const liveEv = (liveWinDec * liveAvgWin) - (liveLossDec * liveAvgLoss);
+
+    // Calculate EV for dry trades
+    const dryTotal = dryWins + dryLosses;
+    const dryWinDec = dryTotal > 0 ? dryWins / dryTotal : 0;
+    const dryLossDec = dryTotal > 0 ? dryLosses / dryTotal : 0;
+    const dryEv = (dryWinDec * dryAvgWin) - (dryLossDec * dryAvgLoss);
+
+    // Overall stats (live + dry)
+    const totalWins = liveWins + dryWins;
+    const totalLosses = liveLosses + dryLosses;
+    const totalClosed = totalWins + totalLosses;
+    const winRate = totalClosed > 0 ? (totalWins / totalClosed) * 100 : 0;
+    const totalPnl = livePnl + dryPnl;
+    const avgWin = (liveAvgWin + dryAvgWin) / 2 || liveAvgWin || dryAvgWin;
+    const avgLoss = (liveAvgLoss + dryAvgLoss) / 2 || liveAvgLoss || dryAvgLoss;
+    const winDec = totalClosed > 0 ? totalWins / totalClosed : 0;
+    const lossDec = totalClosed > 0 ? totalLosses / totalClosed : 0;
+    const expectedValue = (winDec * avgWin) - (lossDec * avgLoss);
+
+    // Config
     const useTestnet = instanceSettings['bybit.use_testnet'] === 'true' || instanceSettings['bybit.use_testnet'] === true;
     const paperTrading = instanceSettings['trading.paper_trading'] === 'true' || instanceSettings['trading.paper_trading'] === true;
 
+    // Running duration
+    let runningDurationHours: number | undefined;
+    if (instance.is_running && instance.current_run_id) {
+      const runInfo = await dbQueryOne<{ started_at: string }>(`SELECT started_at FROM runs WHERE id = ?`, [instance.current_run_id]);
+      if (runInfo) runningDurationHours = (Date.now() - new Date(runInfo.started_at).getTime()) / (1000 * 60 * 60);
+    }
+
+    // Latest cycle metrics + symbols
+    let latestCycle: { charts_captured: number; recommendations_generated: number; trades_executed: number } | undefined;
+    let lastCycleSymbols: string[] = [];
+    if (instance.current_run_id) {
+      const cycleInfo = await dbQueryOne<{ id: string; charts_captured: number; recommendations_generated: number; trades_executed: number }>(`
+        SELECT id, charts_captured, recommendations_generated, trades_executed FROM cycles WHERE run_id = ? ORDER BY started_at DESC LIMIT 1
+      `, [instance.current_run_id]);
+      if (cycleInfo) {
+        latestCycle = { charts_captured: Number(cycleInfo.charts_captured) || 0, recommendations_generated: Number(cycleInfo.recommendations_generated) || 0, trades_executed: Number(cycleInfo.trades_executed) || 0 };
+        // Get unique symbols from last cycle's recommendations
+        const symbols = await dbQuery<{ symbol: string }>(`SELECT DISTINCT symbol FROM recommendations WHERE cycle_id = ?`, [cycleInfo.id]);
+        lastCycleSymbols = symbols.map(s => s.symbol);
+      }
+    }
+
+    // Signal quality metrics (from recommendations in current run)
+    // Actionable = recs that meet min_confidence and min_rr thresholds from settings
+    let actionablePercent = 0, actionableCount = 0, totalRecs = 0, avgConfidence = 0, avgRiskReward = 0;
+    const minConfidence = Number(instanceSettings['trading.min_confidence']) || 0.6;
+    const minRR = Number(instanceSettings['trading.min_rr']) || 1.5;
+    if (instance.current_run_id) {
+      const recStats = await dbQueryOne<{ total: number; actionable: number; avg_conf: number; avg_rr: number }>(`
+        SELECT
+          COUNT(*) as total,
+          COUNT(CASE WHEN recommendation != 'hold' AND confidence >= ? AND risk_reward >= ? THEN 1 END) as actionable,
+          AVG(confidence) as avg_conf,
+          AVG(risk_reward) as avg_rr
+        FROM recommendations r JOIN cycles c ON r.cycle_id = c.id WHERE c.run_id = ?
+      `, [minConfidence, minRR, instance.current_run_id]);
+      if (recStats) {
+        totalRecs = Number(recStats.total) || 0;
+        actionableCount = Number(recStats.actionable) || 0;
+        avgConfidence = Number(recStats.avg_conf) || 0;
+        avgRiskReward = Number(recStats.avg_rr) || 0;
+        actionablePercent = totalRecs > 0 ? (actionableCount / totalRecs) * 100 : 0;
+      }
+    }
+
+    // Recent logs (last 3)
+    const recentLogs = await dbQuery<{ timestamp: string; level: string; message: string }>(`
+      SELECT timestamp, level, message FROM error_logs el
+      LEFT JOIN runs r ON el.run_id = r.id
+      WHERE r.instance_id = ?
+      ORDER BY el.timestamp DESC LIMIT 3
+    `, [instance.id]);
+
     results.push({
       ...instance,
-      total_trades: stats.live_trades + stats.dry_run_trades,
-      live_trades: stats.live_trades,
-      dry_run_trades: stats.dry_run_trades,
-      total_pnl: stats.live_pnl,
-      win_count: stats.live_wins,
-      loss_count: stats.live_losses,
+      total_trades: liveClosed + liveOpen + dryClosed + dryOpen,
+      live_trades: liveClosed + liveOpen,
+      dry_run_trades: dryClosed + dryOpen,
+      total_pnl: totalPnl,
+      win_count: totalWins,
+      loss_count: totalLosses,
       win_rate: winRate,
-      config: {
-        use_testnet: useTestnet,
-        paper_trading: paperTrading,
-      },
+      expected_value: expectedValue,
+      avg_win: avgWin,
+      avg_loss: avgLoss,
+      config: { use_testnet: useTestnet, paper_trading: paperTrading },
+      running_duration_hours: runningDurationHours,
+      latest_cycle: latestCycle,
+      // NEW fields
+      live_closed: liveClosed, live_open: liveOpen, live_wins: liveWins, live_losses: liveLosses, live_pnl: livePnl, live_ev: liveEv,
+      dry_closed: dryClosed, dry_open: dryOpen, dry_wins: dryWins, dry_losses: dryLosses, dry_pnl: dryPnl, dry_ev: dryEv,
+      last_cycle_symbols: lastCycleSymbols,
+      actionable_percent: actionablePercent, actionable_count: actionableCount, total_recs: totalRecs, avg_confidence: avgConfidence, avg_risk_reward: avgRiskReward,
+      recent_logs: recentLogs,
     });
   }
   return results;
@@ -545,166 +684,76 @@ export async function updateInstanceSettings(instanceId: string, updates: Array<
   return result.changes > 0;
 }
 
-// Static config metadata (type, category, description, tooltip) for known settings
-const CONFIG_METADATA: Record<string, { type: 'string' | 'number' | 'boolean' | 'json'; category: string; description: string; tooltip?: string }> = {
-  'openai.assistant_id': { type: 'string', category: 'ai', description: 'OpenAI Assistant ID', tooltip: 'The unique identifier for your OpenAI Assistant' },
-  'openai.model': { type: 'string', category: 'ai', description: 'OpenAI Model', tooltip: 'AI model to use for analysis (e.g., gpt-4, gpt-3.5-turbo)' },
-  'bybit.max_retries': { type: 'number', category: 'exchange', description: 'Max retries for API calls', tooltip: 'Number of times to retry failed API requests' },
-  'bybit.recv_window': { type: 'number', category: 'exchange', description: 'Receive window in ms', tooltip: 'Time window for API request validity (milliseconds)' },
-  'bybit.use_testnet': { type: 'boolean', category: 'exchange', description: 'Use Bybit testnet', tooltip: 'Connect to Bybit testnet instead of mainnet' },
-  'trading.enable_intelligent_replacement': { type: 'boolean', category: 'replacement', description: 'Enable intelligent order replacement', tooltip: 'Replace existing orders with better opportunities based on AI score improvement' },
-  'trading.min_score_improvement_threshold': { type: 'number', category: 'replacement', description: 'Min score improvement for replacement', tooltip: 'Minimum AI confidence score improvement required to replace an existing order (0.0-1.0)' },
-  'trading.min_position_value_usd': { type: 'number', category: 'sizing', description: 'Minimum position value in USD', tooltip: 'Minimum USD value for any position to prevent dust trades' },
-  'trading.use_enhanced_position_sizing': { type: 'boolean', category: 'sizing', description: 'Use enhanced position sizing', tooltip: 'Use confidence-weighted position sizing instead of fixed risk percentage' },
+// Static config metadata (type, category, description, tooltip, group) for known settings
+// group is used to visually group related settings together in the UI
+// Groups starting with "1.", "2.", etc. are sorted in that order
+// Groups with "├─" or "└─" are displayed as child groups (indented)
+type ConfigMeta = { type: 'string' | 'number' | 'boolean' | 'json'; category: string; description: string; tooltip?: string; group?: string; order?: number };
+const CONFIG_METADATA: Record<string, ConfigMeta> = {
+  // AI Settings
+  'openai.assistant_id': { type: 'string', category: 'ai', group: '1. Model Configuration', description: 'OpenAI Assistant ID', tooltip: 'The unique identifier for your OpenAI Assistant', order: 1 },
+  'openai.model': { type: 'string', category: 'ai', group: '1. Model Configuration', description: 'OpenAI Model', tooltip: 'AI model to use for analysis (e.g., gpt-4, gpt-3.5-turbo)', order: 2 },
 
-  // Trade Monitor - Master Control
-  'trading.enable_position_tightening': {
-    type: 'boolean',
-    category: 'trade monitor',
-    description: 'Master tightening switch',
-    tooltip: '🔴 MASTER SWITCH: Disables ALL tightening mechanisms when OFF (RR, TP proximity, age-based, ADX)'
-  },
+  // Exchange Settings
+  'bybit.use_testnet': { type: 'boolean', category: 'exchange', group: '1. Connection', description: 'Use Bybit testnet', tooltip: 'Connect to Bybit testnet instead of mainnet', order: 1 },
+  'bybit.max_retries': { type: 'number', category: 'exchange', group: '2. API Settings', description: 'Max retries for API calls', tooltip: 'Number of times to retry failed API requests', order: 10 },
+  'bybit.recv_window': { type: 'number', category: 'exchange', group: '2. API Settings', description: 'Receive window in ms', tooltip: 'Time window for API request validity (milliseconds)', order: 11 },
 
-  // Trade Monitor - RR-based Tightening
-  'trading.enable_sl_tightening': {
-    type: 'boolean',
-    category: 'trade monitor',
-    description: 'RR-based tightening',
-    tooltip: 'Tighten stop loss as profit increases based on Risk:Reward ratio thresholds (e.g., at 2R move SL to 1.2R)'
-  },
-  'trading.rr_tightening_steps': {
-    type: 'json',
-    category: 'trade monitor',
-    description: 'RR tightening steps',
-    tooltip: 'Define profit thresholds and new SL positions. Example: {"2R": {"threshold": 2.0, "sl_position": 1.2}}'
-  },
+  // Trading - Core
+  'trading.paper_trading': { type: 'boolean', category: 'trading', group: '1. Core', description: 'Paper trading mode', tooltip: 'Simulate trades without real money (dry run mode for testing strategies)', order: 1 },
+  'trading.auto_approve_trades': { type: 'boolean', category: 'trading', group: '1. Core', description: 'Auto-approve trades', tooltip: 'Automatically execute trades without manual approval (use with caution in live trading)', order: 2 },
+  'trading.max_concurrent_trades': { type: 'number', category: 'trading', group: '1. Core', description: 'Max concurrent trades', tooltip: 'Maximum number of positions/orders that can be open at the same time', order: 4 },
 
-  // Trade Monitor - TP Proximity Trailing
-  'trading.enable_tp_proximity_trailing': {
-    type: 'boolean',
-    category: 'trade monitor',
-    description: 'TP proximity trailing',
-    tooltip: 'Convert SL to trailing stop when price gets close to take profit target'
-  },
-  'trading.tp_proximity_threshold_pct': {
-    type: 'number',
-    category: 'trade monitor',
-    description: 'TP proximity threshold %',
-    tooltip: 'Activate trailing stop when within X% of take profit (e.g., 1.0 = activate when 1% away from TP)'
-  },
-  'trading.tp_proximity_trailing_pct': {
-    type: 'number',
-    category: 'trade monitor',
-    description: 'TP proximity trailing %',
-    tooltip: 'Trail stop loss X% behind current price once activated (e.g., 1.0 = trail 1% behind price)'
-  },
+  // Trading - Risk Management
+  'trading.leverage': { type: 'number', category: 'trading', group: '2. Risk Management', description: 'Trading leverage', tooltip: 'Leverage multiplier for positions (e.g., 2 = 2x leverage). Higher leverage = higher risk', order: 10 },
+  'trading.risk_percentage': { type: 'number', category: 'trading', group: '2. Risk Management', description: 'Risk percentage per trade', tooltip: 'Percentage of account balance to risk per trade (e.g., 0.01 = 1% of balance)', order: 11 },
+  'trading.max_loss_usd': { type: 'number', category: 'trading', group: '2. Risk Management', description: 'Max loss per trade in USD', tooltip: 'Maximum dollar amount to risk on a single trade (hard cap on position size)', order: 12 },
+  'trading.min_rr': { type: 'number', category: 'trading', group: '2. Risk Management', description: 'Minimum risk:reward ratio', tooltip: 'Minimum Risk:Reward ratio required for a trade (e.g., 1.7 = must have at least 1.7R potential profit)', order: 13 },
+  'trading.min_confidence_threshold': { type: 'number', category: 'trading', group: '2. Risk Management', description: 'Min confidence threshold', tooltip: 'Minimum AI confidence score required to take a trade (0.0-1.0, e.g., 0.75 = 75% confidence)', order: 14 },
 
-  // Trade Monitor - Age-based Tightening
-  'trading.age_tightening_enabled': {
-    type: 'boolean',
-    category: 'trade monitor',
-    description: 'Age-based tightening',
-    tooltip: 'Tighten stop loss for unprofitable positions that have been open too long (time-based risk reduction)'
-  },
-  'trading.age_tightening_max_pct': {
-    type: 'number',
-    category: 'trade monitor',
-    description: 'Max age tightening %',
-    tooltip: 'Maximum percentage to tighten SL (e.g., 30 = tighten up to 30% of original risk distance)'
-  },
-  'trading.age_tightening_min_profit_threshold': {
-    type: 'number',
-    category: 'trade monitor',
-    description: 'Min profit threshold (R)',
-    tooltip: 'Only apply age-based tightening if profit is below this level in R (e.g., 1.0 = only tighten if below 1R profit)'
-  },
-  'trading.age_tightening_bars': {
-    type: 'json',
-    category: 'trade monitor',
-    description: 'Age tightening bars',
-    tooltip: 'Number of bars before tightening per timeframe. Example: {"1h": 48, "4h": 18, "1d": 4}'
-  },
+  // Trading - Position Sizing
+  'trading.use_enhanced_position_sizing': { type: 'boolean', category: 'trading', group: '3. Position Sizing', description: 'Use enhanced position sizing', tooltip: 'Use confidence-weighted position sizing instead of fixed risk percentage', order: 20 },
+  'trading.min_position_value_usd': { type: 'number', category: 'trading', group: '3. Position Sizing', description: 'Minimum position value in USD', tooltip: 'Minimum USD value for any position to prevent dust trades', order: 21 },
 
-  // Trade Monitor - Age-based Cancellation
-  'trading.age_cancellation_enabled': {
-    type: 'boolean',
-    category: 'trade monitor',
-    description: 'Age-based cancellation',
-    tooltip: 'Cancel unfilled orders that have been pending too long (prevents stale orders)'
-  },
-  'trading.age_cancellation_max_bars': {
-    type: 'json',
-    category: 'trade monitor',
-    description: 'Max age bars for cancellation',
-    tooltip: 'Maximum bars before cancelling unfilled orders per timeframe. Example: {"1h": 48, "4h": 18}'
-  },
+  // Trading - Order Replacement
+  'trading.enable_intelligent_replacement': { type: 'boolean', category: 'trading', group: '4. Order Replacement', description: 'Enable intelligent order replacement', tooltip: 'Replace existing orders with better opportunities based on AI score improvement', order: 30 },
+  'trading.min_score_improvement_threshold': { type: 'number', category: 'trading', group: '4. Order Replacement', description: 'Min score improvement for replacement', tooltip: 'Minimum AI confidence score improvement required to replace an existing order (0.0-1.0)', order: 31 },
 
-  // Trade Monitor - ADX Tightening (Not yet implemented)
-  'trading.enable_adx_tightening': {
-    type: 'boolean',
-    category: 'trade monitor',
-    description: 'ADX-based tightening',
-    tooltip: '⚠️ NOT YET IMPLEMENTED - Will tighten stops based on ADX trend strength and ATR volatility'
-  },
-  'trading.auto_approve_trades': {
-    type: 'boolean',
-    category: 'trading',
-    description: 'Auto-approve trades',
-    tooltip: 'Automatically execute trades without manual approval (use with caution in live trading)'
-  },
-  'trading.leverage': {
-    type: 'number',
-    category: 'trading',
-    description: 'Trading leverage',
-    tooltip: 'Leverage multiplier for positions (e.g., 2 = 2x leverage). Higher leverage = higher risk'
-  },
-  'trading.max_concurrent_trades': {
-    type: 'number',
-    category: 'trading',
-    description: 'Max concurrent trades',
-    tooltip: 'Maximum number of positions/orders that can be open at the same time'
-  },
-  'trading.max_loss_usd': {
-    type: 'number',
-    category: 'trading',
-    description: 'Max loss per trade in USD',
-    tooltip: 'Maximum dollar amount to risk on a single trade (hard cap on position size)'
-  },
-  'trading.min_confidence_threshold': {
-    type: 'number',
-    category: 'trading',
-    description: 'Min confidence threshold',
-    tooltip: 'Minimum AI confidence score required to take a trade (0.0-1.0, e.g., 0.75 = 75% confidence)'
-  },
-  'trading.min_rr': {
-    type: 'number',
-    category: 'trading',
-    description: 'Minimum risk:reward ratio',
-    tooltip: 'Minimum Risk:Reward ratio required for a trade (e.g., 1.7 = must have at least 1.7R potential profit)'
-  },
-  'trading.paper_trading': {
-    type: 'boolean',
-    category: 'trading',
-    description: 'Paper trading mode',
-    tooltip: 'Simulate trades without real money (dry run mode for testing strategies)'
-  },
-  'trading.risk_percentage': {
-    type: 'number',
-    category: 'trading',
-    description: 'Risk percentage per trade',
-    tooltip: 'Percentage of account balance to risk per trade (e.g., 0.01 = 1% of balance)'
-  },
-  'trading.timeframe': {
-    type: 'string',
-    category: 'trading',
-    description: 'Trading timeframe',
-    tooltip: 'Chart timeframe for analysis (e.g., 1h, 4h, 1d). Affects candle data and age-based calculations'
-  },
+  // Trade Monitor - Master Control (Level 1)
+  'trading.enable_position_tightening': { type: 'boolean', category: 'trade monitor', group: '1. Master Control', description: 'Master tightening switch', tooltip: '🔴 MASTER SWITCH: Disables ALL tightening mechanisms below when OFF (RR, TP proximity, age-based, ADX)', order: 1 },
+
+  // Trade Monitor - RR-based Tightening (Level 2 - controlled by master)
+  'trading.enable_sl_tightening': { type: 'boolean', category: 'trade monitor', group: '2. ├─ RR Tightening', description: 'RR-based tightening', tooltip: 'Tighten stop loss as profit increases based on Risk:Reward ratio thresholds (e.g., at 2R move SL to 1.2R)', order: 10 },
+  'trading.rr_tightening_steps': { type: 'json', category: 'trade monitor', group: '2. ├─ RR Tightening', description: 'RR tightening steps', tooltip: 'Define profit thresholds and new SL positions. Example: {"2R": {"threshold": 2.0, "sl_position": 1.2}}', order: 11 },
+
+  // Trade Monitor - TP Proximity Trailing (Level 2 - controlled by master)
+  'trading.enable_tp_proximity_trailing': { type: 'boolean', category: 'trade monitor', group: '2. ├─ TP Proximity', description: 'TP proximity trailing', tooltip: 'Convert SL to trailing stop when price gets close to take profit target', order: 20 },
+  'trading.tp_proximity_threshold_pct': { type: 'number', category: 'trade monitor', group: '2. ├─ TP Proximity', description: 'TP proximity threshold %', tooltip: 'Activate trailing stop when within X% of take profit (e.g., 1.0 = activate when 1% away from TP)', order: 21 },
+  'trading.tp_proximity_trailing_pct': { type: 'number', category: 'trade monitor', group: '2. ├─ TP Proximity', description: 'TP proximity trailing %', tooltip: 'Trail stop loss X% behind current price once activated (e.g., 1.0 = trail 1% behind price)', order: 22 },
+
+  // Trade Monitor - Age-based Tightening (Level 2 - controlled by master)
+  'trading.age_tightening_enabled': { type: 'boolean', category: 'trade monitor', group: '2. ├─ Age Tightening', description: 'Age-based tightening', tooltip: 'Tighten stop loss for unprofitable positions that have been open too long (time-based risk reduction)', order: 30 },
+  'trading.age_tightening_max_pct': { type: 'number', category: 'trade monitor', group: '2. ├─ Age Tightening', description: 'Max age tightening %', tooltip: 'Maximum percentage to tighten SL (e.g., 30 = tighten up to 30% of original risk distance)', order: 31 },
+  'trading.age_tightening_min_profit_threshold': { type: 'number', category: 'trade monitor', group: '2. ├─ Age Tightening', description: 'Min profit threshold (R)', tooltip: 'Only apply age-based tightening if profit is below this level in R (e.g., 1.0 = only tighten if below 1R profit)', order: 32 },
+  'trading.age_tightening_bars': { type: 'json', category: 'trade monitor', group: '2. ├─ Age Tightening', description: 'Age tightening bars', tooltip: 'Number of bars before tightening per timeframe. Example: {"1h": 48, "4h": 18, "1d": 4}', order: 33 },
+
+  // Trade Monitor - ADX Tightening (Level 2 - controlled by master, not implemented)
+  'trading.enable_adx_tightening': { type: 'boolean', category: 'trade monitor', group: '2. └─ ADX Tightening', description: 'ADX-based tightening', tooltip: '⚠️ NOT YET IMPLEMENTED - Will tighten stops based on ADX trend strength and ATR volatility', order: 40 },
+
+  // Trade Monitor - Age-based Cancellation (Independent - NOT controlled by master)
+  'trading.age_cancellation_enabled': { type: 'boolean', category: 'trade monitor', group: '3. Order Cancellation', description: 'Age-based cancellation', tooltip: '⚡ INDEPENDENT: Cancel unfilled orders that have been pending too long (not affected by master switch)', order: 50 },
+  'trading.age_cancellation_max_bars': { type: 'json', category: 'trade monitor', group: '3. Order Cancellation', description: 'Max age bars for cancellation', tooltip: 'Maximum bars before cancelling unfilled orders per timeframe. Example: {"1h": 48, "4h": 18}', order: 51 },
+
+  // TradingView - Chart Capture (under Trading category)
+  'tradingview.enabled': { type: 'boolean', category: 'Tradingview', group: '5. Chart Capture', description: 'Enable TradingView chart capture', tooltip: 'Capture charts from TradingView for analysis', order: 40 },
+  'tradingview.target_chart': { type: 'string', category: 'Tradingview', group: '5. Chart Capture', description: 'Target chart URL or identifier', tooltip: 'The TradingView chart URL or identifier to capture (e.g., "BTCUSDT" or full URL)', order: 41 },
+  'trading.timeframe': { type: 'string', category: 'Tradingview', group: '5. Chart Capture', description: 'Trading timeframe', tooltip: 'Chart timeframe for analysis (e.g., 1h, 4h, 1d). Affects candle data and age-based calculations', order: 42 },
+
 };
 
 /**
  * Get instance config as ConfigRow array (for API compatibility)
- * Uses static metadata for type and category
+ * Returns ALL keys from CONFIG_METADATA, with values only if present in instance settings
  */
 export async function getInstanceConfigAsRows(instanceId: string): Promise<ConfigRow[]> {
   const instance = await getInstanceById(instanceId);
@@ -722,33 +771,40 @@ export async function getInstanceConfigAsRows(instanceId: string): Promise<Confi
     }
     const rows: ConfigRow[] = [];
 
-    for (const [key, value] of Object.entries(settings)) {
-      const meta = CONFIG_METADATA[key];
+    // Iterate over ALL keys in CONFIG_METADATA to show all possible settings
+    for (const [key, meta] of Object.entries(CONFIG_METADATA)) {
+      const instanceValue = settings[key];
+      const hasValue = instanceValue !== undefined;
+
       rows.push({
         key,
-        value: typeof value === 'string' ? value : JSON.stringify(value),
-        type: meta?.type || inferType(typeof value === 'string' ? value : JSON.stringify(value)),
-        category: meta?.category || key.split('.')[0] || 'trading',
-        description: meta?.description || null,
-        tooltip: meta?.tooltip || null,
+        value: hasValue
+          ? (typeof instanceValue === 'string' ? instanceValue : JSON.stringify(instanceValue))
+          : '',  // Empty string if not set
+        hasValue,
+        type: meta.type,
+        category: meta.category,
+        group: meta.group || null,
+        order: meta.order || 999,
+        description: meta.description || null,
+        tooltip: meta.tooltip || null,
         updated_at: instance.updated_at || new Date().toISOString(),
       });
     }
 
-    return rows.sort((a, b) => a.category.localeCompare(b.category) || a.key.localeCompare(b.key));
+    // Sort by category, then group, then order
+    return rows.sort((a, b) => {
+      const catCompare = a.category.localeCompare(b.category);
+      if (catCompare !== 0) return catCompare;
+      const groupA = a.group || '';
+      const groupB = b.group || '';
+      const groupCompare = groupA.localeCompare(groupB);
+      if (groupCompare !== 0) return groupCompare;
+      return (a.order || 999) - (b.order || 999);
+    });
   } catch {
     return [];
   }
-}
-
-/**
- * Infer config type from value
- */
-function inferType(value: string): 'string' | 'number' | 'boolean' | 'json' {
-  if (value === 'true' || value === 'false') return 'boolean';
-  if (value.startsWith('{') || value.startsWith('[')) return 'json';
-  if (!isNaN(parseFloat(value)) && isFinite(Number(value))) return 'number';
-  return 'string';
 }
 
 // ============================================================
@@ -875,8 +931,11 @@ export async function getCyclesByRunId(runId: string): Promise<CycleRow[]> {
 export interface ConfigRow {
   key: string;
   value: string;
+  hasValue: boolean;  // true if value is from instance settings, false if placeholder
   type: 'string' | 'number' | 'boolean' | 'json';
   category: string;
+  group?: string | null;  // For grouping related settings in UI
+  order?: number;  // For ordering within group
   description: string | null;
   tooltip?: string | null;
   updated_at: string;
@@ -1319,18 +1378,19 @@ export async function getStats(): Promise<{
     dbQueryOne<{ count: number }>('SELECT COUNT(*) as count FROM runs'),
   ]);
 
-  const wins = winRow?.count || 0;
-  const losses = lossRow?.count || 0;
+  // Ensure numeric types (PostgreSQL returns strings for aggregates)
+  const wins = Number(winRow?.count) || 0;
+  const losses = Number(lossRow?.count) || 0;
   const winRate = (wins + losses) > 0 ? wins / (wins + losses) : 0;
 
   return {
-    runs: runRow?.count || 0,
-    cycles: cycleRow?.count || 0,
-    recommendations: recRow?.count || 0,
-    trades: tradeRow?.count || 0,
-    executions: execRow?.count || 0,
+    runs: Number(runRow?.count) || 0,
+    cycles: Number(cycleRow?.count) || 0,
+    recommendations: Number(recRow?.count) || 0,
+    trades: Number(tradeRow?.count) || 0,
+    executions: Number(execRow?.count) || 0,
     winRate,
-    totalPnl: pnlRow?.total || 0,
+    totalPnl: Number(pnlRow?.total) || 0,
   };
 }
 
@@ -1538,6 +1598,34 @@ export interface StatsResult {
 }
 
 /**
+ * Helper to normalize stats from PostgreSQL (which returns strings for aggregates)
+ */
+function normalizeStats(
+  imagesAnalyzed: number | string | null | undefined,
+  recs: { total?: number | string; actionable?: number | string; avg_conf?: number | string | null } | null,
+  trades: { total?: number | string; wins?: number | string; losses?: number | string; total_pnl?: number | string } | null
+): StatsResult {
+  const recsTotal = Number(recs?.total) || 0;
+  const recsActionable = Number(recs?.actionable) || 0;
+  const avgConf = Number(recs?.avg_conf) || 0;
+  const tradesTotal = Number(trades?.total) || 0;
+  const tradesWins = Number(trades?.wins) || 0;
+  const tradesLosses = Number(trades?.losses) || 0;
+  const tradesPnl = Number(trades?.total_pnl) || 0;
+
+  return {
+    images_analyzed: Number(imagesAnalyzed) || 0,
+    valid_signals: recsActionable,
+    avg_confidence: avgConf,
+    actionable_percent: recsTotal > 0 ? (recsActionable / recsTotal) * 100 : 0,
+    total_trades: tradesTotal,
+    win_count: tradesWins,
+    loss_count: tradesLosses,
+    total_pnl: tradesPnl,
+  };
+}
+
+/**
  * Get stats for a specific cycle
  */
 export async function getStatsByCycleId(cycleId: string): Promise<StatsResult> {
@@ -1560,16 +1648,7 @@ export async function getStatsByCycleId(cycleId: string): Promise<StatsResult> {
     `, [cycleId]),
   ]);
 
-  return {
-    images_analyzed: cycle?.charts_captured || 0,
-    valid_signals: recs?.actionable || 0,
-    avg_confidence: recs?.avg_conf || 0,
-    actionable_percent: recs?.total && recs.total > 0 ? (recs.actionable / recs.total) * 100 : 0,
-    total_trades: trades?.total || 0,
-    win_count: trades?.wins || 0,
-    loss_count: trades?.losses || 0,
-    total_pnl: trades?.total_pnl || 0,
-  };
+  return normalizeStats(cycle?.charts_captured, recs, trades);
 }
 
 /**
@@ -1597,16 +1676,7 @@ export async function getStatsByRunId(runId: string): Promise<StatsResult> {
     `, [runId]),
   ]);
 
-  return {
-    images_analyzed: cycles?.total || 0,
-    valid_signals: recs?.actionable || 0,
-    avg_confidence: recs?.avg_conf || 0,
-    actionable_percent: recs?.total && recs.total > 0 ? (recs.actionable / recs.total) * 100 : 0,
-    total_trades: trades?.total || 0,
-    win_count: trades?.wins || 0,
-    loss_count: trades?.losses || 0,
-    total_pnl: trades?.total_pnl || 0,
-  };
+  return normalizeStats(cycles?.total, recs, trades);
 }
 
 /**
@@ -1641,16 +1711,7 @@ export async function getStatsByInstanceId(instanceId: string): Promise<StatsRes
     `, [instanceId]),
   ]);
 
-  return {
-    images_analyzed: cycles?.total || 0,
-    valid_signals: recs?.actionable || 0,
-    avg_confidence: recs?.avg_conf || 0,
-    actionable_percent: recs?.total && recs.total > 0 ? (recs.actionable / recs.total) * 100 : 0,
-    total_trades: trades?.total || 0,
-    win_count: trades?.wins || 0,
-    loss_count: trades?.losses || 0,
-    total_pnl: trades?.total_pnl || 0,
-  };
+  return normalizeStats(cycles?.total, recs, trades);
 }
 
 /**
@@ -1677,15 +1738,8 @@ export async function getGlobalStats(): Promise<StatsResult & { instance_count: 
   ]);
 
   return {
-    instance_count: instances?.total || 0,
-    images_analyzed: cycles?.total || 0,
-    valid_signals: recs?.actionable || 0,
-    avg_confidence: recs?.avg_conf || 0,
-    actionable_percent: recs?.total && recs.total > 0 ? (recs.actionable / recs.total) * 100 : 0,
-    total_trades: trades?.total || 0,
-    win_count: trades?.wins || 0,
-    loss_count: trades?.losses || 0,
-    total_pnl: trades?.total_pnl || 0,
+    instance_count: Number(instances?.total) || 0,
+    ...normalizeStats(cycles?.total, recs, trades),
   };
 }
 
@@ -1754,7 +1808,7 @@ export async function getErrorLogs(limit = 100, instanceId?: string): Promise<Er
     return dbQuery<ErrorLogRow>(`
       SELECT el.* FROM error_logs el
       LEFT JOIN runs r ON el.run_id = r.id
-      WHERE r.instance_id = ? OR el.run_id IS NULL
+      WHERE r.instance_id = ?
       ORDER BY el.timestamp DESC
       LIMIT ?
     `, [instanceId, limit]);
@@ -1790,7 +1844,7 @@ export async function getErrorLogsGroupedByRun(limit = 200, instanceId?: string)
         MAX(el.timestamp) as last_log_time
       FROM error_logs el
       LEFT JOIN runs r ON el.run_id = r.id
-      WHERE r.instance_id = ? OR el.run_id IS NULL
+      WHERE r.instance_id = ?
       GROUP BY el.run_id, r.started_at, r.ended_at
       ORDER BY COALESCE(r.started_at, MAX(el.timestamp)) DESC
       LIMIT 20

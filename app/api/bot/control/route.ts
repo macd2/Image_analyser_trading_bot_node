@@ -13,9 +13,11 @@ import {
   saveProcessState,
   removeProcessState,
   getAllProcessStates,
+  getProcessState,
   restoreProcessStates,
   isProcessAlive
 } from '@/lib/process-state';
+import { updateRunStatusByInstanceId } from '@/lib/db/trading-db';
 
 // MULTI-INSTANCE SUPPORT: Store running bot processes by instance_id
 // Note: This is in-memory and will be lost on server restart
@@ -295,7 +297,50 @@ function stopBot(instanceId?: string): Response {
   const botProcess = botProcesses.get(instanceId);
   const logs = getInstanceLogs(instanceId);
 
+  // If no in-memory reference, check persistent state (handles server restart case)
   if (!botProcess || botProcess.killed) {
+    const persistentState = getProcessState(instanceId);
+
+    if (persistentState && isProcessAlive(persistentState.pid)) {
+      // Process is running but we lost the reference after server restart
+      // Kill by PID directly
+      const pid = persistentState.pid;
+      console.log(`[BOT CONTROL] [${instanceId}] Stopping orphaned process by PID: ${pid}`);
+      logs.push(`[${new Date().toISOString()}] Stopping orphaned bot process (SIGTERM to PID ${pid})...`);
+
+      try {
+        process.kill(pid, 'SIGTERM');
+
+        // Set up force kill after 10 seconds
+        setTimeout(() => {
+          if (isProcessAlive(pid)) {
+            console.log(`[BOT CONTROL] [${instanceId}] Force killing orphaned process: ${pid}`);
+            try {
+              process.kill(pid, 'SIGKILL');
+            } catch (e) {
+              // Process may have already exited
+            }
+          }
+        }, 10000);
+      } catch (e) {
+        console.error(`[BOT CONTROL] Failed to stop process ${pid}:`, e);
+      }
+
+      // Unregister and clean up
+      processMonitor.unregisterProcess(instanceId, 'stopped');
+      removeProcessState(instanceId);
+      updateRunStatusByInstanceId(instanceId, 'stopped', 'user_stop')
+        .catch(err => console.error(`[BOT CONTROL] Failed to update run status: ${err.message}`));
+
+      return NextResponse.json({
+        success: true,
+        running: false,
+        message: `Stop signal sent to orphaned bot (PID: ${pid})`,
+        logs: logs.slice(-20),
+        instance_id: instanceId,
+      });
+    }
+
     // Clean up state if somehow stale
     botProcesses.delete(instanceId);
     botStartTimes.delete(instanceId);
@@ -324,6 +369,10 @@ function stopBot(instanceId?: string): Response {
   processMonitor.unregisterProcess(instanceId, 'stopped');
   // Remove from persistent state
   removeProcessState(instanceId);
+
+  // Update run status in database
+  updateRunStatusByInstanceId(instanceId, 'stopped', 'user_stop')
+    .catch(err => console.error(`[BOT CONTROL] Failed to update run status: ${err.message}`));
 
   botProcess.kill('SIGTERM');
 
@@ -383,7 +432,38 @@ function killBot(instanceId?: string): Response {
   const botProcess = botProcesses.get(instanceId);
   const logs = getInstanceLogs(instanceId);
 
+  // If no in-memory reference, check persistent state (handles server restart case)
   if (!botProcess || botProcess.killed) {
+    const persistentState = getProcessState(instanceId);
+
+    if (persistentState && isProcessAlive(persistentState.pid)) {
+      // Process is running but we lost the reference after server restart
+      // Kill by PID directly with SIGKILL
+      const pid = persistentState.pid;
+      console.log(`[BOT CONTROL] [${instanceId}] KILL SWITCH - Killing orphaned process by PID: ${pid}`);
+      logs.push(`[${new Date().toISOString()}] ⚠️ KILL SWITCH - Immediate termination of orphaned process (PID ${pid})!`);
+
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch (e) {
+        console.error(`[BOT CONTROL] Failed to kill process ${pid}:`, e);
+      }
+
+      // Unregister and clean up
+      processMonitor.unregisterProcess(instanceId, 'killed');
+      removeProcessState(instanceId);
+      updateRunStatusByInstanceId(instanceId, 'crashed', 'user_kill')
+        .catch(err => console.error(`[BOT CONTROL] Failed to update run status: ${err.message}`));
+
+      return NextResponse.json({
+        success: true,
+        running: false,
+        message: `⚠️ Orphaned bot killed immediately (PID: ${pid})`,
+        instance_id: instanceId,
+        logs: logs.slice(-20),
+      });
+    }
+
     // Clear any pending force kill timeout
     const timeout = forceKillTimeouts.get(instanceId);
     if (timeout) {
@@ -407,6 +487,10 @@ function killBot(instanceId?: string): Response {
   processMonitor.unregisterProcess(instanceId, 'killed');
   // Remove from persistent state
   removeProcessState(instanceId);
+
+  // Update run status in database
+  updateRunStatusByInstanceId(instanceId, 'crashed', 'user_kill')
+    .catch(err => console.error(`[BOT CONTROL] Failed to update run status: ${err.message}`));
 
   // Immediately kill with SIGKILL
   botProcess.kill('SIGKILL');

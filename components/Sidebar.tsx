@@ -87,6 +87,7 @@ export default function Sidebar() {
     { id: 'capture', href: '/capture', label: '1. Capture', icon: Camera, desc: 'Chart Sourcer' },
     { id: 'analysis', href: '/analysis', label: '2. Analysis', icon: Brain, desc: 'AI Analyzer' },
     { id: 'learning', href: '/learning', label: '3. Learning', icon: GraduationCap, desc: 'Prompt Optimizer' },
+    { id: 'advisor', href: '/advisor', label: 'Advisor', icon: Brain, desc: 'TA Advisor System' },
   ]
 
   const learningSubTabs = [

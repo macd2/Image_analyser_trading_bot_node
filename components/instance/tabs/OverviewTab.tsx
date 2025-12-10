@@ -5,6 +5,8 @@ import { Activity, Clock, Maximize2, AlertTriangle, CheckCircle, RefreshCw, X } 
 import { LoadingState, ErrorState } from '@/components/shared'
 import TradeChartModal from '@/components/shared/TradeChartModal'
 import StatsBar, { StatsScope } from '@/components/StatsBar'
+import { CycleStatusCard } from '@/components/instance/CycleStatusCard'
+import { BotStatsCard } from '@/components/instance/BotStatsCard'
 import { useBotState } from '@/lib/context/BotStateContext'
 import { useRealtime } from '@/hooks/useRealtime'
 import VncLoginModal from '@/components/VncLoginModal'
@@ -86,12 +88,33 @@ interface Trade {
   timeframe: string | null
 }
 
+interface MonitorStatus {
+  running: boolean
+  last_check: string | null
+  trades_checked: number
+  trades_closed: number
+  next_check: number
+  results: Array<{
+    trade_id: string
+    symbol: string
+    action: 'checked' | 'closed'
+    current_price: number
+    checked_at?: string
+  }>
+}
+
 export function OverviewTab({ instanceId }: OverviewTabProps) {
-  // Use shared context for logs
-  const { logs, addLog, setLogs } = useBotState()
+  // Use shared context for logs (populated by GlobalLogListener)
+  const { logs, setLogs } = useBotState()
+  // Get logs for this specific instance
+  const instanceLogs = useMemo(() => {
+    const logsArray = logs[instanceId] || []
+    console.log('[OverviewTab] instanceLogs', { instanceId, length: logsArray.length, logs: logsArray.slice(-3) })
+    return logsArray
+  }, [logs, instanceId])
 
   // Connect to Socket.IO for real-time updates (wallet, positions, tickers)
-  const { socket, wallet: liveWallet, positions: livePositions } = useRealtime()
+  const { wallet: liveWallet, positions: livePositions } = useRealtime()
 
   const [status, setStatus] = useState<BotStatus | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
@@ -111,17 +134,18 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
   }>({ state: 'idle', message: null, browser_opened: false, requires_action: false, can_confirm: false })
   const [loginActionLoading, setLoginActionLoading] = useState(false)
   const [vncModalOpen, setVncModalOpen] = useState(false)
+  const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null)
 
   // Track logs length in ref to avoid stale closure in fetchData
-  const logsLengthRef = useRef(logs.length)
-  useEffect(() => { logsLengthRef.current = logs.length }, [logs.length])
+  const logsLengthRef = useRef(instanceLogs.length)
+  useEffect(() => { logsLengthRef.current = instanceLogs.length }, [instanceLogs.length])
 
   // Refs for auto-scroll
   const logsPreviewRef = useRef<HTMLDivElement>(null)
   const logsModalRef = useRef<HTMLDivElement>(null)
 
   // Parse and filter logs
-  const parsedLogs = useMemo(() => logs.map(parseLog), [logs])
+  const parsedLogs = useMemo(() => instanceLogs.map(parseLog), [instanceLogs])
   const filteredLogs = useMemo(() => {
     if (logFilter === 'all') return parsedLogs
     return parsedLogs.filter(log => log.level === logFilter)
@@ -146,15 +170,16 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         logsModalRef.current.scrollTop = logsModalRef.current.scrollHeight
       }
     }
-  }, [logs, autoScroll, filteredLogs])
+  }, [instanceLogs, autoScroll, filteredLogs])
 
   const fetchData = async () => {
     try {
-      const [statusRes, tradesRes, controlRes, loginRes] = await Promise.all([
+      const [statusRes, tradesRes, controlRes, loginRes, monitorRes] = await Promise.all([
         fetch(`/api/bot/status?instance_id=${instanceId}`),
         fetch(`/api/bot/trades?limit=20&instance_id=${instanceId}`),
         fetch(`/api/bot/control?instance_id=${instanceId}`),
-        fetch('/api/bot/login')
+        fetch('/api/bot/login'),
+        fetch('/api/bot/simulator/monitor')
       ])
 
       if (!statusRes.ok || !tradesRes.ok) {
@@ -165,6 +190,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
       const tradesData = await tradesRes.json()
       const controlData = controlRes.ok ? await controlRes.json() : null
       const loginData = loginRes.ok ? await loginRes.json() : null
+      const monitorData = monitorRes.ok ? await monitorRes.json() : null
 
       setStatus(statusData)
       setTrades(tradesData.trades || [])
@@ -174,13 +200,18 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         setLoginState(loginData)
       }
 
+      // Update simulator monitor status
+      if (monitorData) {
+        setMonitorStatus(monitorData)
+      }
+
       // Always sync logs from bot control API
       // This ensures logs are updated even if socket events were missed
       if (controlData?.logs && controlData.logs.length > 0) {
         // If API has more logs than we have, use API logs as the source of truth
         // Use ref to avoid stale closure issue with interval
         if (controlData.logs.length > logsLengthRef.current) {
-          setLogs(controlData.logs)
+          setLogs(controlData.logs, instanceId)
         }
       }
 
@@ -220,23 +251,8 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
     return () => clearInterval(interval)
   }, [instanceId])
 
-  // Listen for live logs via Socket.IO
-  useEffect(() => {
-    if (!socket) return
-
-    const handleLog = (data: { log: string; instanceId?: string; timestamp: number }) => {
-      // Only add logs for this instance (or all logs if no instanceId specified)
-      if (!data.instanceId || data.instanceId === instanceId) {
-        addLog(data.log)
-      }
-    }
-
-    socket.on('bot_log', handleLog)
-
-    return () => {
-      socket.off('bot_log', handleLog)
-    }
-  }, [socket, instanceId, addLog])
+  // Note: Live logs are now handled by GlobalLogListener at the layout level
+  // This avoids duplicate log entries when multiple components subscribe to bot_log
 
   if (loading) return <LoadingState text="Loading overview..." />
   if (error) return <ErrorState message={error} onRetry={fetchData} />
@@ -362,123 +378,152 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         </div>
       </div>
 
-      {/* Row 2: Open Positions (PRIORITY) + Bot Status */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Open Positions - 2/3 width */}
-        <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-lg p-3">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Activity className="w-4 h-4 text-blue-400" />
-              Open Positions
-              {positionCount > 0 && (
-                <span className="px-1.5 py-0.5 text-xs bg-blue-600/30 text-blue-400 rounded">{positionCount}</span>
+      {/* Row 2: Cycle Status + Bot Stats + Simulator Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Left column: Cycle Status & Simulator Activity */}
+        <div className="lg:col-span-1 flex flex-col gap-4">
+          <CycleStatusCard instanceId={instanceId} />
+          <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <RefreshCw className={`w-4 h-4 text-cyan-400 ${monitorStatus?.running ? 'animate-spin' : ''}`} />
+                Simulator Activity
+                {monitorStatus?.running && (
+                  <span className="text-xs bg-green-900/50 text-green-400 px-2 py-0.5 rounded animate-pulse">LIVE</span>
+                )}
+              </h3>
+              {monitorStatus?.last_check && (
+                <div className="text-xs text-slate-500">
+                  Last check: {new Date(monitorStatus.last_check).toLocaleTimeString()}
+                </div>
               )}
-            </h3>
-            {unrealizedPnl !== 0 && (
-              <span className={`text-sm font-bold ${unrealizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                Unrealized: {unrealizedPnl >= 0 ? '+' : ''}${unrealizedPnl.toFixed(2)}
-              </span>
-            )}
-          </div>
-          {positionCount > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-slate-400 text-xs border-b border-slate-700">
-                    <th className="text-left py-1.5 font-medium">Symbol</th>
-                    <th className="text-left py-1.5 font-medium">Side</th>
-                    <th className="text-right py-1.5 font-medium">Size</th>
-                    <th className="text-right py-1.5 font-medium">Entry</th>
-                    <th className="text-right py-1.5 font-medium">P&L</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {positions.map((pos, idx) => (
-                    <tr key={idx} className="border-b border-slate-700/50 hover:bg-slate-700/20">
-                      <td className="py-1.5 font-mono font-bold text-white">{pos.symbol}</td>
-                      <td className="py-1.5">
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${pos.side === 'Buy' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
-                          {pos.side === 'Buy' ? 'LONG' : 'SHORT'}
-                        </span>
-                      </td>
-                      <td className="py-1.5 text-right text-slate-300 font-mono">{pos.size}</td>
-                      <td className="py-1.5 text-right text-slate-300 font-mono">${parseFloat(pos.entryPrice).toFixed(2)}</td>
-                      <td className={`py-1.5 text-right font-bold font-mono ${parseFloat(pos.unrealisedPnl) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {parseFloat(pos.unrealisedPnl) >= 0 ? '+' : ''}${parseFloat(pos.unrealisedPnl).toFixed(2)}
-                      </td>
-                    </tr>
+            </div>
+            <div className="bg-slate-900 rounded-lg p-3 font-mono text-xs max-h-48 overflow-y-auto">
+              {monitorStatus?.results && monitorStatus.results.length > 0 ? (
+                <div className="space-y-1">
+                  {monitorStatus.results.slice(-10).map((result, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <span className="text-slate-500">[{new Date(result.checked_at || Date.now()).toLocaleTimeString()}]</span>
+                      <span className={result.action === 'closed' ? 'text-yellow-400' : 'text-slate-400'}>
+                        {result.action === 'closed' ? '🔔 CLOSED' : '✓ Checked'}
+                      </span>
+                      <span className="text-white">{result.symbol}</span>
+                      <span className="text-blue-400">@ ${result.current_price.toFixed(4)}</span>
+                      {result.action === 'closed' && (
+                        <span className="text-yellow-300">→ Trade closed!</span>
+                      )}
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-slate-500 text-sm py-4 text-center border border-dashed border-slate-700 rounded">
-              No open positions
-            </div>
-          )}
-        </div>
-
-        {/* Bot Status + Last Cycle */}
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-3 space-y-3">
-          <div>
-            <div className="flex items-center gap-2 text-slate-400 mb-2">
-              <Clock size={14} />
-              <span className="text-xs font-medium">Last Cycle</span>
-            </div>
-            {status?.last_cycle ? (
-              <div className="space-y-1 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Last Run:</span>
-                  <span className="text-white font-mono">
-                    {new Date(status.last_cycle).toLocaleString()}
-                  </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Mode:</span>
-                  <span className={status.mode === 'paper' ? 'text-yellow-400' : 'text-green-400'}>
-                    {status.mode === 'paper' ? 'Paper Trading' : 'Live Trading'}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="text-slate-500 text-xs">Start the bot to begin trading</div>
-            )}
-          </div>
-
-          {/* Bot Logs Preview - Compact */}
-          <div className="border-t border-slate-700 pt-2">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-slate-400">Bot Output</span>
-              <div className="flex items-center gap-1.5">
-                {logCounts.error > 0 && (
-                  <span className="px-1 py-0.5 text-[10px] bg-red-900/50 text-red-400 rounded">{logCounts.error}</span>
-                )}
-                {logCounts.warning > 0 && (
-                  <span className="px-1 py-0.5 text-[10px] bg-amber-900/50 text-amber-400 rounded">{logCounts.warning}</span>
-                )}
-                <span className="text-[10px] text-slate-600">{parsedLogs.length}</span>
-                <button onClick={() => setShowLogsModal(true)} className="text-slate-500 hover:text-white">
-                  <Maximize2 size={12} />
-                </button>
-              </div>
-            </div>
-            <div
-              ref={logsPreviewRef}
-              className="bg-slate-900 rounded p-1.5 h-24 overflow-y-auto font-mono text-[10px] scroll-smooth"
-            >
-              {parsedLogs.length > 0 ? (
-                parsedLogs.slice(-15).map((log, idx) => (
-                  <div key={idx} className={`py-0.5 whitespace-nowrap ${getLogColor(log.level)}`}>{log.raw}</div>
-                ))
               ) : (
-                <div className="text-slate-600 italic">Waiting for output...</div>
+                <div className="text-slate-500">
+                  {monitorStatus?.running ? 'Waiting for next check...' : 'Monitor not running'}
+                </div>
+              )}
+              {monitorStatus?.last_check && (
+                <div className="mt-2 pt-2 border-t border-slate-700 text-slate-500">
+                  Checked: {monitorStatus.trades_checked} | Closed: {monitorStatus.trades_closed}
+                </div>
               )}
             </div>
           </div>
+        </div>
+        
+        {/* Right column: Bot Stats Card */}
+        <div className="lg:col-span-1">
+          <BotStatsCard instanceId={instanceId} />
         </div>
       </div>
 
-      {/* Row 3: Recent Trades - Full Width */}
+      {/* Row 3: Bot Logs Preview */}
+      <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Activity className="w-4 h-4 text-blue-400" />
+            Bot Output
+            <span className="text-xs text-slate-500 font-normal">({parsedLogs.length})</span>
+          </h3>
+          <div className="flex items-center gap-1.5">
+            {logCounts.error > 0 && (
+              <span className="px-1 py-0.5 text-[10px] bg-red-900/50 text-red-400 rounded">{logCounts.error}</span>
+            )}
+            {logCounts.warning > 0 && (
+              <span className="px-1 py-0.5 text-[10px] bg-amber-900/50 text-amber-400 rounded">{logCounts.warning}</span>
+            )}
+            <button onClick={() => setShowLogsModal(true)} className="text-slate-500 hover:text-white">
+              <Maximize2 size={12} />
+            </button>
+          </div>
+        </div>
+        <div
+          ref={logsPreviewRef}
+          className="bg-slate-900 rounded p-1.5 h-24 overflow-y-auto font-mono text-[10px] scroll-smooth"
+        >
+          {parsedLogs.length > 0 ? (
+            parsedLogs.slice(-15).map((log, idx) => (
+              <div key={idx} className={`py-0.5 whitespace-nowrap ${getLogColor(log.level)}`}>{log.raw}</div>
+            ))
+          ) : (
+            <div className="text-slate-600 italic">Waiting for output...</div>
+          )}
+        </div>
+      </div>
+
+      {/* Row 4: Open Positions - Full Width */}
+      <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Activity className="w-4 h-4 text-blue-400" />
+            Open Positions
+            {positionCount > 0 && (
+              <span className="px-1.5 py-0.5 text-xs bg-blue-600/30 text-blue-400 rounded">{positionCount}</span>
+            )}
+          </h3>
+          {unrealizedPnl !== 0 && (
+            <span className={`text-sm font-bold ${unrealizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              Unrealized: {unrealizedPnl >= 0 ? '+' : ''}${unrealizedPnl.toFixed(2)}
+            </span>
+          )}
+        </div>
+        {positionCount > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-slate-400 text-xs border-b border-slate-700">
+                  <th className="text-left py-1.5 font-medium">Symbol</th>
+                  <th className="text-left py-1.5 font-medium">Side</th>
+                  <th className="text-right py-1.5 font-medium">Size</th>
+                  <th className="text-right py-1.5 font-medium">Entry</th>
+                  <th className="text-right py-1.5 font-medium">P&L</th>
+                </tr>
+              </thead>
+              <tbody>
+                {positions.map((pos, idx) => (
+                  <tr key={idx} className="border-b border-slate-700/50 hover:bg-slate-700/20">
+                    <td className="py-1.5 font-mono font-bold text-white">{pos.symbol}</td>
+                    <td className="py-1.5">
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${pos.side === 'Buy' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+                        {pos.side === 'Buy' ? 'LONG' : 'SHORT'}
+                      </span>
+                    </td>
+                    <td className="py-1.5 text-right text-slate-300 font-mono">{pos.size}</td>
+                    <td className="py-1.5 text-right text-slate-300 font-mono">${parseFloat(pos.entryPrice).toFixed(2)}</td>
+                    <td className={`py-1.5 text-right font-bold font-mono ${parseFloat(pos.unrealisedPnl) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {parseFloat(pos.unrealisedPnl) >= 0 ? '+' : ''}${parseFloat(pos.unrealisedPnl).toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-slate-500 text-sm py-4 text-center border border-dashed border-slate-700 rounded">
+            No open positions
+          </div>
+        )}
+      </div>
+
+      {/* Row 5: Recent Trades - Full Width */}
       <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
         <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
           <Clock className="w-4 h-4 text-slate-400" /> Recent Trades
@@ -550,7 +595,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
             <div className="flex items-center justify-between p-4 border-b border-slate-700">
               <div className="flex items-center gap-4">
                 <h2 className="text-lg font-bold text-white">Bot Logs</h2>
-                <span className="text-xs text-slate-400">{logs.length} total entries</span>
+                <span className="text-xs text-slate-400">{instanceLogs.length} total entries</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1 bg-slate-900 rounded-lg p-1">
@@ -575,7 +620,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
                 >
                   {autoScroll ? '⏬ Auto' : '⏸ Paused'}
                 </button>
-                <button onClick={() => setLogs([])} className="text-xs text-slate-500 hover:text-slate-300">Clear</button>
+                <button onClick={() => setLogs([], instanceId)} className="text-xs text-slate-500 hover:text-slate-300">Clear</button>
                 <button onClick={() => setShowLogsModal(false)} className="p-1.5 rounded hover:bg-slate-700 transition text-slate-400 hover:text-white">✕</button>
               </div>
             </div>

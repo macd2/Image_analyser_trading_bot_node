@@ -183,6 +183,12 @@ export default function BotDashboard({ initialInstanceId }: BotDashboardProps) {
   const [instanceName, setInstanceName] = useState('')
   const [instanceNameSaving, setInstanceNameSaving] = useState(false)
 
+  // Get logs for this specific instance (or global if none selected)
+  const instanceLogs = useMemo(() => {
+    if (!selectedInstance) return logs['global'] || []
+    return logs[selectedInstance.id] || []
+  }, [logs, selectedInstance])
+
   const [status, setStatus] = useState<BotStatus | null>(null)
   const [controlStatus, setControlStatus] = useState<ControlStatus | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
@@ -224,7 +230,7 @@ export default function BotDashboard({ initialInstanceId }: BotDashboardProps) {
   const [vncModalOpen, setVncModalOpen] = useState(false)
 
   // Parse and filter logs
-  const parsedLogs = useMemo(() => logs.map(parseLog), [logs])
+  const parsedLogs = useMemo(() => instanceLogs.map(parseLog), [instanceLogs])
   const filteredLogs = useMemo(() => {
     if (logFilter === 'all') return parsedLogs
     return parsedLogs.filter(log => log.level === logFilter)
@@ -278,7 +284,7 @@ export default function BotDashboard({ initialInstanceId }: BotDashboardProps) {
       }
 
       if (controlData.logs && controlData.logs.length > 0) {
-        setLogs(controlData.logs)
+        setLogs(controlData.logs, selectedInstance?.id || 'global')
       }
     } catch (err) {
       console.error('Failed to fetch bot status:', err)
@@ -417,7 +423,7 @@ export default function BotDashboard({ initialInstanceId }: BotDashboardProps) {
         })
       })
       const data = await res.json() as ControlStatus
-      if (data.logs) setLogs(data.logs)
+      if (data.logs) setLogs(data.logs, selectedInstance?.id || 'global')
       // Immediately update control status
       setControlStatus(data)
       if (status) {
@@ -1110,9 +1116,9 @@ export default function BotDashboard({ initialInstanceId }: BotDashboardProps) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {logs.length > 0 && (
+                {instanceLogs.length > 0 && (
                   <button
-                    onClick={() => setLogs([])}
+                    onClick={() => setLogs([], selectedInstance?.id || 'global')}
                     className="text-xs text-slate-500 hover:text-slate-300"
                   >
                     Clear
@@ -1153,7 +1159,7 @@ export default function BotDashboard({ initialInstanceId }: BotDashboardProps) {
             <div className="flex items-center justify-between p-4 border-b border-slate-700">
               <div className="flex items-center gap-4">
                 <h2 className="text-lg font-bold text-white">Bot Logs</h2>
-                <span className="text-xs text-slate-400">{logs.length} total entries</span>
+                <span className="text-xs text-slate-400">{instanceLogs.length} total entries</span>
               </div>
               <div className="flex items-center gap-3">
                 {/* Filter Buttons */}
@@ -1164,7 +1170,7 @@ export default function BotDashboard({ initialInstanceId }: BotDashboardProps) {
                       logFilter === 'all' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    All ({logs.length})
+                    All ({instanceLogs.length})
                   </button>
                   <button
                     onClick={() => setLogFilter('error')}
@@ -1200,7 +1206,7 @@ export default function BotDashboard({ initialInstanceId }: BotDashboardProps) {
                   </button>
                 </div>
                 <button
-                  onClick={() => setLogs([])}
+                  onClick={() => setLogs([], selectedInstance?.id || 'global')}
                   className="text-xs text-slate-400 hover:text-white px-2 py-1"
                 >
                   Clear All
@@ -1231,7 +1237,7 @@ export default function BotDashboard({ initialInstanceId }: BotDashboardProps) {
                   ))
                 ) : (
                   <div className="text-slate-500 italic text-center py-8">
-                    {logs.length > 0 ? `No ${logFilter} logs found` : 'No logs yet. Start the bot to see output.'}
+                    {instanceLogs.length > 0 ? `No ${logFilter} logs found` : 'No logs yet. Start the bot to see output.'}
                   </div>
                 )}
               </div>
@@ -1245,7 +1251,7 @@ export default function BotDashboard({ initialInstanceId }: BotDashboardProps) {
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-sky-500"></span> Info</span>
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-purple-500"></span> Debug</span>
               </div>
-              <span>Showing {filteredLogs.length} of {logs.length} logs</span>
+              <span>Showing {filteredLogs.length} of {instanceLogs.length} logs</span>
             </div>
           </div>
         </div>

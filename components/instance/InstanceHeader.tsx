@@ -118,7 +118,7 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
         setControlStatus(data)
         // Update logs in context
         if (data.logs && data.logs.length > 0) {
-          setLogs(data.logs)
+          setLogs(data.logs, instanceId)
         }
       }
     } catch (err) {
@@ -215,7 +215,7 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
       setControlStatus(data)
       // Update logs if returned
       if (data.logs && data.logs.length > 0) {
-        setLogs(data.logs)
+        setLogs(data.logs, instanceId)
       }
       // Refresh instance data
       setTimeout(() => {

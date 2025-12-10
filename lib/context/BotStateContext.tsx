@@ -17,16 +17,16 @@ interface BotState {
   status: BotStatus | null
   isLoading: boolean
   
-  // Persistent logs (survives route changes)
-  logs: string[]
-  stderrLogs: string[]
+  // Persistent logs per instance (survives route changes)
+  logs: Record<string, string[]>  // instanceId -> logs array
+  stderrLogs: Record<string, string[]>
   
   // Actions
-  addLog: (log: string) => void
-  addStderrLog: (log: string) => void
-  setLogs: (logs: string[]) => void
-  setStderrLogs: (logs: string[]) => void
-  clearLogs: () => void
+  addLog: (log: string, instanceId?: string) => void
+  addStderrLog: (log: string, instanceId?: string) => void
+  setLogs: (logs: string[], instanceId?: string) => void
+  setStderrLogs: (logs: string[], instanceId?: string) => void
+  clearLogs: (instanceId?: string) => void
   setStatus: (status: BotStatus | null) => void
   setLoading: (loading: boolean) => void
 }
@@ -36,8 +36,8 @@ const BotStateContext = createContext<BotState | null>(null)
 export function BotStateProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<BotStatus | null>(null)
   const [isLoading, setLoading] = useState(false)
-  const [logs, setLogsState] = useState<string[]>([])
-  const [stderrLogs, setStderrLogsState] = useState<string[]>([])
+  const [logs, setLogsState] = useState<Record<string, string[]>>({})
+  const [stderrLogs, setStderrLogsState] = useState<Record<string, string[]>>({})
   
   // Use refs to avoid stale closures in callbacks
   const logsRef = useRef(logs)
@@ -46,40 +46,57 @@ export function BotStateProvider({ children }: { children: ReactNode }) {
   useEffect(() => { logsRef.current = logs }, [logs])
   useEffect(() => { stderrRef.current = stderrLogs }, [stderrLogs])
 
-  const addLog = useCallback((log: string) => {
+  const addLog = useCallback((log: string, instanceId?: string) => {
+    const key = instanceId || 'global'
+    console.log('[BotStateContext] addLog', { key, log: log.substring(0, 100) })
     setLogsState(prev => {
-      const newLogs = [...prev, log]
-      // Keep last 1000 logs to prevent memory issues
-      return newLogs.slice(-1000)
+      const instanceLogs = prev[key] || []
+      const newLogs = [...instanceLogs, log]
+      // Keep last 1000 logs per instance to prevent memory issues
+      const updated = { ...prev, [key]: newLogs.slice(-1000) }
+      return updated
     })
   }, [])
 
-  const addStderrLog = useCallback((log: string) => {
+  const addStderrLog = useCallback((log: string, instanceId?: string) => {
+    const key = instanceId || 'global'
     setStderrLogsState(prev => {
-      const newLogs = [...prev, log]
-      return newLogs.slice(-1000)
+      const instanceLogs = prev[key] || []
+      const newLogs = [...instanceLogs, log]
+      return { ...prev, [key]: newLogs.slice(-1000) }
     })
   }, [])
 
-  const setLogs = useCallback((newLogs: string[]) => {
+  const setLogs = useCallback((newLogs: string[], instanceId?: string) => {
+    const key = instanceId || 'global'
     // Only update if logs actually changed (avoid re-renders)
     setLogsState(prev => {
       const sliced = newLogs.slice(-1000)
+      const instanceLogs = prev[key] || []
       // Fast check: if same length and last entry is same, skip update
-      if (prev.length === sliced.length && prev[prev.length - 1] === sliced[sliced.length - 1]) {
+      if (instanceLogs.length === sliced.length && instanceLogs[instanceLogs.length - 1] === sliced[sliced.length - 1]) {
         return prev
       }
-      return sliced
+      return { ...prev, [key]: sliced }
     })
   }, [])
 
-  const setStderrLogs = useCallback((newLogs: string[]) => {
-    setStderrLogsState(newLogs.slice(-1000))
+  const setStderrLogs = useCallback((newLogs: string[], instanceId?: string) => {
+    const key = instanceId || 'global'
+    setStderrLogsState(prev => ({
+      ...prev,
+      [key]: newLogs.slice(-1000)
+    }))
   }, [])
 
-  const clearLogs = useCallback(() => {
-    setLogsState([])
-    setStderrLogsState([])
+  const clearLogs = useCallback((instanceId?: string) => {
+    if (instanceId) {
+      setLogsState(prev => ({ ...prev, [instanceId]: [] }))
+      setStderrLogsState(prev => ({ ...prev, [instanceId]: [] }))
+    } else {
+      setLogsState({})
+      setStderrLogsState({})
+    }
   }, [])
 
   return (

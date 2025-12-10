@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Brain, TrendingUp, TrendingDown, Minus, CheckCircle, AlertCircle, Image, RefreshCw, Loader2 } from 'lucide-react'
 import { useCyclesData } from '@/hooks/useBotData'
 
@@ -12,6 +13,8 @@ function formatPrice(price: number | null): string {
 
 export default function AnalysisView() {
   const { data, loading, error, refetch } = useCyclesData(10000)
+  const [retryLoading, setRetryLoading] = useState(false)
+  const [refreshLoading, setRefreshLoading] = useState(false)
 
   if (loading && !data) {
     return (
@@ -26,7 +29,27 @@ export default function AnalysisView() {
       <div className="p-6">
         <div className="bg-red-900/30 border border-red-500 rounded-lg p-4 text-red-300">
           Error loading analysis data: {error}
-          <button onClick={() => refetch()} className="ml-4 text-blue-400 hover:underline">Retry</button>
+          <button
+            onClick={async () => {
+              setRetryLoading(true)
+              try {
+                await refetch()
+              } finally {
+                setRetryLoading(false)
+              }
+            }}
+            disabled={retryLoading}
+            className="ml-4 text-blue-400 hover:underline flex items-center gap-1"
+          >
+            {retryLoading ? (
+              <>
+                <Loader2 className="animate-spin h-3 w-3" />
+                Retrying...
+              </>
+            ) : (
+              'Retry'
+            )}
+          </button>
         </div>
       </div>
     )
@@ -46,8 +69,19 @@ export default function AnalysisView() {
           <p className="text-slate-400 text-sm">Chart analyzer with confidence scoring</p>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={() => refetch()} className="text-slate-400 hover:text-white">
-            <RefreshCw size={16} />
+          <button
+            onClick={async () => {
+              setRefreshLoading(true)
+              try {
+                await refetch()
+              } finally {
+                setRefreshLoading(false)
+              }
+            }}
+            disabled={refreshLoading}
+            className="text-slate-400 hover:text-white"
+          >
+            <RefreshCw size={16} className={refreshLoading ? 'animate-spin' : ''} />
           </button>
           <div className="bg-slate-800 rounded-lg px-4 py-2 text-sm">
             <span className="text-slate-400">Prompt: </span>
