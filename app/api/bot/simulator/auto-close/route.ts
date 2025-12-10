@@ -376,8 +376,13 @@ export async function POST() {
       // Get max open bars for this trade's timeframe (0 = disabled)
       const maxOpenBars = await getMaxOpenBarsForTimeframe(timeframe);
 
-      // Parse trade creation time
-      const createdAt = new Date(trade.created_at).getTime();
+      // Parse trade creation time - validate it's a valid date
+      const createdAtDate = new Date(trade.created_at);
+      if (isNaN(createdAtDate.getTime())) {
+        console.error(`[Auto-Close] Invalid created_at date for trade ${trade.id}: ${trade.created_at}`);
+        continue; // Skip this trade
+      }
+      const createdAt = createdAtDate.getTime();
 
       // Fetch all candles from trade creation to now
       const candles = await getHistoricalCandles(trade.symbol, timeframe, createdAt);
@@ -404,9 +409,12 @@ export async function POST() {
 
       if (alreadyFilled) {
         // Trade already filled - find the fill candle index to start SL/TP check from
-        const filledAtMs = new Date(trade.filled_at as string).getTime();
-        fillCandleIndex = candles.findIndex(c => c.timestamp >= filledAtMs);
-        if (fillCandleIndex === -1) fillCandleIndex = 0;
+        const filledAtDate = new Date(trade.filled_at as string);
+        if (!isNaN(filledAtDate.getTime())) {
+          const filledAtMs = filledAtDate.getTime();
+          fillCandleIndex = candles.findIndex(c => c.timestamp >= filledAtMs);
+          if (fillCandleIndex === -1) fillCandleIndex = 0;
+        }
       } else {
         // Find fill candle (first candle where entry price was touched)
         const fillResult = findFillCandle(candles, entryPrice);
@@ -462,7 +470,12 @@ export async function POST() {
         }
 
         // Trade is now filled - update database with fill info
-        const fillTime = new Date(fillResult.fillTimestamp!).toISOString();
+        const fillTimeDate = new Date(fillResult.fillTimestamp!);
+        if (isNaN(fillTimeDate.getTime())) {
+          console.error(`[Auto-Close] Invalid fillTimestamp for trade ${trade.id}: ${fillResult.fillTimestamp}`);
+          continue; // Skip this trade
+        }
+        const fillTime = fillTimeDate.toISOString();
         await dbExecute(`
           UPDATE trades SET
             fill_price = ?,
@@ -498,9 +511,17 @@ export async function POST() {
         const pnlPercent = fillPrice > 0 ? (pnl / (fillPrice * qty)) * 100 : 0;
 
         // Get exit timestamp as ISO string
-        const exitTime = exitResult.exitTimestamp
-          ? new Date(exitResult.exitTimestamp).toISOString()
-          : new Date().toISOString();
+        let exitTime: string;
+        if (exitResult.exitTimestamp) {
+          const exitTimeDate = new Date(exitResult.exitTimestamp);
+          if (isNaN(exitTimeDate.getTime())) {
+            console.error(`[Auto-Close] Invalid exitTimestamp for trade ${trade.id}: ${exitResult.exitTimestamp}`);
+            continue; // Skip this trade
+          }
+          exitTime = exitTimeDate.toISOString();
+        } else {
+          exitTime = new Date().toISOString();
+        }
 
         // Update trade in database with actual exit time
         await dbExecute(`

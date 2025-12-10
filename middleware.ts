@@ -42,6 +42,7 @@ const PROTECTED_API_PREFIXES = [
 // Paths that should NOT require auth (health checks, public assets)
 const PUBLIC_PATHS = [
   '/api/bot/health',  // Health check for monitoring
+  '/api/bot/simulator/auto-close',  // Internal auto-close endpoint called by monitor
   '/_next',           // Next.js assets
   '/favicon.ico',
 ]
