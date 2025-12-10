@@ -88,26 +88,31 @@ export default function BotOverview() {
     }
   }
 
+  const [creatingInstance, setCreatingInstance] = useState(false)
+
   const handleCreateInstance = async () => {
     const name = prompt('Enter instance name:')
     if (!name?.trim()) return
 
+    setCreatingInstance(true)
     try {
       const res = await fetch('/api/bot/instances', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name.trim() }),
       })
-      
+
       if (!res.ok) {
         const data = await res.json()
         throw new Error(data.error || 'Failed to create instance')
       }
-      
+
       await fetchInstances()
     } catch (err) {
       console.error('Failed to create instance:', err)
       alert(`Failed to create instance: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setCreatingInstance(false)
     }
   }
 
@@ -125,11 +130,26 @@ export default function BotOverview() {
         <div className="bg-red-900/30 border border-red-700 rounded-lg p-4 text-red-300">
           <h3 className="font-semibold">Error loading instances</h3>
           <p className="text-sm mt-1">{error}</p>
-          <button 
-            onClick={fetchInstances}
-            className="mt-3 px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm"
+          <button
+            onClick={async () => {
+              setRefreshing(true)
+              try {
+                await fetchInstances()
+              } finally {
+                setRefreshing(false)
+              }
+            }}
+            disabled={refreshing}
+            className="mt-3 px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm flex items-center gap-1"
           >
-            Retry
+            {refreshing ? (
+              <>
+                <Loader2 className="animate-spin h-3 w-3" />
+                Retrying...
+              </>
+            ) : (
+              'Retry'
+            )}
           </button>
         </div>
       </div>
@@ -167,10 +187,20 @@ export default function BotOverview() {
           </button>
           <button
             onClick={handleCreateInstance}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition font-medium"
+            disabled={creatingInstance}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition font-medium disabled:opacity-50"
           >
-            <Plus className="w-5 h-5" />
-            New Instance
+            {creatingInstance ? (
+              <>
+                <Loader2 className="animate-spin w-5 h-5" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <Plus className="w-5 h-5" />
+                New Instance
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -186,10 +216,20 @@ export default function BotOverview() {
           <p className="text-slate-400 mb-6">Create your first bot instance to get started</p>
           <button
             onClick={handleCreateInstance}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition font-medium"
+            disabled={creatingInstance}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition font-medium disabled:opacity-50"
           >
-            <Plus className="w-5 h-5" />
-            Create Instance
+            {creatingInstance ? (
+              <>
+                <Loader2 className="animate-spin w-5 h-5" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <Plus className="w-5 h-5" />
+                Create Instance
+              </>
+            )}
           </button>
         </div>
       ) : (

@@ -18,6 +18,8 @@ function formatTimestamp(isoString: string): string {
 export default function CaptureView() {
   const { data, loading, error, refetch } = useSourcerStatus(5000)
   const [countdown, setCountdown] = useState<number>(0)
+  const [retryLoading, setRetryLoading] = useState(false)
+  const [refreshLoading, setRefreshLoading] = useState(false)
 
   // Real-time countdown
   useEffect(() => {
@@ -46,7 +48,27 @@ export default function CaptureView() {
       <div className="p-6">
         <div className="bg-red-900/30 border border-red-500 rounded-lg p-4 text-red-300">
           Error loading capture data: {error}
-          <button onClick={() => refetch()} className="ml-4 text-blue-400 hover:underline">Retry</button>
+          <button
+            onClick={async () => {
+              setRetryLoading(true)
+              try {
+                await refetch()
+              } finally {
+                setRetryLoading(false)
+              }
+            }}
+            disabled={retryLoading}
+            className="ml-4 text-blue-400 hover:underline flex items-center gap-1"
+          >
+            {retryLoading ? (
+              <>
+                <Loader2 className="animate-spin h-3 w-3" />
+                Retrying...
+              </>
+            ) : (
+              'Retry'
+            )}
+          </button>
         </div>
       </div>
     )
@@ -68,8 +90,19 @@ export default function CaptureView() {
           <p className="text-slate-400 text-sm">TradingView chart sourcer</p>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={() => refetch()} className="text-slate-400 hover:text-white">
-            <RefreshCw size={16} />
+          <button
+            onClick={async () => {
+              setRefreshLoading(true)
+              try {
+                await refetch()
+              } finally {
+                setRefreshLoading(false)
+              }
+            }}
+            disabled={refreshLoading}
+            className="text-slate-400 hover:text-white"
+          >
+            <RefreshCw size={16} className={refreshLoading ? 'animate-spin' : ''} />
           </button>
           <div className="flex items-center gap-2 text-sm">
             <Clock size={16} className="text-slate-400" />

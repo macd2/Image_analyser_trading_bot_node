@@ -1,12 +1,16 @@
 'use client'
 
+import { useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { GraduationCap, TrendingUp, Zap, Target, RefreshCw, AlertCircle, Database } from 'lucide-react'
+import { GraduationCap, TrendingUp, Zap, Target, RefreshCw, AlertCircle, Database, Loader2 } from 'lucide-react'
 import { useLearning } from '@/hooks/useLearning'
 import PromptLeaderboard from './PromptLeaderboard'
 
 export default function LearningView() {
   const { data, summary, loading, error, refresh } = useLearning();
+  const [refreshLoading, setRefreshLoading] = useState(false);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [deployLoading, setDeployLoading] = useState(false);
 
   // Loading state
   if (loading) {
@@ -28,10 +32,25 @@ export default function LearningView() {
             <h3 className="text-red-400 font-semibold">Database Error</h3>
             <p className="text-slate-400 text-sm mt-1">{error}</p>
             <button
-              onClick={refresh}
-              className="mt-3 text-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded"
+              onClick={async () => {
+                setRefreshLoading(true)
+                try {
+                  await refresh()
+                } finally {
+                  setRefreshLoading(false)
+                }
+              }}
+              disabled={refreshLoading}
+              className="mt-3 text-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded flex items-center gap-1"
             >
-              Retry
+              {refreshLoading ? (
+                <>
+                  <Loader2 className="animate-spin h-3 w-3" />
+                  Retrying...
+                </>
+              ) : (
+                'Retry'
+              )}
             </button>
           </div>
         </div>
@@ -79,8 +98,19 @@ export default function LearningView() {
           </h2>
           <p className="text-slate-400 text-sm">Prompt optimization through backtesting</p>
         </div>
-        <button onClick={refresh} className="text-slate-400 hover:text-white p-2">
-          <RefreshCw size={18} />
+        <button
+          onClick={async () => {
+            setRefreshLoading(true)
+            try {
+              await refresh()
+            } finally {
+              setRefreshLoading(false)
+            }
+          }}
+          disabled={refreshLoading}
+          className="text-slate-400 hover:text-white p-2"
+        >
+          <RefreshCw size={18} className={refreshLoading ? 'animate-spin' : ''} />
         </button>
       </div>
 
@@ -161,11 +191,45 @@ export default function LearningView() {
           <Zap size={16} className="text-blue-400" /> Quick Actions
         </h3>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded text-sm">
-            <Target size={14} /> Compare Prompts
+          <button
+            onClick={() => {
+              setCompareLoading(true)
+              // Simulate async operation
+              setTimeout(() => setCompareLoading(false), 2000)
+            }}
+            disabled={compareLoading}
+            className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded text-sm disabled:opacity-50"
+          >
+            {compareLoading ? (
+              <>
+                <Loader2 className="animate-spin h-4 w-4" />
+                Comparing...
+              </>
+            ) : (
+              <>
+                <Target size={14} /> Compare Prompts
+              </>
+            )}
           </button>
-          <button className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm">
-            <TrendingUp size={14} /> Deploy Best: {bestPrompt?.prompt_name.slice(0, 20)}
+          <button
+            onClick={() => {
+              setDeployLoading(true)
+              // Simulate async operation
+              setTimeout(() => setDeployLoading(false), 2000)
+            }}
+            disabled={deployLoading}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm disabled:opacity-50"
+          >
+            {deployLoading ? (
+              <>
+                <Loader2 className="animate-spin h-4 w-4" />
+                Deploying...
+              </>
+            ) : (
+              <>
+                <TrendingUp size={14} /> Deploy Best: {bestPrompt?.prompt_name.slice(0, 20)}
+              </>
+            )}
           </button>
         </div>
       </div>
