@@ -702,7 +702,6 @@ const CONFIG_METADATA: Record<string, ConfigMeta> = {
   // Trading - Core
   'trading.paper_trading': { type: 'boolean', category: 'trading', group: '1. Core', description: 'Paper trading mode', tooltip: 'Simulate trades without real money (dry run mode for testing strategies)', order: 1 },
   'trading.auto_approve_trades': { type: 'boolean', category: 'trading', group: '1. Core', description: 'Auto-approve trades', tooltip: 'Automatically execute trades without manual approval (use with caution in live trading)', order: 2 },
-  'trading.timeframe': { type: 'string', category: 'trading', group: '1. Core', description: 'Trading timeframe', tooltip: 'Chart timeframe for analysis (e.g., 1h, 4h, 1d). Affects candle data and age-based calculations', order: 3 },
   'trading.max_concurrent_trades': { type: 'number', category: 'trading', group: '1. Core', description: 'Max concurrent trades', tooltip: 'Maximum number of positions/orders that can be open at the same time', order: 4 },
 
   // Trading - Risk Management
@@ -744,6 +743,12 @@ const CONFIG_METADATA: Record<string, ConfigMeta> = {
   // Trade Monitor - Age-based Cancellation (Independent - NOT controlled by master)
   'trading.age_cancellation_enabled': { type: 'boolean', category: 'trade monitor', group: '3. Order Cancellation', description: 'Age-based cancellation', tooltip: '⚡ INDEPENDENT: Cancel unfilled orders that have been pending too long (not affected by master switch)', order: 50 },
   'trading.age_cancellation_max_bars': { type: 'json', category: 'trade monitor', group: '3. Order Cancellation', description: 'Max age bars for cancellation', tooltip: 'Maximum bars before cancelling unfilled orders per timeframe. Example: {"1h": 48, "4h": 18}', order: 51 },
+
+  // TradingView - Chart Capture (under Trading category)
+  'tradingview.enabled': { type: 'boolean', category: 'Tradingview', group: '5. Chart Capture', description: 'Enable TradingView chart capture', tooltip: 'Capture charts from TradingView for analysis', order: 40 },
+  'tradingview.target_chart': { type: 'string', category: 'Tradingview', group: '5. Chart Capture', description: 'Target chart URL or identifier', tooltip: 'The TradingView chart URL or identifier to capture (e.g., "BTCUSDT" or full URL)', order: 41 },
+  'trading.timeframe': { type: 'string', category: 'Tradingview', group: '5. Chart Capture', description: 'Trading timeframe', tooltip: 'Chart timeframe for analysis (e.g., 1h, 4h, 1d). Affects candle data and age-based calculations', order: 42 },
+
 };
 
 /**
