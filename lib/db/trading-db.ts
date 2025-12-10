@@ -339,10 +339,41 @@ export interface InstanceSummary extends InstanceWithStatus {
   win_count: number;
   loss_count: number;
   win_rate: number;
+  expected_value: number; // EV = (win_rate × avg_win) - (loss_rate × avg_loss)
+  avg_win: number;
+  avg_loss: number;
   config: {
     use_testnet: boolean;
     paper_trading: boolean;
   };
+  running_duration_hours?: number;
+  latest_cycle?: {
+    charts_captured: number;
+    recommendations_generated: number;
+    trades_executed: number;
+  };
+  // NEW: Detailed breakdown for live vs dry
+  live_closed: number;
+  live_open: number;
+  live_wins: number;
+  live_losses: number;
+  live_pnl: number;
+  live_ev: number;
+  dry_closed: number;
+  dry_open: number;
+  dry_wins: number;
+  dry_losses: number;
+  dry_pnl: number;
+  dry_ev: number;
+  // Signal quality metrics
+  last_cycle_symbols: string[];
+  actionable_percent: number;
+  actionable_count: number;
+  total_recs: number;
+  avg_confidence: number;
+  avg_risk_reward: number;
+  // Recent logs (last 3)
+  recent_logs: { timestamp: string; level: string; message: string }[];
 }
 
 /**
@@ -354,63 +385,171 @@ export async function getInstancesWithSummary(): Promise<InstanceSummary[]> {
 
   const results: InstanceSummary[] = [];
   for (const instance of instances) {
-    // Get stats from actual trades table
     // Use DB-specific dry_run comparison (boolean for PostgreSQL, integer for SQLite)
     const liveComparison = getDryRunComparison(true);
-    const paperComparison = getDryRunComparison(false);
+    const dryComparison = getDryRunComparison(false);
 
+    // Get detailed stats for both live and dry trades
     const stats = await dbQueryOne<{
-      live_trades: number;
-      dry_run_trades: number;
-      live_pnl: number;
-      live_wins: number;
-      live_losses: number;
+      live_closed: number; live_open: number;
+      live_wins: number; live_losses: number;
+      live_pnl: number; live_avg_win: number; live_avg_loss: number;
+      dry_closed: number; dry_open: number;
+      dry_wins: number; dry_losses: number;
+      dry_pnl: number; dry_avg_win: number; dry_avg_loss: number;
     }>(`
       SELECT
-        COUNT(CASE WHEN ${liveComparison} THEN 1 END) as live_trades,
-        COUNT(CASE WHEN ${paperComparison} THEN 1 END) as dry_run_trades,
+        COUNT(CASE WHEN ${liveComparison} AND t.status IN ('closed', 'filled') THEN 1 END) as live_closed,
+        COUNT(CASE WHEN ${liveComparison} AND t.status IN ('pending', 'submitted', 'pending_fill') THEN 1 END) as live_open,
+        COUNT(CASE WHEN ${liveComparison} AND t.status IN ('closed', 'filled') AND t.pnl > 0 THEN 1 END) as live_wins,
+        COUNT(CASE WHEN ${liveComparison} AND t.status IN ('closed', 'filled') AND t.pnl < 0 THEN 1 END) as live_losses,
         COALESCE(SUM(CASE WHEN ${liveComparison} AND t.pnl IS NOT NULL THEN t.pnl ELSE 0 END), 0) as live_pnl,
-        COUNT(CASE WHEN ${liveComparison} AND t.pnl > 0 THEN 1 END) as live_wins,
-        COUNT(CASE WHEN ${liveComparison} AND t.pnl < 0 THEN 1 END) as live_losses
+        COALESCE(AVG(CASE WHEN ${liveComparison} AND t.pnl > 0 THEN t.pnl END), 0) as live_avg_win,
+        COALESCE(AVG(CASE WHEN ${liveComparison} AND t.pnl < 0 THEN ABS(t.pnl) END), 0) as live_avg_loss,
+        COUNT(CASE WHEN ${dryComparison} AND t.status IN ('closed', 'filled') THEN 1 END) as dry_closed,
+        COUNT(CASE WHEN ${dryComparison} AND t.status IN ('pending', 'submitted', 'pending_fill', 'paper_trade') THEN 1 END) as dry_open,
+        COUNT(CASE WHEN ${dryComparison} AND t.status IN ('closed', 'filled') AND t.pnl > 0 THEN 1 END) as dry_wins,
+        COUNT(CASE WHEN ${dryComparison} AND t.status IN ('closed', 'filled') AND t.pnl < 0 THEN 1 END) as dry_losses,
+        COALESCE(SUM(CASE WHEN ${dryComparison} AND t.pnl IS NOT NULL THEN t.pnl ELSE 0 END), 0) as dry_pnl,
+        COALESCE(AVG(CASE WHEN ${dryComparison} AND t.pnl > 0 THEN t.pnl END), 0) as dry_avg_win,
+        COALESCE(AVG(CASE WHEN ${dryComparison} AND t.pnl < 0 THEN ABS(t.pnl) END), 0) as dry_avg_loss
       FROM trades t
       JOIN cycles c ON t.cycle_id = c.id
       JOIN runs r ON c.run_id = r.id
       WHERE r.instance_id = ?
-        AND t.status NOT IN ('rejected', 'cancelled', 'error')
-    `, [instance.id]) || { live_trades: 0, dry_run_trades: 0, live_pnl: 0, live_wins: 0, live_losses: 0 };
+    `, [instance.id]) || {
+      live_closed: 0, live_open: 0, live_wins: 0, live_losses: 0, live_pnl: 0, live_avg_win: 0, live_avg_loss: 0,
+      dry_closed: 0, dry_open: 0, dry_wins: 0, dry_losses: 0, dry_pnl: 0, dry_avg_win: 0, dry_avg_loss: 0
+    };
 
-    // Parse instance settings
+    // Parse instance settings (PostgreSQL returns JSONB as object, SQLite returns string)
     let instanceSettings: Record<string, unknown> = {};
     if (instance.settings) {
-      try {
-        instanceSettings = JSON.parse(instance.settings);
-      } catch {
-        // Ignore parse errors
+      if (typeof instance.settings === 'string') {
+        try { instanceSettings = JSON.parse(instance.settings); } catch { /* ignore */ }
+      } else if (typeof instance.settings === 'object') {
+        instanceSettings = instance.settings as Record<string, unknown>;
       }
     }
 
-    // Win rate based on live trades only
-    const winRate = (stats.live_wins + stats.live_losses) > 0
-      ? (stats.live_wins / (stats.live_wins + stats.live_losses)) * 100
-      : 0;
+    // Ensure numeric types (PostgreSQL returns strings)
+    const liveClosed = Number(stats.live_closed) || 0;
+    const liveOpen = Number(stats.live_open) || 0;
+    const liveWins = Number(stats.live_wins) || 0;
+    const liveLosses = Number(stats.live_losses) || 0;
+    const livePnl = Number(stats.live_pnl) || 0;
+    const liveAvgWin = Number(stats.live_avg_win) || 0;
+    const liveAvgLoss = Number(stats.live_avg_loss) || 0;
+    const dryClosed = Number(stats.dry_closed) || 0;
+    const dryOpen = Number(stats.dry_open) || 0;
+    const dryWins = Number(stats.dry_wins) || 0;
+    const dryLosses = Number(stats.dry_losses) || 0;
+    const dryPnl = Number(stats.dry_pnl) || 0;
+    const dryAvgWin = Number(stats.dry_avg_win) || 0;
+    const dryAvgLoss = Number(stats.dry_avg_loss) || 0;
 
-    // Get config from instance settings
+    // Calculate EV for live trades
+    const liveTotal = liveWins + liveLosses;
+    const liveWinDec = liveTotal > 0 ? liveWins / liveTotal : 0;
+    const liveLossDec = liveTotal > 0 ? liveLosses / liveTotal : 0;
+    const liveEv = (liveWinDec * liveAvgWin) - (liveLossDec * liveAvgLoss);
+
+    // Calculate EV for dry trades
+    const dryTotal = dryWins + dryLosses;
+    const dryWinDec = dryTotal > 0 ? dryWins / dryTotal : 0;
+    const dryLossDec = dryTotal > 0 ? dryLosses / dryTotal : 0;
+    const dryEv = (dryWinDec * dryAvgWin) - (dryLossDec * dryAvgLoss);
+
+    // Overall stats (live + dry)
+    const totalWins = liveWins + dryWins;
+    const totalLosses = liveLosses + dryLosses;
+    const totalClosed = totalWins + totalLosses;
+    const winRate = totalClosed > 0 ? (totalWins / totalClosed) * 100 : 0;
+    const totalPnl = livePnl + dryPnl;
+    const avgWin = (liveAvgWin + dryAvgWin) / 2 || liveAvgWin || dryAvgWin;
+    const avgLoss = (liveAvgLoss + dryAvgLoss) / 2 || liveAvgLoss || dryAvgLoss;
+    const winDec = totalClosed > 0 ? totalWins / totalClosed : 0;
+    const lossDec = totalClosed > 0 ? totalLosses / totalClosed : 0;
+    const expectedValue = (winDec * avgWin) - (lossDec * avgLoss);
+
+    // Config
     const useTestnet = instanceSettings['bybit.use_testnet'] === 'true' || instanceSettings['bybit.use_testnet'] === true;
     const paperTrading = instanceSettings['trading.paper_trading'] === 'true' || instanceSettings['trading.paper_trading'] === true;
 
+    // Running duration
+    let runningDurationHours: number | undefined;
+    if (instance.is_running && instance.current_run_id) {
+      const runInfo = await dbQueryOne<{ started_at: string }>(`SELECT started_at FROM runs WHERE id = ?`, [instance.current_run_id]);
+      if (runInfo) runningDurationHours = (Date.now() - new Date(runInfo.started_at).getTime()) / (1000 * 60 * 60);
+    }
+
+    // Latest cycle metrics + symbols
+    let latestCycle: { charts_captured: number; recommendations_generated: number; trades_executed: number } | undefined;
+    let lastCycleSymbols: string[] = [];
+    if (instance.current_run_id) {
+      const cycleInfo = await dbQueryOne<{ id: string; charts_captured: number; recommendations_generated: number; trades_executed: number }>(`
+        SELECT id, charts_captured, recommendations_generated, trades_executed FROM cycles WHERE run_id = ? ORDER BY started_at DESC LIMIT 1
+      `, [instance.current_run_id]);
+      if (cycleInfo) {
+        latestCycle = { charts_captured: Number(cycleInfo.charts_captured) || 0, recommendations_generated: Number(cycleInfo.recommendations_generated) || 0, trades_executed: Number(cycleInfo.trades_executed) || 0 };
+        // Get unique symbols from last cycle's recommendations
+        const symbols = await dbQuery<{ symbol: string }>(`SELECT DISTINCT symbol FROM recommendations WHERE cycle_id = ?`, [cycleInfo.id]);
+        lastCycleSymbols = symbols.map(s => s.symbol);
+      }
+    }
+
+    // Signal quality metrics (from recommendations in current run)
+    // Actionable = recs that meet min_confidence and min_rr thresholds from settings
+    let actionablePercent = 0, actionableCount = 0, totalRecs = 0, avgConfidence = 0, avgRiskReward = 0;
+    const minConfidence = Number(instanceSettings['trading.min_confidence']) || 0.6;
+    const minRR = Number(instanceSettings['trading.min_rr']) || 1.5;
+    if (instance.current_run_id) {
+      const recStats = await dbQueryOne<{ total: number; actionable: number; avg_conf: number; avg_rr: number }>(`
+        SELECT
+          COUNT(*) as total,
+          COUNT(CASE WHEN recommendation != 'hold' AND confidence >= ? AND risk_reward >= ? THEN 1 END) as actionable,
+          AVG(confidence) as avg_conf,
+          AVG(risk_reward) as avg_rr
+        FROM recommendations r JOIN cycles c ON r.cycle_id = c.id WHERE c.run_id = ?
+      `, [minConfidence, minRR, instance.current_run_id]);
+      if (recStats) {
+        totalRecs = Number(recStats.total) || 0;
+        actionableCount = Number(recStats.actionable) || 0;
+        avgConfidence = Number(recStats.avg_conf) || 0;
+        avgRiskReward = Number(recStats.avg_rr) || 0;
+        actionablePercent = totalRecs > 0 ? (actionableCount / totalRecs) * 100 : 0;
+      }
+    }
+
+    // Recent logs (last 3)
+    const recentLogs = await dbQuery<{ timestamp: string; level: string; message: string }>(`
+      SELECT timestamp, level, message FROM error_logs el
+      LEFT JOIN runs r ON el.run_id = r.id
+      WHERE r.instance_id = ? OR el.run_id IS NULL
+      ORDER BY el.timestamp DESC LIMIT 3
+    `, [instance.id]);
+
     results.push({
       ...instance,
-      total_trades: stats.live_trades + stats.dry_run_trades,
-      live_trades: stats.live_trades,
-      dry_run_trades: stats.dry_run_trades,
-      total_pnl: stats.live_pnl,
-      win_count: stats.live_wins,
-      loss_count: stats.live_losses,
+      total_trades: liveClosed + liveOpen + dryClosed + dryOpen,
+      live_trades: liveClosed + liveOpen,
+      dry_run_trades: dryClosed + dryOpen,
+      total_pnl: totalPnl,
+      win_count: totalWins,
+      loss_count: totalLosses,
       win_rate: winRate,
-      config: {
-        use_testnet: useTestnet,
-        paper_trading: paperTrading,
-      },
+      expected_value: expectedValue,
+      avg_win: avgWin,
+      avg_loss: avgLoss,
+      config: { use_testnet: useTestnet, paper_trading: paperTrading },
+      running_duration_hours: runningDurationHours,
+      latest_cycle: latestCycle,
+      // NEW fields
+      live_closed: liveClosed, live_open: liveOpen, live_wins: liveWins, live_losses: liveLosses, live_pnl: livePnl, live_ev: liveEv,
+      dry_closed: dryClosed, dry_open: dryOpen, dry_wins: dryWins, dry_losses: dryLosses, dry_pnl: dryPnl, dry_ev: dryEv,
+      last_cycle_symbols: lastCycleSymbols,
+      actionable_percent: actionablePercent, actionable_count: actionableCount, total_recs: totalRecs, avg_confidence: avgConfidence, avg_risk_reward: avgRiskReward,
+      recent_logs: recentLogs,
     });
   }
   return results;
@@ -1234,18 +1373,19 @@ export async function getStats(): Promise<{
     dbQueryOne<{ count: number }>('SELECT COUNT(*) as count FROM runs'),
   ]);
 
-  const wins = winRow?.count || 0;
-  const losses = lossRow?.count || 0;
+  // Ensure numeric types (PostgreSQL returns strings for aggregates)
+  const wins = Number(winRow?.count) || 0;
+  const losses = Number(lossRow?.count) || 0;
   const winRate = (wins + losses) > 0 ? wins / (wins + losses) : 0;
 
   return {
-    runs: runRow?.count || 0,
-    cycles: cycleRow?.count || 0,
-    recommendations: recRow?.count || 0,
-    trades: tradeRow?.count || 0,
-    executions: execRow?.count || 0,
+    runs: Number(runRow?.count) || 0,
+    cycles: Number(cycleRow?.count) || 0,
+    recommendations: Number(recRow?.count) || 0,
+    trades: Number(tradeRow?.count) || 0,
+    executions: Number(execRow?.count) || 0,
     winRate,
-    totalPnl: pnlRow?.total || 0,
+    totalPnl: Number(pnlRow?.total) || 0,
   };
 }
 
@@ -1453,6 +1593,34 @@ export interface StatsResult {
 }
 
 /**
+ * Helper to normalize stats from PostgreSQL (which returns strings for aggregates)
+ */
+function normalizeStats(
+  imagesAnalyzed: number | string | null | undefined,
+  recs: { total?: number | string; actionable?: number | string; avg_conf?: number | string | null } | null,
+  trades: { total?: number | string; wins?: number | string; losses?: number | string; total_pnl?: number | string } | null
+): StatsResult {
+  const recsTotal = Number(recs?.total) || 0;
+  const recsActionable = Number(recs?.actionable) || 0;
+  const avgConf = Number(recs?.avg_conf) || 0;
+  const tradesTotal = Number(trades?.total) || 0;
+  const tradesWins = Number(trades?.wins) || 0;
+  const tradesLosses = Number(trades?.losses) || 0;
+  const tradesPnl = Number(trades?.total_pnl) || 0;
+
+  return {
+    images_analyzed: Number(imagesAnalyzed) || 0,
+    valid_signals: recsActionable,
+    avg_confidence: avgConf,
+    actionable_percent: recsTotal > 0 ? (recsActionable / recsTotal) * 100 : 0,
+    total_trades: tradesTotal,
+    win_count: tradesWins,
+    loss_count: tradesLosses,
+    total_pnl: tradesPnl,
+  };
+}
+
+/**
  * Get stats for a specific cycle
  */
 export async function getStatsByCycleId(cycleId: string): Promise<StatsResult> {
@@ -1475,16 +1643,7 @@ export async function getStatsByCycleId(cycleId: string): Promise<StatsResult> {
     `, [cycleId]),
   ]);
 
-  return {
-    images_analyzed: cycle?.charts_captured || 0,
-    valid_signals: recs?.actionable || 0,
-    avg_confidence: recs?.avg_conf || 0,
-    actionable_percent: recs?.total && recs.total > 0 ? (recs.actionable / recs.total) * 100 : 0,
-    total_trades: trades?.total || 0,
-    win_count: trades?.wins || 0,
-    loss_count: trades?.losses || 0,
-    total_pnl: trades?.total_pnl || 0,
-  };
+  return normalizeStats(cycle?.charts_captured, recs, trades);
 }
 
 /**
@@ -1512,16 +1671,7 @@ export async function getStatsByRunId(runId: string): Promise<StatsResult> {
     `, [runId]),
   ]);
 
-  return {
-    images_analyzed: cycles?.total || 0,
-    valid_signals: recs?.actionable || 0,
-    avg_confidence: recs?.avg_conf || 0,
-    actionable_percent: recs?.total && recs.total > 0 ? (recs.actionable / recs.total) * 100 : 0,
-    total_trades: trades?.total || 0,
-    win_count: trades?.wins || 0,
-    loss_count: trades?.losses || 0,
-    total_pnl: trades?.total_pnl || 0,
-  };
+  return normalizeStats(cycles?.total, recs, trades);
 }
 
 /**
@@ -1556,16 +1706,7 @@ export async function getStatsByInstanceId(instanceId: string): Promise<StatsRes
     `, [instanceId]),
   ]);
 
-  return {
-    images_analyzed: cycles?.total || 0,
-    valid_signals: recs?.actionable || 0,
-    avg_confidence: recs?.avg_conf || 0,
-    actionable_percent: recs?.total && recs.total > 0 ? (recs.actionable / recs.total) * 100 : 0,
-    total_trades: trades?.total || 0,
-    win_count: trades?.wins || 0,
-    loss_count: trades?.losses || 0,
-    total_pnl: trades?.total_pnl || 0,
-  };
+  return normalizeStats(cycles?.total, recs, trades);
 }
 
 /**
@@ -1592,15 +1733,8 @@ export async function getGlobalStats(): Promise<StatsResult & { instance_count: 
   ]);
 
   return {
-    instance_count: instances?.total || 0,
-    images_analyzed: cycles?.total || 0,
-    valid_signals: recs?.actionable || 0,
-    avg_confidence: recs?.avg_conf || 0,
-    actionable_percent: recs?.total && recs.total > 0 ? (recs.actionable / recs.total) * 100 : 0,
-    total_trades: trades?.total || 0,
-    win_count: trades?.wins || 0,
-    loss_count: trades?.losses || 0,
-    total_pnl: trades?.total_pnl || 0,
+    instance_count: Number(instances?.total) || 0,
+    ...normalizeStats(cycles?.total, recs, trades),
   };
 }
 
