@@ -191,10 +191,11 @@ export async function GET(request: NextRequest) {
 
       if (stats.length > 0) {
         // Ensure numeric types (PostgreSQL returns strings for aggregates)
+        const avgDuration = Number(stats[0].avg_duration_minutes) || 0;
         cycleStats = {
           total_cycles: Number(stats[0].total_cycles) || 0,
           successful_cycles: Number(stats[0].successful_cycles) || 0,
-          avg_cycle_duration_minutes: Math.round(Number(stats[0].avg_duration_minutes) || 0),
+          avg_cycle_duration_minutes: parseFloat(avgDuration.toFixed(1)),
           last_cycle_completed: stats[0].last_completed || null
         };
       }
