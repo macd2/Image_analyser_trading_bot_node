@@ -104,11 +104,17 @@ interface MonitorStatus {
 }
 
 export function OverviewTab({ instanceId }: OverviewTabProps) {
-  // Use shared context for logs
-  const { logs, addLog, setLogs } = useBotState()
+  // Use shared context for logs (populated by GlobalLogListener)
+  const { logs, setLogs } = useBotState()
+  // Get logs for this specific instance
+  const instanceLogs = useMemo(() => {
+    const logsArray = logs[instanceId] || []
+    console.log('[OverviewTab] instanceLogs', { instanceId, length: logsArray.length, logs: logsArray.slice(-3) })
+    return logsArray
+  }, [logs, instanceId])
 
   // Connect to Socket.IO for real-time updates (wallet, positions, tickers)
-  const { socket, wallet: liveWallet, positions: livePositions } = useRealtime()
+  const { wallet: liveWallet, positions: livePositions } = useRealtime()
 
   const [status, setStatus] = useState<BotStatus | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
@@ -131,15 +137,15 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null)
 
   // Track logs length in ref to avoid stale closure in fetchData
-  const logsLengthRef = useRef(logs.length)
-  useEffect(() => { logsLengthRef.current = logs.length }, [logs.length])
+  const logsLengthRef = useRef(instanceLogs.length)
+  useEffect(() => { logsLengthRef.current = instanceLogs.length }, [instanceLogs.length])
 
   // Refs for auto-scroll
   const logsPreviewRef = useRef<HTMLDivElement>(null)
   const logsModalRef = useRef<HTMLDivElement>(null)
 
   // Parse and filter logs
-  const parsedLogs = useMemo(() => logs.map(parseLog), [logs])
+  const parsedLogs = useMemo(() => instanceLogs.map(parseLog), [instanceLogs])
   const filteredLogs = useMemo(() => {
     if (logFilter === 'all') return parsedLogs
     return parsedLogs.filter(log => log.level === logFilter)
@@ -164,7 +170,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         logsModalRef.current.scrollTop = logsModalRef.current.scrollHeight
       }
     }
-  }, [logs, autoScroll, filteredLogs])
+  }, [instanceLogs, autoScroll, filteredLogs])
 
   const fetchData = async () => {
     try {
@@ -205,7 +211,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         // If API has more logs than we have, use API logs as the source of truth
         // Use ref to avoid stale closure issue with interval
         if (controlData.logs.length > logsLengthRef.current) {
-          setLogs(controlData.logs)
+          setLogs(controlData.logs, instanceId)
         }
       }
 
@@ -245,23 +251,8 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
     return () => clearInterval(interval)
   }, [instanceId])
 
-  // Listen for live logs via Socket.IO
-  useEffect(() => {
-    if (!socket) return
-
-    const handleLog = (data: { log: string; instanceId?: string; timestamp: number }) => {
-      // Only add logs for this instance (or all logs if no instanceId specified)
-      if (!data.instanceId || data.instanceId === instanceId) {
-        addLog(data.log)
-      }
-    }
-
-    socket.on('bot_log', handleLog)
-
-    return () => {
-      socket.off('bot_log', handleLog)
-    }
-  }, [socket, instanceId, addLog])
+  // Note: Live logs are now handled by GlobalLogListener at the layout level
+  // This avoids duplicate log entries when multiple components subscribe to bot_log
 
   if (loading) return <LoadingState text="Loading overview..." />
   if (error) return <ErrorState message={error} onRetry={fetchData} />
@@ -604,7 +595,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
             <div className="flex items-center justify-between p-4 border-b border-slate-700">
               <div className="flex items-center gap-4">
                 <h2 className="text-lg font-bold text-white">Bot Logs</h2>
-                <span className="text-xs text-slate-400">{logs.length} total entries</span>
+                <span className="text-xs text-slate-400">{instanceLogs.length} total entries</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1 bg-slate-900 rounded-lg p-1">
@@ -629,7 +620,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
                 >
                   {autoScroll ? '⏬ Auto' : '⏸ Paused'}
                 </button>
-                <button onClick={() => setLogs([])} className="text-xs text-slate-500 hover:text-slate-300">Clear</button>
+                <button onClick={() => setLogs([], instanceId)} className="text-xs text-slate-500 hover:text-slate-300">Clear</button>
                 <button onClick={() => setShowLogsModal(false)} className="p-1.5 rounded hover:bg-slate-700 transition text-slate-400 hover:text-white">✕</button>
               </div>
             </div>
