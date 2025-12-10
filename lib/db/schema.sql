@@ -37,26 +37,6 @@ CREATE TABLE IF NOT EXISTS runs (
     started_at TIMESTAMPTZ NOT NULL,
     ended_at TIMESTAMPTZ,
     status TEXT DEFAULT 'running',
-    stop_reason TEXT,
-    timeframe TEXT,
-    paper_trading BOOLEAN,
-    min_confidence REAL,
-    max_leverage INTEGER,
-    symbols_watched TEXT,
-    config_snapshot JSONB,
-    total_cycles INTEGER DEFAULT 0,
-    total_recommendations INTEGER DEFAULT 0,
-    total_trades INTEGER DEFAULT 0,
-    total_pnl REAL DEFAULT 0,
-    win_count INTEGER DEFAULT 0,
-    loss_count INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
-CREATE INDEX IF NOT EXISTS idx_runs_instance ON runs(instance_id);
-
-CREATE TABLE IF NOT EXISTS cycles (
-    id TEXT PRIMARY KEY,
     run_id TEXT REFERENCES runs(id),
     timeframe TEXT NOT NULL,
     cycle_number INTEGER NOT NULL,
