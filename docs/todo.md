@@ -47,11 +47,7 @@ docs/Strategies/trade_entry_strategies_E3lYZsy8nYE_HH_LL_alex_strat.md
 # overview 
 ## insance page
 [ ] Trading Cycle Status this should be based on the current run 
-[ ] make sure the avg duration is calculated and siplayed corectly
-
-## Bot Statistics
-[ ] the winrate and total pnl shows 0% thats incorrect 
-
+e the
 -----
 
 # OpenAI Credit Exhaustion Error Handling
