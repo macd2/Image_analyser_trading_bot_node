@@ -103,3 +103,6 @@ UPDATE trades SET
   status = 'cancelled'
 WHERE id = ?
 Again, exit_price is set to currentPrice (line 544). So indeed, the simulator sets exit price for cancelled trades.
+
+
+----
