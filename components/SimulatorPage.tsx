@@ -921,7 +921,8 @@ export function SimulatorPage() {
                           </div>
                         )}
 
-                        {currentPrice && (
+                        {/* Only show current price and PnL for filled trades */}
+                        {isFilled && currentPrice && (
                           <div className={`flex items-center gap-2 px-4 py-2 rounded ${pnl >= 0 ? 'bg-green-900/30' : 'bg-red-900/30'}`}>
                             <span className="text-slate-400 text-sm">Current: <span className="text-blue-400 font-mono">${currentPrice.toFixed(4)}</span></span>
                             <span className={`text-xl font-bold ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
