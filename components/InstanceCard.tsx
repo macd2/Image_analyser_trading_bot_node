@@ -214,7 +214,7 @@ export default function InstanceCard({ instance, onAction }: InstanceCardProps) 
             {instance.win_count + instance.loss_count > 0 ? `${instance.win_rate.toFixed(0)}%` : '—'}
           </div>
           <div className={`text-center text-lg font-bold ${instance.total_pnl > 0 ? 'text-green-400' : instance.total_pnl < 0 ? 'text-red-400' : 'text-slate-400'}`}>
-            {instance.total_pnl !== 0 ? `${instance.total_pnl > 0 ? '+' : ''}$${instance.total_pnl.toFixed(0)}` : '—'}
+            {instance.total_pnl !== 0 ? `${instance.total_pnl > 0 ? '+' : ''}$${instance.total_pnl.toFixed(2)}` : '—'}
           </div>
           <div className={`text-center text-lg font-bold ${instance.expected_value > 0 ? 'text-green-400' : instance.expected_value < 0 ? 'text-red-400' : 'text-slate-400'}`}>
             {instance.win_count + instance.loss_count > 0 ? `${instance.expected_value > 0 ? '+' : ''}$${instance.expected_value.toFixed(2)}` : '—'}
