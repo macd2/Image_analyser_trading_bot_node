@@ -1,6 +1,6 @@
 'use client'
 
-import { BarChart3, Camera, Brain, GraduationCap, Settings2, ChevronRight, Trophy, Bot, Activity, Monitor, Zap, Database, Cloud } from 'lucide-react'
+import { BarChart3, Camera, Brain, GraduationCap, Settings2, ChevronRight, Trophy, Activity, Monitor, Zap, Database, Cloud } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
@@ -81,7 +81,6 @@ export default function Sidebar() {
     { id: 'dashboard', href: '/', label: 'Dashboard', icon: BarChart3, desc: 'Overview' },
     { id: 'instances', href: '/instances', label: 'Instances', icon: Activity, desc: 'Instance View', showInstanceCount: true },
     { id: 'simulator', href: '/simulator', label: 'Simulator', icon: Zap, desc: 'Paper Trade Sim', showSimulatorStatus: true },
-    { id: 'bot', href: '/bot', label: 'Bot Control', icon: Bot, desc: 'Start/Stop Bot' },
     { id: 'browser', href: '/browser', label: 'Browser View', icon: Monitor, desc: 'Live Debug' },
     { id: 'logs', href: '/logs', label: 'Log Trail', icon: Activity, desc: 'Audit Trail' },
     { id: 'capture', href: '/capture', label: '1. Capture', icon: Camera, desc: 'Chart Sourcer' },
