@@ -470,12 +470,17 @@ export async function POST() {
         }
 
         // Trade is now filled - update database with fill info
-        const fillTimeDate = new Date(fillResult.fillTimestamp!);
-        if (isNaN(fillTimeDate.getTime())) {
+        // fillTimestamp is a number (Unix ms), convert to Date
+        const fillTimeMs = typeof fillResult.fillTimestamp === 'string'
+          ? parseInt(fillResult.fillTimestamp, 10)
+          : fillResult.fillTimestamp;
+
+        if (!fillTimeMs || isNaN(fillTimeMs)) {
           console.error(`[Auto-Close] Invalid fillTimestamp for trade ${trade.id}: ${fillResult.fillTimestamp}`);
           continue; // Skip this trade
         }
-        const fillTime = fillTimeDate.toISOString();
+
+        const fillTime = new Date(fillTimeMs).toISOString();
         await dbExecute(`
           UPDATE trades SET
             fill_price = ?,
@@ -511,14 +516,18 @@ export async function POST() {
         const pnlPercent = fillPrice > 0 ? (pnl / (fillPrice * qty)) * 100 : 0;
 
         // Get exit timestamp as ISO string
+        // exitTimestamp is a number (Unix ms), convert to Date
         let exitTime: string;
         if (exitResult.exitTimestamp) {
-          const exitTimeDate = new Date(exitResult.exitTimestamp);
-          if (isNaN(exitTimeDate.getTime())) {
+          const exitTimeMs = typeof exitResult.exitTimestamp === 'string'
+            ? parseInt(exitResult.exitTimestamp, 10)
+            : exitResult.exitTimestamp;
+
+          if (!exitTimeMs || isNaN(exitTimeMs)) {
             console.error(`[Auto-Close] Invalid exitTimestamp for trade ${trade.id}: ${exitResult.exitTimestamp}`);
             continue; // Skip this trade
           }
-          exitTime = exitTimeDate.toISOString();
+          exitTime = new Date(exitTimeMs).toISOString();
         } else {
           exitTime = new Date().toISOString();
         }
