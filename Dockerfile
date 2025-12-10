@@ -70,8 +70,8 @@ RUN python3 -m playwright install chromium --with-deps
 # Copy all source code
 COPY . .
 
-# Build Next.js
-RUN pnpm build
+# Clean any stale build cache and build Next.js
+RUN rm -rf .next && pnpm build
 
 # Create data directories and log directories
 RUN mkdir -p data/charts data/charts/.backup logs /var/log/supervisor

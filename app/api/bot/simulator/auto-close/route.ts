@@ -419,8 +419,6 @@ export async function POST() {
           // Apply max bars cancellation to pending_fill and paper_trade status
           if ((trade.status === 'pending_fill' || trade.status === 'paper_trade') && maxOpenBars > 0 && barsPending >= maxOpenBars) {
             // Cancel trade - been pending fill too long
-            const cancelTime = new Date().toISOString();
-
             await dbExecute(`
               UPDATE trades SET
                 exit_price = NULL,
