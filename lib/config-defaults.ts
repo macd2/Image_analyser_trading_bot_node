@@ -15,7 +15,7 @@ const DEFAULT_RR_TIGHTENING_STEPS = {
 };
 
 export type ConfigType = 'string' | 'number' | 'boolean' | 'json';
-export type ConfigCategory = 'trading' | 'tightening' | 'sizing' | 'replacement' | 'exchange' | 'ai';
+export type ConfigCategory = 'trading' | 'tightening' | 'sizing' | 'replacement' | 'exchange' | 'ai' | 'tradingview';
 
 export interface ConfigDefault {
   key: string;
@@ -180,6 +180,21 @@ export const DEFAULT_CONFIG: ConfigDefault[] = [
     type: "string",
     category: "ai",
     description: "OpenAI Assistant ID for analysis (empty = use direct API)"
+  },
+   // TradingView (2 settings)
+  {
+    key: "tradingview.enabled",
+    value: true,
+    type: "boolean",
+    category: "tradingview",
+    description: "Enable TradingView chart capture"
+  },
+  {
+    key: "tradingview.target_chart",
+    value: "https://www.tradingview.com/chart/iXrxoaRu/",
+    type: "string",
+    category: "tradingview",
+    description: "Target chart URL for TradingView navigation"
   },
 ];
 

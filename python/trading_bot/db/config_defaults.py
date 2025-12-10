@@ -69,6 +69,12 @@ DEFAULT_CONFIG: List[Tuple[str, Any, str, str, str]] = [
      "OpenAI model for chart analysis"),
     ("openai.assistant_id", "asst_m11ds7XhdYfN7voO0pRvgbul", "string", "ai",
      "OpenAI Assistant ID for analysis (empty = use direct API)"),
+
+    # TradingView (2 settings)
+    ("tradingview.enabled", True, "boolean", "tradingview",
+     "Enable TradingView chart capture"),
+    ("tradingview.target_chart", "https://www.tradingview.com/chart/iXrxoaRu/", "string", "tradingview",
+     "Target chart URL for TradingView navigation"),
 ]
 
 
@@ -158,4 +164,3 @@ if __name__ == "__main__":
         print(f"  [{row['category']}] {row['key']} = {row['value']}")
 
     conn.close()
-
