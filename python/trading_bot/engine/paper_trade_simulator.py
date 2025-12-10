@@ -88,11 +88,35 @@ class PaperTradeSimulator:
 
             # Use centralized db_execute to handle SQLite/PostgreSQL placeholder conversion
             rows_affected = db_execute(conn, query_str, tuple(values))
+            
+            # If trade is being closed (status = 'closed' and pnl is set), update run aggregates
+            if updates.get('status') == 'closed' and updates.get('pnl') is not None:
+                self._update_run_aggregates_on_trade_close(conn, trade_id, updates['pnl'])
+            
             conn.commit()
 
             return rows_affected > 0
         finally:
             conn.close()
+    
+    def _update_run_aggregates_on_trade_close(self, conn, trade_id: str, pnl: float) -> None:
+        """Update run aggregates (win_count, loss_count, total_pnl) when a paper trade closes."""
+        try:
+            is_win = pnl > 0
+            is_loss = pnl < 0
+            db_execute(conn, """
+                UPDATE runs
+                SET total_pnl = total_pnl + ?,
+                    win_count = win_count + ?,
+                    loss_count = loss_count + ?
+                WHERE id = (
+                    SELECT run_id FROM trades WHERE id = ?
+                )
+            """, (pnl, 1 if is_win else 0, 1 if is_loss else 0, trade_id))
+            # No commit here, let the caller commit
+            logger.debug(f"Updated run aggregates for paper trade {trade_id} (pnl: {pnl})")
+        except Exception as e:
+            logger.error(f"Failed to update run aggregates for paper trade: {e}")
     
     def simulate_trade(self, trade: Dict[str, Any], candles: List[Candle]) -> Optional[Dict[str, Any]]:
         """
