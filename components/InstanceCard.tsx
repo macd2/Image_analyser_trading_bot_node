@@ -3,6 +3,32 @@
 import { useState } from 'react'
 import { Play, Square, Skull, ChevronRight, RefreshCw, FileText, Clock, Target, Activity, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
+import { useBotState } from '@/lib/context/BotStateContext'
+
+type LogLevel = 'error' | 'warning' | 'info' | 'debug' | 'all'
+
+interface ParsedLog {
+  raw: string
+  level: LogLevel
+  timestamp?: string
+  message: string
+}
+
+function parseLogLevel(log: string): LogLevel {
+  const lower = log.toLowerCase()
+  if (/\|\s*error\s*\|/.test(lower) || lower.includes('[error]') || lower.includes('error:')) return 'error'
+  if (/\|\s*warning\s*\|/.test(lower) || lower.includes('[warning]') || lower.includes('warning:')) return 'warning'
+  if (/\|\s*debug\s*\|/.test(lower) || lower.includes('[debug]')) return 'debug'
+  return 'info'
+}
+
+function parseLog(log: string): ParsedLog {
+  const level = parseLogLevel(log)
+  const timestampMatch = log.match(/\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\]?/)
+  const timestamp = timestampMatch ? timestampMatch[1] : undefined
+  const message = timestamp && timestampMatch ? log.replace(timestampMatch[0], '').trim() : log
+  return { raw: log, level, timestamp, message }
+}
 
 export interface InstanceCardData {
   id: string
@@ -58,6 +84,47 @@ export interface InstanceCardData {
 interface InstanceCardProps {
   instance: InstanceCardData
   onAction?: (instanceId: string, action: 'start' | 'stop' | 'kill') => Promise<void>
+}
+
+function RecentLogsSection({ instance }: { instance: InstanceCardData }) {
+  const { logs } = useBotState()
+  const liveLogs = logs[instance.id] || []
+
+  // Parse live logs
+  const parsedLiveLogs = liveLogs.map(parseLog).slice(-3) // last 3
+
+  // Fallback to instance.recent_logs if no live logs
+  const logsToDisplay = parsedLiveLogs.length > 0 ? parsedLiveLogs :
+    instance.recent_logs?.slice(0, 3).map(log => ({
+      raw: log.message,
+      level: log.level as LogLevel,
+      timestamp: log.timestamp,
+      message: log.message
+    })) || []
+
+  if (logsToDisplay.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="px-4 py-2 bg-slate-900/70">
+      <div className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mb-1.5">Recent Logs</div>
+      <div className="space-y-1">
+        {logsToDisplay.map((log, i) => (
+          <div key={i} className="flex items-start gap-2 text-xs">
+            <AlertCircle className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
+              log.level === 'error' ? 'text-red-400' :
+              log.level === 'warning' ? 'text-amber-400' : 'text-slate-500'
+            }`} />
+            <span className="text-slate-500 shrink-0">
+              {log.timestamp ? new Date(log.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+            </span>
+            <span className="text-slate-400 truncate">{log.message}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export default function InstanceCard({ instance, onAction }: InstanceCardProps) {
@@ -301,23 +368,7 @@ export default function InstanceCard({ instance, onAction }: InstanceCardProps) 
       )}
 
       {/* ═══════════════ SECTION 6: RECENT LOGS ═══════════════ */}
-      {instance.recent_logs && instance.recent_logs.length > 0 && (
-        <div className="px-4 py-2 bg-slate-900/70">
-          <div className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mb-1.5">Recent Logs</div>
-          <div className="space-y-1">
-            {instance.recent_logs.slice(0, 3).map((log, i) => (
-              <div key={i} className="flex items-start gap-2 text-xs">
-                <AlertCircle className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
-                  log.level === 'error' ? 'text-red-400' :
-                  log.level === 'warn' ? 'text-amber-400' : 'text-slate-500'
-                }`} />
-                <span className="text-slate-500 shrink-0">{new Date(log.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
-                <span className="text-slate-400 truncate">{log.message}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <RecentLogsSection instance={instance} />
     </div>
   )
 }
