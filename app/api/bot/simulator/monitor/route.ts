@@ -1,27 +1,35 @@
 /**
  * Paper Trade Monitor Status API
- * Uses in-memory state stored in global, no Python needed
+ * Stores settings in database (persisted), runtime status in JSON file (ephemeral)
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
+import { getSettings, saveSettings } from '@/lib/db/settings'
 
-// Store status in a JSON file since Next.js API routes are stateless
+// JSON file for runtime status only (not persisted across restarts)
 const STATUS_FILE = path.join(process.cwd(), 'data', 'simulator_status.json')
 
 // Per-timeframe max open bars configuration
 type MaxOpenBarsConfig = Record<string, number>  // e.g. { "1h": 24, "4h": 12, "1d": 5 }
 
-interface MonitorStatus {
+// Database settings key
+const SIMULATOR_SETTINGS_KEY = 'simulator'
+
+// Settings stored in database (persisted)
+interface SimulatorSettings {
+  max_open_bars: MaxOpenBarsConfig
+}
+
+// Runtime status stored in file (ephemeral)
+interface RuntimeStatus {
   running: boolean
   last_check: string | null
   trades_checked: number
   trades_closed: number
   trades_cancelled?: number
   next_check: number | null
-  // Simulator settings - per-timeframe max open bars (0 = disabled for that timeframe)
-  max_open_bars?: MaxOpenBarsConfig
   results: Array<{
     trade_id: string
     symbol: string
@@ -34,6 +42,11 @@ interface MonitorStatus {
   }>
 }
 
+// Combined status returned to frontend
+interface MonitorStatus extends RuntimeStatus {
+  max_open_bars?: MaxOpenBarsConfig
+}
+
 // Default per-timeframe max open bars (0 = disabled)
 const DEFAULT_MAX_OPEN_BARS: MaxOpenBarsConfig = {
   '1m': 0, '3m': 0, '5m': 0, '15m': 0, '30m': 0,
@@ -41,14 +54,43 @@ const DEFAULT_MAX_OPEN_BARS: MaxOpenBarsConfig = {
   '1d': 0, '1D': 0
 }
 
-function getStatus(): MonitorStatus {
+// Get settings from database (persisted)
+async function getSimulatorSettings(): Promise<SimulatorSettings> {
+  try {
+    const settings = await getSettings<SimulatorSettings>(SIMULATOR_SETTINGS_KEY)
+    return {
+      max_open_bars: { ...DEFAULT_MAX_OPEN_BARS, ...(settings?.max_open_bars || {}) }
+    }
+  } catch (e) {
+    console.error('Failed to read simulator settings from DB:', e)
+    return { max_open_bars: { ...DEFAULT_MAX_OPEN_BARS } }
+  }
+}
+
+// Save settings to database (persisted)
+async function saveSimulatorSettings(settings: Partial<SimulatorSettings>): Promise<void> {
+  try {
+    const existing = await getSimulatorSettings()
+    await saveSettings(SIMULATOR_SETTINGS_KEY, { ...existing, ...settings })
+  } catch (e) {
+    console.error('Failed to save simulator settings to DB:', e)
+    throw e
+  }
+}
+
+// Get runtime status from file (ephemeral)
+function getRuntimeStatus(): RuntimeStatus {
   try {
     if (fs.existsSync(STATUS_FILE)) {
       const data = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf-8'))
-      // Ensure max_open_bars has default values for all timeframes
       return {
-        ...data,
-        max_open_bars: { ...DEFAULT_MAX_OPEN_BARS, ...(data.max_open_bars || {}) }
+        running: data.running ?? false,
+        last_check: data.last_check ?? null,
+        trades_checked: data.trades_checked ?? 0,
+        trades_closed: data.trades_closed ?? 0,
+        trades_cancelled: data.trades_cancelled ?? 0,
+        next_check: data.next_check ?? null,
+        results: data.results ?? []
       }
     }
   } catch (e) {
@@ -61,12 +103,12 @@ function getStatus(): MonitorStatus {
     trades_closed: 0,
     trades_cancelled: 0,
     next_check: null,
-    max_open_bars: { ...DEFAULT_MAX_OPEN_BARS },
     results: []
   }
 }
 
-function saveStatus(status: MonitorStatus) {
+// Save runtime status to file (ephemeral)
+function saveRuntimeStatus(status: RuntimeStatus): void {
   try {
     const dir = path.dirname(STATUS_FILE)
     if (!fs.existsSync(dir)) {
@@ -78,8 +120,18 @@ function saveStatus(status: MonitorStatus) {
   }
 }
 
+// Get combined status (settings from DB + runtime from file)
+async function getStatus(): Promise<MonitorStatus> {
+  const settings = await getSimulatorSettings()
+  const runtime = getRuntimeStatus()
+  return {
+    ...runtime,
+    max_open_bars: settings.max_open_bars
+  }
+}
+
 export async function GET() {
-  const status = getStatus()
+  const status = await getStatus()
   return NextResponse.json(status)
 }
 
@@ -89,9 +141,9 @@ export async function POST(request: NextRequest) {
     const { action, results, trades_checked, trades_closed } = body
 
     if (action === 'start') {
-      const status = getStatus()
-      status.running = true
-      saveStatus(status)
+      const runtime = getRuntimeStatus()
+      runtime.running = true
+      saveRuntimeStatus(runtime)
 
       return NextResponse.json({
         success: true,
@@ -99,10 +151,10 @@ export async function POST(request: NextRequest) {
       })
 
     } else if (action === 'stop') {
-      const status = getStatus()
-      status.running = false
-      status.next_check = null
-      saveStatus(status)
+      const runtime = getRuntimeStatus()
+      runtime.running = false
+      runtime.next_check = null
+      saveRuntimeStatus(runtime)
 
       return NextResponse.json({
         success: true,
@@ -111,16 +163,17 @@ export async function POST(request: NextRequest) {
 
     } else if (action === 'update') {
       // Called by the frontend to update status after an auto-close check
-      const status = getStatus()
-      status.last_check = new Date().toISOString()
-      status.trades_checked = trades_checked || 0
-      status.trades_closed = trades_closed || 0
-      status.results = results || []
-      if (status.running) {
-        status.next_check = Date.now() / 1000 + 10 // Next check in 10 seconds
+      const runtime = getRuntimeStatus()
+      runtime.last_check = new Date().toISOString()
+      runtime.trades_checked = trades_checked || 0
+      runtime.trades_closed = trades_closed || 0
+      runtime.results = results || []
+      if (runtime.running) {
+        runtime.next_check = Date.now() / 1000 + 10 // Next check in 10 seconds
       }
-      saveStatus(status)
+      saveRuntimeStatus(runtime)
 
+      const status = await getStatus()
       return NextResponse.json({
         success: true,
         ...status
@@ -140,13 +193,13 @@ export async function POST(request: NextRequest) {
 
         if (res.ok) {
           const data = await res.json()
-          const updated = getStatus()
-          updated.last_check = new Date().toISOString()
-          updated.trades_checked = data.checked || 0
-          updated.trades_closed = data.closed || 0
-          updated.results = data.results || []
-          updated.next_check = Date.now() / 1000 + 30
-          saveStatus(updated)
+          const runtime = getRuntimeStatus()
+          runtime.last_check = new Date().toISOString()
+          runtime.trades_checked = data.checked || 0
+          runtime.trades_closed = data.closed || 0
+          runtime.results = data.results || []
+          runtime.next_check = Date.now() / 1000 + 30
+          saveRuntimeStatus(runtime)
 
           return NextResponse.json({
             success: true,
@@ -168,33 +221,30 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
 
     } else if (action === 'set-max-bars') {
-      // Update max_open_bars setting - supports per-timeframe config
+      // Update max_open_bars setting in DATABASE (persisted across restarts)
       // Can receive: { timeframe: "1h", max_bars: 24 } OR { max_open_bars: { "1h": 24, "4h": 12 } }
       const { max_open_bars, timeframe, max_bars } = body
-      const status = getStatus()
+      const currentSettings = await getSimulatorSettings()
+
+      let updatedMaxBars = { ...currentSettings.max_open_bars }
 
       if (timeframe && typeof max_bars === 'number') {
         // Update single timeframe
-        status.max_open_bars = {
-          ...status.max_open_bars,
-          [timeframe]: max_bars
-        }
+        updatedMaxBars[timeframe] = max_bars
       } else if (typeof max_open_bars === 'object' && max_open_bars !== null) {
         // Update multiple timeframes at once
-        status.max_open_bars = {
-          ...status.max_open_bars,
-          ...max_open_bars
-        }
+        updatedMaxBars = { ...updatedMaxBars, ...max_open_bars }
       }
 
-      saveStatus(status)
+      // Save to database (persisted)
+      await saveSimulatorSettings({ max_open_bars: updatedMaxBars })
 
       return NextResponse.json({
         success: true,
         message: timeframe
           ? `Max open bars for ${timeframe} set to ${max_bars}`
           : 'Max open bars updated',
-        max_open_bars: status.max_open_bars
+        max_open_bars: updatedMaxBars
       })
 
     } else {

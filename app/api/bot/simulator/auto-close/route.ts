@@ -8,21 +8,16 @@
 
 import { NextResponse } from 'next/server';
 import { dbQuery, dbExecute, isTradingDbAvailable, TradeRow } from '@/lib/db/trading-db';
-import fs from 'fs';
-import path from 'path';
-
-// Read max_open_bars from simulator status file (per-timeframe config)
-const STATUS_FILE = path.join(process.cwd(), 'data', 'simulator_status.json');
+import { getSettings } from '@/lib/db/settings';
 
 type MaxOpenBarsConfig = Record<string, number>;
 
-function getMaxOpenBarsConfig(): MaxOpenBarsConfig {
+// Read max_open_bars from database (persisted settings)
+async function getMaxOpenBarsConfig(): Promise<MaxOpenBarsConfig> {
   try {
-    if (fs.existsSync(STATUS_FILE)) {
-      const data = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf-8'));
-      if (typeof data.max_open_bars === 'object' && data.max_open_bars !== null) {
-        return data.max_open_bars;
-      }
+    const settings = await getSettings<{ max_open_bars?: MaxOpenBarsConfig }>('simulator');
+    if (settings?.max_open_bars && typeof settings.max_open_bars === 'object') {
+      return settings.max_open_bars;
     }
   } catch {
     // Ignore errors, return default
@@ -30,8 +25,8 @@ function getMaxOpenBarsConfig(): MaxOpenBarsConfig {
   return {}; // Empty = all disabled
 }
 
-function getMaxOpenBarsForTimeframe(timeframe: string): number {
-  const config = getMaxOpenBarsConfig();
+async function getMaxOpenBarsForTimeframe(timeframe: string): Promise<number> {
+  const config = await getMaxOpenBarsConfig();
   // Try exact match first, then normalized (1D -> 1d)
   return config[timeframe] ?? config[timeframe.toLowerCase()] ?? 0;
 }
@@ -379,7 +374,7 @@ export async function POST() {
       const timeframe = trade.timeframe || '1h';
 
       // Get max open bars for this trade's timeframe (0 = disabled)
-      const maxOpenBars = getMaxOpenBarsForTimeframe(timeframe);
+      const maxOpenBars = await getMaxOpenBarsForTimeframe(timeframe);
 
       // Parse trade creation time
       const createdAt = new Date(trade.created_at).getTime();

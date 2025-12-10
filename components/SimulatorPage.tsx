@@ -126,8 +126,19 @@ export function SimulatorPage() {
   const [autoClosing, setAutoClosing] = useState(false)
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null)
   const [monitorLoading, setMonitorLoading] = useState(false)
-  const [maxOpenBarsConfig, setMaxOpenBarsConfig] = useState<MaxOpenBarsConfig>({})  // Per-timeframe
+  const [maxOpenBarsConfig, setMaxOpenBarsConfig] = useState<MaxOpenBarsConfig>({})  // Per-timeframe (editable)
+  const [savedMaxOpenBars, setSavedMaxOpenBars] = useState<MaxOpenBarsConfig>({})  // Per-timeframe (saved in DB)
   const [savingMaxBars, setSavingMaxBars] = useState(false)
+
+  // Check if any max bars settings have changed
+  const hasMaxBarsChanges = useMemo(() => {
+    return TIMEFRAMES.some(tf => (maxOpenBarsConfig[tf] ?? 0) !== (savedMaxOpenBars[tf] ?? 0))
+  }, [maxOpenBarsConfig, savedMaxOpenBars])
+
+  // Get list of changed timeframes
+  const changedTimeframes = useMemo(() => {
+    return TIMEFRAMES.filter(tf => (maxOpenBarsConfig[tf] ?? 0) !== (savedMaxOpenBars[tf] ?? 0))
+  }, [maxOpenBarsConfig, savedMaxOpenBars])
 
   // Modal state for trade chart
   const [selectedTrade, setSelectedTrade] = useState<TradeData | null>(null)
@@ -162,9 +173,10 @@ export function SimulatorPage() {
       if (!res.ok) throw new Error('Failed to fetch monitor status')
       const data = await res.json()
       setMonitorStatus(data)
-      // Sync max_open_bars config from monitor status
+      // Sync max_open_bars config from monitor status (both saved and editable)
       if (data.max_open_bars && typeof data.max_open_bars === 'object') {
         setMaxOpenBarsConfig(data.max_open_bars)
+        setSavedMaxOpenBars(data.max_open_bars)  // Track saved state for change detection
       }
     } catch (err) {
       console.error('Failed to fetch monitor status:', err)
@@ -541,54 +553,68 @@ export function SimulatorPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-5 gap-3 mb-4">
-            {TIMEFRAMES.map(tf => (
-              <div key={tf} className="flex items-center gap-2">
-                <label className="text-slate-400 text-xs w-8">{tf}</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={maxOpenBarsConfig[tf] ?? 0}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value) || 0
-                    setMaxOpenBarsConfig(prev => ({ ...prev, [tf]: val }))
-                  }}
-                  className="w-16 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm text-center"
-                />
-              </div>
-            ))}
+            {TIMEFRAMES.map(tf => {
+              const isChanged = changedTimeframes.includes(tf)
+              return (
+                <div key={tf} className="flex items-center gap-2">
+                  <label className={`text-xs w-8 ${isChanged ? 'text-yellow-400 font-semibold' : 'text-slate-400'}`}>
+                    {tf}{isChanged && '*'}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={maxOpenBarsConfig[tf] ?? 0}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) || 0
+                      setMaxOpenBarsConfig(prev => ({ ...prev, [tf]: val }))
+                    }}
+                    className={`w-16 px-2 py-1 bg-slate-700 rounded text-white text-sm text-center ${
+                      isChanged ? 'border-2 border-yellow-400' : 'border border-slate-600'
+                    }`}
+                  />
+                </div>
+              )
+            })}
           </div>
-          <Button
-            size="sm"
-            disabled={savingMaxBars}
-            onClick={async () => {
-              setSavingMaxBars(true)
-              try {
-                const res = await fetch('/api/bot/simulator/monitor', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ action: 'set-max-bars', max_open_bars: maxOpenBarsConfig })
-                })
-                if (!res.ok) throw new Error('Failed to save')
-                await fetchMonitorStatus()
-              } catch (err) {
-                console.error('Failed to save max open bars:', err)
-                setError(err instanceof Error ? err.message : 'Failed to save')
-              } finally {
-                setSavingMaxBars(false)
-              }
-            }}
-            variant="default"
-            className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50"
-          >
-            {savingMaxBars ? (
-              <>
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              'Save Max Bars Settings'
+          <div className="flex items-center gap-3">
+            <Button
+              size="sm"
+              disabled={savingMaxBars || !hasMaxBarsChanges}
+              onClick={async () => {
+                setSavingMaxBars(true)
+                try {
+                  const res = await fetch('/api/bot/simulator/monitor', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'set-max-bars', max_open_bars: maxOpenBarsConfig })
+                  })
+                  if (!res.ok) throw new Error('Failed to save')
+                  await fetchMonitorStatus()
+                } catch (err) {
+                  console.error('Failed to save max open bars:', err)
+                  setError(err instanceof Error ? err.message : 'Failed to save')
+                } finally {
+                  setSavingMaxBars(false)
+                }
+              }}
+              variant="default"
+              className={`${hasMaxBarsChanges ? 'bg-orange-600 hover:bg-orange-700' : 'bg-slate-600'} disabled:opacity-50`}
+            >
+              {savingMaxBars ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save Settings'
+              )}
+            </Button>
+            {hasMaxBarsChanges && (
+              <span className="text-yellow-400 text-xs">
+                {changedTimeframes.length} unsaved change{changedTimeframes.length > 1 ? 's' : ''}
+              </span>
             )}
-          </Button>
+          </div>
         </CardContent>
       </Card>
 
