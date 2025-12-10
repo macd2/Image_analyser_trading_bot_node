@@ -60,66 +60,80 @@ export default function AdvisorPage() {
     config_schema: {}
   })
 
+  // Function to load mock data (simulates API call)
+  const loadMockData = async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true)
+    } else {
+      setLoading(true)
+    }
+    
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        setStrategies([
+          {
+            id: 'alex_top_down',
+            name: 'Alex Top-Down Analysis',
+            description: 'Top-down analysis across timeframes with Area of Interest and Entry Signals',
+            version: '1.0',
+            config_schema: {},
+            created_at: new Date().toISOString()
+          },
+          {
+            id: 'market_regime_check',
+            name: 'Market Regime Detection',
+            description: 'Higher timeframe bias, volume-validated candlestick patterns, market structure shift confirmation',
+            version: '1.0',
+            config_schema: {},
+            created_at: new Date().toISOString()
+          }
+        ])
+
+        setNodes([
+          {
+            id: 'node1',
+            instance_id: 'instance1',
+            strategy_id: 'alex_top_down',
+            config: { timeframes: ['1h', '4h', '1d'] },
+            enabled: true,
+            execution_order: 1,
+            created_at: new Date().toISOString(),
+            strategy_name: 'Alex Top-Down Analysis'
+          },
+          {
+            id: 'node2',
+            instance_id: 'instance1',
+            strategy_id: 'market_regime_check',
+            config: { volume_threshold: 1.5 },
+            enabled: true,
+            execution_order: 2,
+            created_at: new Date().toISOString(),
+            strategy_name: 'Market Regime Detection'
+          }
+        ])
+
+        setInstanceSettings([
+          {
+            instance_id: 'instance1',
+            strategy_id: 'alex_top_down',
+            config: {},
+            enabled: true
+          }
+        ])
+
+        setLoading(false)
+        setRefreshing(false)
+        resolve()
+      }, 1000)
+
+      // Cleanup timer on component unmount (though we don't need to store it)
+      return () => clearTimeout(timer)
+    })
+  }
+
   // Mock data for demonstration
   useEffect(() => {
-    // Simulate loading
-    const timer = setTimeout(() => {
-      setStrategies([
-        {
-          id: 'alex_top_down',
-          name: 'Alex Top-Down Analysis',
-          description: 'Top-down analysis across timeframes with Area of Interest and Entry Signals',
-          version: '1.0',
-          config_schema: {},
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 'market_regime_check',
-          name: 'Market Regime Detection',
-          description: 'Higher timeframe bias, volume-validated candlestick patterns, market structure shift confirmation',
-          version: '1.0',
-          config_schema: {},
-          created_at: new Date().toISOString()
-        }
-      ])
-
-      setNodes([
-        {
-          id: 'node1',
-          instance_id: 'instance1',
-          strategy_id: 'alex_top_down',
-          config: { timeframes: ['1h', '4h', '1d'] },
-          enabled: true,
-          execution_order: 1,
-          created_at: new Date().toISOString(),
-          strategy_name: 'Alex Top-Down Analysis'
-        },
-        {
-          id: 'node2',
-          instance_id: 'instance1',
-          strategy_id: 'market_regime_check',
-          config: { volume_threshold: 1.5 },
-          enabled: true,
-          execution_order: 2,
-          created_at: new Date().toISOString(),
-          strategy_name: 'Market Regime Detection'
-        }
-      ])
-
-      setInstanceSettings([
-        {
-          instance_id: 'instance1',
-          strategy_id: 'alex_top_down',
-          config: {},
-          enabled: true
-        }
-      ])
-
-      setLoading(false)
-      setRefreshing(false)
-    }, 1000)
-
-    return () => clearTimeout(timer)
+    loadMockData()
   }, [])
 
   const handleCreateNode = async () => {
@@ -225,10 +239,7 @@ export default function AdvisorPage() {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => {
-              setLoading(true);
-              setRefreshing(true);
-            }}
+            onClick={() => loadMockData(true)}
             disabled={refreshing}
             className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition disabled:opacity-50"
             title="Refresh"
