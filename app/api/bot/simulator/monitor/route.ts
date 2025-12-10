@@ -132,7 +132,12 @@ async function getStatus(): Promise<MonitorStatus> {
 
 export async function GET() {
   const status = await getStatus()
-  return NextResponse.json(status)
+  return NextResponse.json(status, {
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      'Pragma': 'no-cache'
+    }
+  })
 }
 
 export async function POST(request: NextRequest) {

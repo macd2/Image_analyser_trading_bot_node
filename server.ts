@@ -26,7 +26,7 @@ function updateSimulatorStatus(tradesChecked: number, tradesClosed: number, resu
     const current = getSimulatorStatus();
     const updated = {
       ...current,
-      running: true, // Always ensure running after a check
+      // Preserve the running state - don't overwrite it
       last_check: new Date().toISOString(),
       trades_checked: tradesChecked,
       trades_closed: tradesClosed,
@@ -45,8 +45,11 @@ function updateSimulatorStatus(tradesChecked: number, tradesClosed: number, resu
 async function runAutoCloseCheck(baseUrl: string) {
   const status = getSimulatorStatus();
   if (!status.running) {
+    console.log('  ➜  Simulator: Auto mode is OFF (skipping check)');
     return; // Auto mode is OFF in UI
   }
+
+  console.log('  ➜  Simulator: Running background check...');
 
   try {
     const res = await fetch(`${baseUrl}/api/bot/simulator/auto-close`, {
@@ -57,12 +60,12 @@ async function runAutoCloseCheck(baseUrl: string) {
     if (res.ok) {
       const data = await res.json();
       updateSimulatorStatus(data.checked || 0, data.closed || 0, data.results || [], data.filled || 0);
-      if (data.closed > 0 || data.filled > 0) {
-        console.log(`  ➜  Simulator: Filled ${data.filled || 0}, Closed ${data.closed} trade(s)`);
-      }
+      console.log(`  ➜  Simulator: Checked ${data.checked || 0} trades, Filled ${data.filled || 0}, Closed ${data.closed || 0}`);
+    } else {
+      console.error(`  ➜  Simulator: Auto-close API returned ${res.status}`);
     }
   } catch (err) {
-    // Silently ignore - server might be starting up or temporarily unavailable
+    console.error('  ➜  Simulator: Background check failed:', err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -89,6 +92,11 @@ function startSimulatorMonitor(port: number) {
 
   // Start background interval for auto-close checks
   const baseUrl = `http://localhost:${port}`;
+
+  // Run immediately on startup (don't wait 30 seconds)
+  setTimeout(() => runAutoCloseCheck(baseUrl), 5000); // Wait 5s for server to be ready
+
+  // Then run every 30 seconds
   setInterval(() => runAutoCloseCheck(baseUrl), AUTO_CLOSE_INTERVAL_MS);
 }
 
