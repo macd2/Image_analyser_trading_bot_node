@@ -17,9 +17,9 @@ function formatTime(seconds: number): string {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
-export function PipelineTab({ instanceId: _instanceId }: PipelineTabProps) {
-  const { data: sourcerData, loading: sourcerLoading, refreshing: sourcerRefreshing, error: sourcerError, refetch: refetchSourcer } = useSourcerStatus(5000)
-  const { data: cyclesData, loading: cyclesLoading, refreshing: cyclesRefreshing, error: cyclesError, refetch: refetchCycles } = useCyclesData(10000)
+export function PipelineTab({ instanceId }: PipelineTabProps) {
+  const { data: sourcerData, loading: sourcerLoading, refreshing: sourcerRefreshing, error: sourcerError, refetch: refetchSourcer } = useSourcerStatus(5000, instanceId)
+  const { data: cyclesData, loading: cyclesLoading, refreshing: cyclesRefreshing, error: cyclesError, refetch: refetchCycles } = useCyclesData(10000, instanceId)
   const [countdown, setCountdown] = useState<number>(0)
 
   useEffect(() => {

@@ -90,8 +90,11 @@ export interface SourcerStatus {
   };
 }
 
-export function useSourcerStatus(refreshInterval = 5000) {
-  return useBotData<SourcerStatus>('/api/bot/sourcer', { refreshInterval });
+export function useSourcerStatus(refreshInterval = 5000, instanceId?: string) {
+  const url = instanceId
+    ? `/api/bot/sourcer?instance_id=${instanceId}`
+    : '/api/bot/sourcer';
+  return useBotData<SourcerStatus>(url, { refreshInterval });
 }
 
 // ============================================================
@@ -184,8 +187,12 @@ export interface CyclesData {
   };
 }
 
-export function useCyclesData(refreshInterval = 10000) {
-  return useBotData<CyclesData>('/api/bot/cycles?current_only=true', { refreshInterval });
+export function useCyclesData(refreshInterval = 10000, instanceId?: string) {
+  const baseUrl = '/api/bot/cycles?current_only=true';
+  const url = instanceId
+    ? `${baseUrl}&instance_id=${instanceId}`
+    : baseUrl;
+  return useBotData<CyclesData>(url, { refreshInterval });
 }
 
 // ============================================================
