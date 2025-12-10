@@ -180,20 +180,21 @@ export async function GET(request: NextRequest) {
         avg_duration_minutes: number;
         last_completed: string;
       }>(`
-        SELECT 
+        SELECT
           COUNT(*) as total_cycles,
           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successful_cycles,
           AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60) as avg_duration_minutes,
           MAX(completed_at) as last_completed
-        FROM cycles 
+        FROM cycles
         WHERE run_id = ?
       `, [currentRun.id]);
 
       if (stats.length > 0) {
+        // Ensure numeric types (PostgreSQL returns strings for aggregates)
         cycleStats = {
-          total_cycles: stats[0].total_cycles || 0,
-          successful_cycles: stats[0].successful_cycles || 0,
-          avg_cycle_duration_minutes: Math.round(stats[0].avg_duration_minutes || 0),
+          total_cycles: Number(stats[0].total_cycles) || 0,
+          successful_cycles: Number(stats[0].successful_cycles) || 0,
+          avg_cycle_duration_minutes: Math.round(Number(stats[0].avg_duration_minutes) || 0),
           last_cycle_completed: stats[0].last_completed || null
         };
       }
