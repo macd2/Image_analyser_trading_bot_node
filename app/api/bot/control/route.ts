@@ -16,6 +16,7 @@ import {
   restoreProcessStates,
   isProcessAlive
 } from '@/lib/process-state';
+import { updateRunStatusByInstanceId } from '@/lib/db/trading-db';
 
 // MULTI-INSTANCE SUPPORT: Store running bot processes by instance_id
 // Note: This is in-memory and will be lost on server restart
@@ -325,6 +326,10 @@ function stopBot(instanceId?: string): Response {
   // Remove from persistent state
   removeProcessState(instanceId);
 
+  // Update run status in database
+  updateRunStatusByInstanceId(instanceId, 'stopped', 'user_stop')
+    .catch(err => console.error(`[BOT CONTROL] Failed to update run status: ${err.message}`));
+
   botProcess.kill('SIGTERM');
 
   // Clean up state immediately so UI updates
@@ -407,6 +412,10 @@ function killBot(instanceId?: string): Response {
   processMonitor.unregisterProcess(instanceId, 'killed');
   // Remove from persistent state
   removeProcessState(instanceId);
+
+  // Update run status in database
+  updateRunStatusByInstanceId(instanceId, 'crashed', 'user_kill')
+    .catch(err => console.error(`[BOT CONTROL] Failed to update run status: ${err.message}`));
 
   // Immediately kill with SIGKILL
   botProcess.kill('SIGKILL');
