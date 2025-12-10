@@ -139,18 +139,36 @@ async function pgQueryWithRetry<T>(
 
 /**
  * Normalize database row - converts PostgreSQL types to match SQLite types
- * Specifically handles dry_run: boolean -> number conversion
+ * Handles:
+ * - dry_run: boolean -> number conversion
+ * - Date objects -> ISO string conversion
  */
 function normalizeRow<T>(row: T): T {
-  if (row && typeof row === 'object' && 'dry_run' in row) {
-    const normalized = { ...row };
-    // Convert PostgreSQL boolean to number (true -> 1, false -> 0)
-    if (typeof (normalized as any).dry_run === 'boolean') {
-      (normalized as any).dry_run = (normalized as any).dry_run ? 1 : 0;
-    }
-    return normalized;
+  if (!row || typeof row !== 'object') {
+    return row;
   }
-  return row;
+
+  const normalized = { ...row } as any;
+
+  // Convert PostgreSQL boolean to number (true -> 1, false -> 0)
+  if (typeof normalized.dry_run === 'boolean') {
+    normalized.dry_run = normalized.dry_run ? 1 : 0;
+  }
+
+  // Convert Date objects to ISO strings for all date fields
+  const dateFields = [
+    'created_at', 'updated_at', 'started_at', 'ended_at', 'completed_at',
+    'submitted_at', 'filled_at', 'closed_at', 'fill_time', 'analyzed_at',
+    'exec_time', 'timestamp', 'boundary_time'
+  ];
+
+  for (const field of dateFields) {
+    if (field in normalized && normalized[field] instanceof Date) {
+      normalized[field] = normalized[field].toISOString();
+    }
+  }
+
+  return normalized;
 }
 
 /**
