@@ -17,7 +17,7 @@ from trading_bot.core.websocket_manager import BybitWebSocketManager
 from trading_bot.core.shared_websocket_manager import SharedWebSocketManager
 from trading_bot.engine.order_executor import OrderExecutor
 from trading_bot.engine.position_sizer import PositionSizer
-from trading_bot.db.client import get_connection, execute
+from trading_bot.db.client import get_connection, execute, release_connection
 
 logger = logging.getLogger(__name__)
 

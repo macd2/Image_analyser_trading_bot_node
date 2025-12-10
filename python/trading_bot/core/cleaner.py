@@ -40,7 +40,12 @@ class ChartCleaner:
     def is_file_outdated(self, file_path: str, file_timestamp: datetime, timeframe: str, current_time: datetime) -> tuple[bool, str]:
         """
         Check if file is outdated based on cycle boundaries.
-        A file is outdated if its timestamp is NOT aligned to the current cycle boundary.
+        A file is outdated ONLY if:
+        1. It's from a PREVIOUS cycle (older than current boundary) AND
+        2. It's older than max_file_age_hours
+
+        Files from the current cycle are ALWAYS kept, even if they're old.
+        Files without valid boundary-aligned timestamps are preserved.
 
         Returns (is_outdated, reason)
         """
@@ -55,17 +60,26 @@ class ChartCleaner:
                 # Get the file's cycle boundary
                 file_cycle_boundary = align_timestamp_to_boundary(file_timestamp, timeframe)
 
-                # File is outdated if it's from a different cycle than current
-                if file_cycle_boundary != current_cycle_boundary:
-                    reasons.append(f"cycle (file: {file_cycle_boundary.strftime('%Y-%m-%d %H:%M')}, current: {current_cycle_boundary.strftime('%Y-%m-%d %H:%M')})")
+                # File is outdated ONLY if it's from a PREVIOUS cycle (strictly older)
+                # Files from current cycle are always kept
+                if file_cycle_boundary < current_cycle_boundary:
+                    reasons.append(f"previous_cycle (file: {file_cycle_boundary.strftime('%Y-%m-%d %H:%M')}, current: {current_cycle_boundary.strftime('%Y-%m-%d %H:%M')})")
+                else:
+                    # File is from current cycle or future - keep it regardless of age
+                    return (False, "")
             except Exception as e:
                 self.logger.warning(f"Cycle check failed: {e}")
+                # If we can't parse the boundary, preserve the file
+                return (False, "")
 
-        # Age-based check (secondary/fallback method)
-        if self.enable_age_based_cleaning and not reasons:
+        # Age-based check (secondary/fallback method) - only for files from previous cycles
+        if self.enable_age_based_cleaning and reasons:
             age_hours = (current_time - file_timestamp).total_seconds() / 3600
             if age_hours > self.max_file_age_hours:
                 reasons.append(f"age ({age_hours:.1f}h > {self.max_file_age_hours}h)")
+            else:
+                # File is from previous cycle but still within age limit - keep it
+                return (False, "")
 
         return (len(reasons) > 0, ", ".join(reasons) if reasons else "")
 

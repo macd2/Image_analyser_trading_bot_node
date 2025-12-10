@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from PIL import Image
-from trading_bot.db.client import get_connection, query_one
+from trading_bot.db.client import get_connection, release_connection, query_one
 
 
 class FileValidator:
@@ -190,10 +190,11 @@ class FileValidator:
     def infer_timeframe_from_database(self, file_path: str, db_path: Optional[str] = None) -> Optional[str]:
         """
         Infer timeframe from database records for legacy files.
-        
+
         Returns:
             Timeframe string if found, None otherwise
         """
+        conn = None
         try:
             conn = get_connection()
 
@@ -208,7 +209,6 @@ class FileValidator:
                 # UnifiedRow supports both index and key access
                 timeframe = row['timeframe']
                 if timeframe:
-                    conn.close()
                     return timeframe
 
             # Try filename match if exact path fails
@@ -219,8 +219,6 @@ class FileValidator:
                 ORDER BY timestamp DESC LIMIT 1
             ''', (f'%{filename}',))
 
-            conn.close()
-
             if row:
                 # UnifiedRow supports both index and key access
                 return row['timeframe']
@@ -230,6 +228,9 @@ class FileValidator:
         except Exception as e:
             self.logger.error(f"Error inferring timeframe from database: {e}")
             return None
+        finally:
+            if conn:
+                release_connection(conn)
     
     def validate_filename_pattern(self, filename: str, require_timeframe: bool = False) -> Dict[str, Any]:
         """
@@ -388,6 +389,7 @@ class FileValidator:
             "symbol": None
         }
 
+        conn = None
         try:
             conn = get_connection()
 
@@ -422,9 +424,10 @@ class FileValidator:
                     result["timeframe"] = row['timeframe']
                     result["symbol"] = row['symbol']
 
-            conn.close()
-
         except Exception as e:
             self.logger.error(f"Error checking database status: {e}")
+        finally:
+            if conn:
+                release_connection(conn)
 
         return result

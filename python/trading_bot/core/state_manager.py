@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Set, Callable
 from dataclasses import dataclass, field
-from trading_bot.db.client import execute, query, get_connection, get_boolean_comparison
+from trading_bot.db.client import execute, query, get_connection, release_connection, get_boolean_comparison
 
 logger = logging.getLogger(__name__)
 
@@ -602,6 +602,7 @@ class StateManager:
             logger.warning("No instance_id provided - cannot query database positions")
             return []
 
+        conn = None
         try:
             conn = get_connection()
 
@@ -624,12 +625,14 @@ class StateManager:
             positions = [dict(row.items()) for row in results]
             logger.debug(f"[DB Query] Found {len(positions)} open positions for instance {self.instance_id}")
 
-            conn.close()
             return positions
 
         except Exception as e:
             logger.error(f"Error querying database for open positions: {e}")
             return []
+        finally:
+            if conn:
+                release_connection(conn)
 
     def _get_db_open_positions_count(self) -> int:
         """
@@ -654,6 +657,7 @@ class StateManager:
             logger.warning("No instance_id provided - cannot query database pending orders")
             return []
 
+        conn = None
         try:
             conn = get_connection()
 
@@ -676,10 +680,12 @@ class StateManager:
             pending_orders = [dict(row.items()) for row in results]
             logger.debug(f"[DB Query] Found {len(pending_orders)} pending orders for instance {self.instance_id}")
 
-            conn.close()
             return pending_orders
 
         except Exception as e:
             logger.error(f"Error querying database for pending orders: {e}")
             return []
+        finally:
+            if conn:
+                release_connection(conn)
 

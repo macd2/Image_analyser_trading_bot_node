@@ -29,7 +29,7 @@ from trading_bot.core.utils import (  # type: ignore
     normalize_symbol_for_bybit,
 )
 from trading_bot.core.prompts.prompt_registry import get_prompt_function
-from trading_bot.db.client import get_connection, execute
+from trading_bot.db.client import get_connection, execute, query
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
@@ -146,6 +146,69 @@ class TradingCycle:
         self._running = False
         logger.info("Trading cycle stopped")
 
+    def _get_existing_recommendations_for_boundary(self, symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+        """
+        Get existing recommendations for symbols in the current cycle boundary.
+        Filters by instance_id to ensure each instance only sees its own recommendations.
+
+        Args:
+            symbols: List of symbols to check
+
+        Returns:
+            Dict mapping symbol -> recommendation_data (empty dict if no recommendation exists)
+        """
+        try:
+            current_boundary = get_current_cycle_boundary(self.timeframe)
+            boundary_iso = current_boundary.isoformat()
+
+            # Query for recommendations matching current boundary
+            # Filter by instance_id if available to ensure instance-specific tracking
+            if self.instance_id:
+                # Get cycle_id for this instance's current boundary
+                cycles = query(self._db, """
+                    SELECT id FROM cycles
+                    WHERE boundary_time = ? AND run_id IN (
+                        SELECT id FROM runs WHERE instance_id = ?
+                    )
+                """, (boundary_iso, self.instance_id))
+
+                if not cycles:
+                    # No cycles for this instance at this boundary yet
+                    return {symbol: {} for symbol in symbols}
+
+                cycle_ids = [c['id'] for c in cycles]
+                placeholders = ','.join(['?' for _ in cycle_ids])
+
+                existing_recs = query(self._db, f"""
+                    SELECT * FROM recommendations
+                    WHERE cycle_id IN ({placeholders}) AND symbol IN ({','.join(['?' for _ in symbols])})
+                """, (*cycle_ids, *symbols))
+            else:
+                # No instance filtering - check all recommendations for boundary
+                existing_recs = query(self._db, """
+                    SELECT * FROM recommendations
+                    WHERE cycle_boundary = ? AND symbol IN ({})
+                """.format(','.join(['?' for _ in symbols])),
+                (boundary_iso, *symbols))
+
+            # Build result dict: symbol -> recommendation data
+            result = {symbol: {} for symbol in symbols}
+            for rec in existing_recs:
+                symbol = rec['symbol']
+                result[symbol] = dict(rec)  # Convert UnifiedRow to dict
+
+            existing_symbols = [s for s in symbols if result[s]]
+            if existing_symbols:
+                instance_label = f" (instance: {self.instance_id})" if self.instance_id else ""
+                logger.info(f"   ✅ Found existing recommendations for boundary {boundary_iso}{instance_label}: {', '.join(sorted(existing_symbols))}")
+
+            return result
+
+        except Exception as e:
+            logger.warning(f"Failed to check existing recommendations: {e}")
+            # On error, assume no existing recommendations (proceed with analysis)
+            return {symbol: {} for symbol in symbols}
+
     async def run_cycle_async(self) -> Dict[str, Any]:
         """
         Run a single trading cycle asynchronously with MULTISTEP PROCESS.
@@ -226,19 +289,44 @@ class TradingCycle:
 
                 logger.info(f"✅ Captured {len(chart_paths)} charts from watchlist")
 
-                # STEP 2: Analyze ALL charts in PARALLEL
-                logger.info(f"\n🤖 STEP 2: Analyzing {len(chart_paths)} charts in PARALLEL...")
+                # STEP 1.5: Check for existing recommendations for current boundary (instance-aware)
+                logger.info(f"\n🔍 STEP 1.5: Checking for existing recommendations for current boundary...")
+                instance_label = f" (instance: {self.instance_id})" if self.instance_id else ""
+                logger.info(f"   Instance{instance_label}")
+
+                symbols_to_analyze = list(chart_paths.keys())
+                existing_recs_map = self._get_existing_recommendations_for_boundary(symbols_to_analyze)
+
+                # Filter out symbols that already have recommendations
+                symbols_needing_analysis = [s for s in symbols_to_analyze if not existing_recs_map.get(s)]
+                symbols_with_existing_recs = [s for s in symbols_to_analyze if existing_recs_map.get(s)]
+
+                if symbols_with_existing_recs:
+                    logger.info(f"   ⏭️  Skipping analysis for {len(symbols_with_existing_recs)} symbols with existing recommendations: {', '.join(symbols_with_existing_recs)}")
+
+                # STEP 2: Analyze only symbols needing new recommendations
+                logger.info(f"\n🤖 STEP 2: Analyzing {len(symbols_needing_analysis)} charts in PARALLEL...")
                 analysis_start = datetime.now(timezone.utc)
 
-                all_analyses = await self._analyze_all_charts_parallel(chart_paths, cycle_id)
+                # Filter chart_paths to only include symbols needing analysis
+                filtered_chart_paths = {s: chart_paths[s] for s in symbols_needing_analysis}
+
+                if filtered_chart_paths:
+                    newly_analyzed = await self._analyze_all_charts_parallel(filtered_chart_paths, cycle_id)
+                else:
+                    newly_analyzed = []
 
                 analysis_duration = (datetime.now(timezone.utc) - analysis_start).total_seconds()
                 logger.info(f"✅ Parallel analysis completed in {analysis_duration:.1f}s")
 
-                # STEP 3: Collect all recommendations
+                # STEP 3: Collect all recommendations (both newly analyzed and existing)
                 logger.info(f"\n📊 STEP 3: Collecting recommendations...")
                 actionable_signals: List[Dict[str, Any]] = []
 
+                # Combine newly analyzed results with existing recommendations
+                all_analyses = newly_analyzed if newly_analyzed else []
+
+                # Process newly analyzed results
                 for analysis_result in all_analyses:
                     if analysis_result.get("error"):
                         results["errors"].append({
@@ -247,7 +335,6 @@ class TradingCycle:
                         })
                         continue
 
-                    results["symbols_analyzed"] += 1
                     if analysis_result.get("recommendation"):
                         results["recommendations"].append(analysis_result)
 
@@ -256,8 +343,43 @@ class TradingCycle:
                         if rec in ("BUY", "SELL", "LONG", "SHORT"):
                             actionable_signals.append(analysis_result)
 
+                # Add existing recommendations to results (so they're available for processing)
+                for symbol in symbols_with_existing_recs:
+                    rec_data = existing_recs_map[symbol]
+                    if rec_data:
+                        # Convert database record to analysis result format
+                        rec_result = {
+                            "symbol": symbol,
+                            "recommendation": rec_data.get("recommendation", "HOLD"),
+                            "confidence": rec_data.get("confidence", 0),
+                            "entry_price": rec_data.get("entry_price"),
+                            "stop_loss": rec_data.get("stop_loss"),
+                            "take_profit": rec_data.get("take_profit"),
+                            "risk_reward": rec_data.get("risk_reward"),
+                            "reasoning": rec_data.get("reasoning", ""),
+                            "chart_path": rec_data.get("chart_path"),
+                            "timeframe": rec_data.get("timeframe"),
+                            "cycle_id": cycle_id,
+                            "recommendation_id": rec_data.get("id"),  # Already has ID from DB
+                            "from_existing": True,  # Mark as existing recommendation
+                        }
+                        results["recommendations"].append(rec_result)
+
+                        # Collect actionable signals from existing recs too
+                        rec = rec_data.get("recommendation", "HOLD").upper()
+                        if rec in ("BUY", "SELL", "LONG", "SHORT"):
+                            actionable_signals.append(rec_result)
+
+                # symbols_analyzed = ALL symbols with recommendations for current boundary
+                # (both newly analyzed + existing from previous analysis in same boundary)
+                # This is instance-specific - each instance tracks its own boundary analysis
+                results["symbols_analyzed"] = len(symbols_to_analyze)
+
                 results["actionable_signals"] = actionable_signals
-                logger.info(f"   Total analyzed: {results['symbols_analyzed']}")
+                instance_label = f" (instance: {self.instance_id})" if self.instance_id else ""
+                logger.info(f"   Total analyzed for boundary{instance_label}: {results['symbols_analyzed']} symbols")
+                logger.info(f"   Newly analyzed: {len(symbols_needing_analysis)} symbols")
+                logger.info(f"   From existing recs: {len(symbols_with_existing_recs)} symbols")
                 logger.info(f"   Actionable signals: {len(actionable_signals)}")
 
                 # STEP 4: Rank signals by quality
@@ -696,10 +818,19 @@ class TradingCycle:
         - model_name: Which model made the decision
         - prompt_version: Which prompt version was used
 
+        For existing recommendations (from previous analysis in same boundary),
+        returns the existing recommendation_id without re-recording.
+
         Returns:
             recommendation_id if successful, None if failed
         """
         import json
+
+        # If this is an existing recommendation from previous analysis, return its ID
+        if result.get("from_existing") and result.get("recommendation_id"):
+            logger.info(f"   ℹ️  Using existing recommendation ID: {result.get('recommendation_id')}")
+            return result.get("recommendation_id")
+
         rec_id = str(uuid.uuid4())[:8]
         try:
             # Map recommendation to schema-compliant value

@@ -13,7 +13,7 @@ from typing import Optional, Dict, Any
 from contextvars import ContextVar
 
 # Import centralized database client
-from trading_bot.db.client import get_connection, execute, DB_TYPE
+from trading_bot.db.client import get_connection, release_connection, execute, DB_TYPE
 
 # Context variables for correlation IDs
 _current_run_id: ContextVar[Optional[str]] = ContextVar('run_id', default=None)
@@ -48,6 +48,7 @@ class DatabaseErrorHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         """Store error log to database."""
+        conn = None
         try:
             # Extract context if provided via extra
             context = getattr(record, 'context', None)
@@ -94,13 +95,15 @@ class DatabaseErrorHandler(logging.Handler):
             ))
 
             conn.commit()
-            conn.close()
 
         except Exception as e:
             # Don't let logging errors break the app
             # But print to stderr for debugging
             import sys
             print(f"[ErrorLogger] Failed to log error: {e}", file=sys.stderr)
+        finally:
+            if conn:
+                release_connection(conn)
 
 
 def log_error(
