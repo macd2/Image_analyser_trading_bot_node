@@ -19,7 +19,7 @@ export default function InstancesPage() {
   const fetchInstances = useCallback(async () => {
     try {
       setRefreshing(true)
-      const res = await fetch('/api/bot/instances?summary=true')
+      const res = await fetch(`/api/bot/instances?summary=true&_t=${Date.now()}`)
       if (!res.ok) {
         throw new Error('Failed to fetch instances')
       }

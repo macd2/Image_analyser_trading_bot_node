@@ -525,7 +525,7 @@ export async function getInstancesWithSummary(): Promise<InstanceSummary[]> {
     const recentLogs = await dbQuery<{ timestamp: string; level: string; message: string }>(`
       SELECT timestamp, level, message FROM error_logs el
       LEFT JOIN runs r ON el.run_id = r.id
-      WHERE r.instance_id = ? OR el.run_id IS NULL
+      WHERE r.instance_id = ?
       ORDER BY el.timestamp DESC LIMIT 3
     `, [instance.id]);
 
@@ -1808,7 +1808,7 @@ export async function getErrorLogs(limit = 100, instanceId?: string): Promise<Er
     return dbQuery<ErrorLogRow>(`
       SELECT el.* FROM error_logs el
       LEFT JOIN runs r ON el.run_id = r.id
-      WHERE r.instance_id = ? OR el.run_id IS NULL
+      WHERE r.instance_id = ?
       ORDER BY el.timestamp DESC
       LIMIT ?
     `, [instanceId, limit]);
@@ -1844,7 +1844,7 @@ export async function getErrorLogsGroupedByRun(limit = 200, instanceId?: string)
         MAX(el.timestamp) as last_log_time
       FROM error_logs el
       LEFT JOIN runs r ON el.run_id = r.id
-      WHERE r.instance_id = ? OR el.run_id IS NULL
+      WHERE r.instance_id = ?
       GROUP BY el.run_id, r.started_at, r.ended_at
       ORDER BY COALESCE(r.started_at, MAX(el.timestamp)) DESC
       LIMIT 20
