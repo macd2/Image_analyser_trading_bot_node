@@ -1,3 +1,14 @@
+In summary:
+
+dry_run classifies the trade as simulated vs. live.
+status = 'paper_trade' marks a simulated trade that is awaiting fill by the paper‑trade simulator.
+Example scenarios:
+
+A paper trade just created: dry_run = 1, status = 'paper_trade'.
+After the simulator fills it: dry_run = 1, status = 'filled'.
+A live trade: dry_run = 0, status = 'submitted' (or 'filled', etc.).
+This distinction allows the system to track the overall nature of a trade (dry_run) while also managing its progression through the simulation pipeline (status).
+--------------
 
 # General 
 [ ] run production audit in terms of security, efficency and robustness (minal changes )
@@ -6,29 +17,11 @@
 
 # Improvments 
 [ ] make sure all chart modals have the signal and entry marker
-[ ] explain waht exaclty is the dirrenferece between the marker in trades for status papertrade and dry-run 
 [ ] is the the value from confidence calculation from analysis actually used in the bot for trading deccisions?
+- Yes
 
 ----
 
-**Bug / Enhancement Requests for Simulator & UI:**
-
-1. **Simulator/Backend Sync Issue**  
-   - Either the simulator is not running in the background, *or* the UI fails to refresh upon page load.  
-   - Evidence: Data shown for the “last check” was stale — timestamp indicates 2 hours ago.
-
-2. **UI Consistency — Fill Time Handling**  
-   - The UI must respect the actual *fill time* of a trade.  
-   - Current issue: A trade card shows “TP Hit” even though the trade is still *pending fill*. This is misleading and must be corrected.
-
-3. **Simulator Settings: Max Open Bars & Cancellation Logic**  
-   - Add a new simulator setting: **Max Open Bars**  
-     - Definition: Maximum number of bars a a trade may remain open before being automatically *cancelled*.  
-     - Requirement: Ensure internal tracking of elapsed bars per open trade and chec kwhich statuse we have per trade cancled must be one of them.  
-   - Introduce a new UI section: **Cancelled Trades**  
-     - Layout: Same card format as *Closed Trades*, but exclusively for trades cancelled due to timeout (e.g., max bars exceeded).  
-     - Separation: These must *not* be grouped with closed (i.e., filled or manually exited) trades.
-----
 
 # Advisor 
 [ ] we need  a new service the job of this advisor is to inject extra context in to the prompt before seding it to the assitant. the bot loop must wait for this advisor to complete it must be fully tracable for the logtrail
@@ -46,9 +39,19 @@ docs/Strategies/trade_entry_strategies_E3lYZsy8nYE_HH_LL_alex_strat.md
 [ ] the simulator should act a a kind of exchange for dry run trades im not sure waht the best architecture is but we want to simulate stoploss tigheting an also order replacement 
 [ ] add a new card to overview tab that visually shows the current step of the cycle we are in. So getting charts, analyzing images, risk management, Order execution, waiting for next cycle (wait time)
 [ ] also add a stats card  with  key information like which cycle we are on, for how long the bot was running
-[ ] adjust the perfomance stats so it is by defualt per run but with a dropdown filter to change to 1 day 7 days 1 week and all time
+
 [ ] the open position must also show dry run positions for this instance 
-[ ] add the watchlist symbols from capture page somewhere fitting in the instance card
+
+
+-----
+# overview 
+## insance page
+[ ] Trading Cycle Status this should be based on the current run 
+[ ] make sure the avg duration is calculated and siplayed corectly
+[ ] 
+
+## Bot Statistics
+[ ] the winrate and total pnl shows 0% that incorrect 
 
 -----
 
@@ -80,5 +83,28 @@ The tournament data is likely stored in Supabase PostgreSQL (via other parts of 
 Would you like me to fix this by updating BacktestStore to use the centralized database client (python/trading_bot/db/client.py) that properly handles SQLite/PostgreSQL switching?
 
 ---
+# for statstis this could mess up vlaues because we ae getting later the already filled but cancled trades in our pnl calculaiton need some thought 
 
+In the first cancellation block (lines 424-437):
 
+UPDATE trades SET
+  exit_price = ?,
+  exit_reason = 'max_bars_exceeded',
+  closed_at = ?,
+  pnl = 0,
+  pnl_percent = 0,
+  status = 'cancelled'
+WHERE id = ?
+The exit_price is set to currentPrice (the variable from line 416). So yes, exit price is set.
+
+In the second cancellation block (lines 556-572):
+
+UPDATE trades SET
+  exit_price = ?,
+  exit_reason = 'max_bars_exceeded',
+  closed_at = ?,
+  pnl = ?,
+  pnl_percent = ?,
+  status = 'cancelled'
+WHERE id = ?
+Again, exit_price is set to currentPrice (line 544). So indeed, the simulator sets exit price for cancelled trades.

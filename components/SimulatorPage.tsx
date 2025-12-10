@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { RefreshCw, TrendingUp, TrendingDown, Clock, CheckCircle, Target, BarChart2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { LoadingState, ErrorState, TradeChartModal, TradeData } from '@/components/shared'
 import { useRealtime } from '@/hooks/useRealtime'
 
@@ -115,6 +116,36 @@ type CancelledTrade = ClosedTrade
 // Timeframes we support for max open bars config
 const TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d'] as const
 
+// Map timeframe to minutes per bar
+const TIMEFRAME_MINUTES: Record<string, number> = {
+  '1m': 1,
+  '5m': 5,
+  '15m': 15,
+  '30m': 30,
+  '1h': 60,
+  '2h': 120,
+  '4h': 240,
+  '6h': 360,
+  '12h': 720,
+  '1d': 1440,
+}
+
+// Convert bars to human-readable duration
+function barsToDuration(bars: number, timeframe: string): string {
+  if (bars === 0) return ''
+  const minutesPerBar = TIMEFRAME_MINUTES[timeframe] || 0
+  const totalMinutes = bars * minutesPerBar
+  if (totalMinutes < 60) {
+    return `≈ ${totalMinutes}m`
+  } else if (totalMinutes < 1440) {
+    const hours = totalMinutes / 60
+    return `≈ ${hours.toFixed(1)}h`
+  } else {
+    const days = totalMinutes / 1440
+    return `≈ ${days.toFixed(1)}d`
+  }
+}
+
 export function SimulatorPage() {
   const [stats, setStats] = useState<SimulatorStats | null>(null)
   const [openTrades, setOpenTrades] = useState<InstanceWithRuns[]>([])
@@ -129,6 +160,7 @@ export function SimulatorPage() {
   const [maxOpenBarsConfig, setMaxOpenBarsConfig] = useState<MaxOpenBarsConfig>({})  // Per-timeframe (editable)
   const [savedMaxOpenBars, setSavedMaxOpenBars] = useState<MaxOpenBarsConfig>({})  // Per-timeframe (saved in DB)
   const [savingMaxBars, setSavingMaxBars] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
   // Check if any max bars settings have changed
   const hasMaxBarsChanges = useMemo(() => {
@@ -175,13 +207,16 @@ export function SimulatorPage() {
       setMonitorStatus(data)
       // Sync max_open_bars config from monitor status (both saved and editable)
       if (data.max_open_bars && typeof data.max_open_bars === 'object') {
-        setMaxOpenBarsConfig(data.max_open_bars)
-        setSavedMaxOpenBars(data.max_open_bars)  // Track saved state for change detection
+        // Only update config if there are no unsaved changes
+        if (!hasMaxBarsChanges) {
+          setMaxOpenBarsConfig(data.max_open_bars)
+          setSavedMaxOpenBars(data.max_open_bars)  // Track saved state for change detection
+        }
       }
     } catch (err) {
       console.error('Failed to fetch monitor status:', err)
     }
-  }, [])
+  }, [hasMaxBarsChanges])
 
   // Fetch price for a specific symbol from Bybit API
   const fetchPriceForSymbol = useCallback(async (symbol: string) => {
@@ -286,6 +321,24 @@ export function SimulatorPage() {
       console.error('Failed to fetch cancelled trades:', err)
     }
   }, [])
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      await Promise.all([
+        fetchStats(),
+        fetchOpenTrades(),
+        fetchClosedTrades(),
+        fetchCancelledTrades(),
+        fetchMonitorStatus(),
+      ])
+    } catch (err) {
+      console.error('Refresh failed:', err)
+      // Optionally show error toast
+    } finally {
+      setRefreshing(false)
+    }
+  }, [fetchStats, fetchOpenTrades, fetchClosedTrades, fetchCancelledTrades, fetchMonitorStatus])
 
   const triggerAutoClose = useCallback(async () => {
     setAutoClosing(true)
@@ -479,8 +532,8 @@ export function SimulatorPage() {
           >
             {autoRefresh ? '⏸️ Auto' : '▶️ Manual'}
           </Button>
-          <Button onClick={() => { fetchStats(); fetchOpenTrades(); fetchMonitorStatus(); }} size="sm" variant="outline">
-            <RefreshCw className="w-4 h-4" />
+          <Button onClick={handleRefresh} size="sm" variant="outline" disabled={refreshing}>
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
         </div>
       </div>
@@ -552,31 +605,38 @@ export function SimulatorPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-5 gap-3 mb-4">
+          <div className="grid grid-cols-5 gap-4 mb-6">
             {TIMEFRAMES.map(tf => {
               const isChanged = changedTimeframes.includes(tf)
+              const bars = maxOpenBarsConfig[tf] ?? 0
+              const durationText = barsToDuration(bars, tf)
               return (
-                <div key={tf} className="flex items-center gap-2">
-                  <label className={`text-xs w-8 ${isChanged ? 'text-yellow-400 font-semibold' : 'text-slate-400'}`}>
-                    {tf}{isChanged && '*'}
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={maxOpenBarsConfig[tf] ?? 0}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value) || 0
-                      setMaxOpenBarsConfig(prev => ({ ...prev, [tf]: val }))
-                    }}
-                    className={`w-16 px-2 py-1 bg-slate-700 rounded text-white text-sm text-center ${
-                      isChanged ? 'border-2 border-yellow-400' : 'border border-slate-600'
-                    }`}
-                  />
+                <div key={tf} className="flex flex-col items-center p-3 bg-slate-800/30 rounded-lg border border-slate-700 hover:bg-slate-800/50 transition-colors">
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className={`text-xs w-8 ${isChanged ? 'text-yellow-400 font-semibold' : 'text-slate-400'}`}>
+                      {tf}{isChanged && '*'}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={bars}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 0
+                        setMaxOpenBarsConfig(prev => ({ ...prev, [tf]: val }))
+                      }}
+                      className={`w-20 px-2 py-1.5 bg-slate-700 rounded text-white text-sm text-center ${
+                        isChanged ? 'border-2 border-yellow-400 ring-1 ring-yellow-400' : 'border border-slate-600'
+                      } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+                    />
+                  </div>
+                  {durationText && (
+                    <span className="text-xs text-slate-400 mt-1">{durationText}</span>
+                  )}
                 </div>
               )
             })}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 p-4 bg-slate-800/30 rounded-lg border border-slate-700">
             <Button
               size="sm"
               disabled={savingMaxBars || !hasMaxBarsChanges}
@@ -589,6 +649,12 @@ export function SimulatorPage() {
                     body: JSON.stringify({ action: 'set-max-bars', max_open_bars: maxOpenBarsConfig })
                   })
                   if (!res.ok) throw new Error('Failed to save')
+                  const data = await res.json()
+                  // Update saved state with server response to clear unsaved changes indicator
+                  if (data.max_open_bars && typeof data.max_open_bars === 'object') {
+                    setSavedMaxOpenBars(data.max_open_bars)
+                    setMaxOpenBarsConfig(data.max_open_bars)
+                  }
                   await fetchMonitorStatus()
                 } catch (err) {
                   console.error('Failed to save max open bars:', err)
@@ -610,9 +676,9 @@ export function SimulatorPage() {
               )}
             </Button>
             {hasMaxBarsChanges && (
-              <span className="text-yellow-400 text-xs">
+              <Badge variant="secondary" className="bg-yellow-900/50 text-yellow-400 border-yellow-700">
                 {changedTimeframes.length} unsaved change{changedTimeframes.length > 1 ? 's' : ''}
-              </span>
+              </Badge>
             )}
           </div>
         </CardContent>
@@ -1118,6 +1184,11 @@ export function SimulatorPage() {
                           <span className="text-sm px-3 py-1 rounded font-bold bg-orange-500 text-white">
                             ⏱️ CANCELLED
                           </span>
+                          {trade.exit_reason && (
+                            <span className="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded ml-2">
+                              {trade.exit_reason === 'max_bars_exceeded' ? 'Max Bars Exceeded' : trade.exit_reason}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-3">
                           <span className={`text-2xl font-bold ${isWin ? 'text-green-400' : 'text-red-400'}`}>

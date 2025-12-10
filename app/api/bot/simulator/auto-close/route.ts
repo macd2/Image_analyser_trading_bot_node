@@ -416,29 +416,26 @@ export async function POST() {
           const currentPrice = candles[candles.length - 1].close;
           const barsPending = candles.length;  // Bars since trade creation
 
-          // Only apply max bars cancellation to pending_fill status (entry was touched)
-          // paper_trade status means entry wasn't touched yet, keep waiting
-          if (trade.status === 'pending_fill' && maxOpenBars > 0 && barsPending >= maxOpenBars) {
+          // Apply max bars cancellation to pending_fill and paper_trade status
+          if ((trade.status === 'pending_fill' || trade.status === 'paper_trade') && maxOpenBars > 0 && barsPending >= maxOpenBars) {
             // Cancel trade - been pending fill too long
             const cancelTime = new Date().toISOString();
 
             await dbExecute(`
               UPDATE trades SET
-                exit_price = ?,
+                exit_price = NULL,
                 exit_reason = 'max_bars_exceeded',
-                closed_at = ?,
-                pnl = 0,
-                pnl_percent = 0,
+                closed_at = NULL,
+                pnl = NULL,
+                pnl_percent = NULL,
                 status = 'cancelled'
               WHERE id = ?
             `, [
-              currentPrice,
-              cancelTime,
               trade.id
             ]);
 
             cancelledCount++;
-            console.log(`[Auto-Close] ${trade.symbol} CANCELLED (pending_fill) after ${barsPending} bars (max: ${maxOpenBars})`);
+            console.log(`[Auto-Close] ${trade.symbol} CANCELLED (${trade.status}) after ${barsPending} bars (max: ${maxOpenBars})`);
 
             results.push({
               trade_id: trade.id,

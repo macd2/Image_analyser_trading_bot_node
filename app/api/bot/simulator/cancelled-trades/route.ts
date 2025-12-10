@@ -6,18 +6,18 @@ interface CancelledTrade {
   symbol: string;
   side: string;
   entry_price: number;
-  exit_price: number;
+  exit_price: number | null;
   stop_loss: number;
   take_profit: number;
   quantity: number;
-  pnl: number;
-  pnl_percent: number;
+  pnl: number | null;
+  pnl_percent: number | null;
   exit_reason: string;
   created_at: string;
   filled_at: string | null;
   fill_time: string | null;
   fill_price: number | null;
-  closed_at: string;
+  closed_at: string | null;
   timeframe: string;
   instance_name: string;
   run_id: string;
@@ -59,8 +59,8 @@ export async function GET() {
     `);
 
     // Calculate summary stats
-    const wins = cancelledTrades.filter((t) => t.pnl > 0).length
-    const losses = cancelledTrades.filter((t) => t.pnl < 0).length
+    const wins = cancelledTrades.filter((t) => t.pnl !== null && t.pnl > 0).length
+    const losses = cancelledTrades.filter((t) => t.pnl !== null && t.pnl < 0).length
     const totalPnl = cancelledTrades.reduce((sum, t) => sum + (t.pnl || 0), 0)
 
     return NextResponse.json({
