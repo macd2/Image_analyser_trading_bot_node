@@ -530,42 +530,45 @@ export async function getInstancesWithSummary(): Promise<InstanceSummary[]> {
       if (runInfo) runningDurationHours = (Date.now() - new Date(runInfo.started_at).getTime()) / (1000 * 60 * 60);
     }
 
-    // Latest cycle metrics + symbols
+    // Latest cycle metrics + symbols (get the absolute latest cycle for this instance across all runs)
     let latestCycle: { charts_captured: number; recommendations_generated: number; trades_executed: number } | undefined;
     let lastCycleSymbols: string[] = [];
-    if (instance.current_run_id) {
-      const cycleInfo = await dbQueryOne<{ id: string; charts_captured: number; recommendations_generated: number; trades_executed: number }>(`
-        SELECT id, charts_captured, recommendations_generated, trades_executed FROM cycles WHERE run_id = ? ORDER BY started_at DESC LIMIT 1
-      `, [instance.current_run_id]);
-      if (cycleInfo) {
-        latestCycle = { charts_captured: Number(cycleInfo.charts_captured) || 0, recommendations_generated: Number(cycleInfo.recommendations_generated) || 0, trades_executed: Number(cycleInfo.trades_executed) || 0 };
-        // Get unique symbols from last cycle's recommendations
-        const symbols = await dbQuery<{ symbol: string }>(`SELECT DISTINCT symbol FROM recommendations WHERE cycle_id = ?`, [cycleInfo.id]);
-        lastCycleSymbols = symbols.map(s => s.symbol);
-      }
+    const cycleInfo = await dbQueryOne<{ id: string; charts_captured: number; recommendations_generated: number; trades_executed: number }>(`
+      SELECT c.id, c.charts_captured, c.recommendations_generated, c.trades_executed
+      FROM cycles c
+      JOIN runs r ON c.run_id = r.id
+      WHERE r.instance_id = ?
+      ORDER BY c.started_at DESC LIMIT 1
+    `, [instance.id]);
+    if (cycleInfo) {
+      latestCycle = { charts_captured: Number(cycleInfo.charts_captured) || 0, recommendations_generated: Number(cycleInfo.recommendations_generated) || 0, trades_executed: Number(cycleInfo.trades_executed) || 0 };
+      // Get unique symbols from last cycle's recommendations
+      const symbols = await dbQuery<{ symbol: string }>(`SELECT DISTINCT symbol FROM recommendations WHERE cycle_id = ? ORDER BY symbol`, [cycleInfo.id]);
+      lastCycleSymbols = Array.from(new Set(symbols.map(s => s.symbol)));
     }
 
-    // Signal quality metrics (from recommendations in current run)
+    // Signal quality metrics (from ALL recommendations across ALL cycles for this instance)
     // Actionable = recs that meet min_confidence and min_rr thresholds from settings
     let actionablePercent = 0, actionableCount = 0, totalRecs = 0, avgConfidence = 0, avgRiskReward = 0;
     const minConfidence = Number(instanceSettings['trading.min_confidence']) || 0.6;
     const minRR = Number(instanceSettings['trading.min_rr']) || 1.5;
-    if (instance.current_run_id) {
-      const recStats = await dbQueryOne<{ total: number; actionable: number; avg_conf: number; avg_rr: number }>(`
-        SELECT
-          COUNT(*) as total,
-          COUNT(CASE WHEN recommendation != 'hold' AND confidence >= ? AND risk_reward >= ? THEN 1 END) as actionable,
-          AVG(confidence) as avg_conf,
-          AVG(risk_reward) as avg_rr
-        FROM recommendations r JOIN cycles c ON r.cycle_id = c.id WHERE c.run_id = ?
-      `, [minConfidence, minRR, instance.current_run_id]);
-      if (recStats) {
-        totalRecs = Number(recStats.total) || 0;
-        actionableCount = Number(recStats.actionable) || 0;
-        avgConfidence = Number(recStats.avg_conf) || 0;
-        avgRiskReward = Number(recStats.avg_rr) || 0;
-        actionablePercent = totalRecs > 0 ? (actionableCount / totalRecs) * 100 : 0;
-      }
+    const recStats = await dbQueryOne<{ total: number; actionable: number; avg_conf: number; avg_rr: number }>(`
+      SELECT
+        COUNT(*) as total,
+        COUNT(CASE WHEN recommendation != 'hold' AND confidence >= ? AND risk_reward >= ? THEN 1 END) as actionable,
+        AVG(confidence) as avg_conf,
+        AVG(risk_reward) as avg_rr
+      FROM recommendations r
+      JOIN cycles c ON r.cycle_id = c.id
+      JOIN runs ru ON c.run_id = ru.id
+      WHERE ru.instance_id = ?
+    `, [minConfidence, minRR, instance.id]);
+    if (recStats) {
+      totalRecs = Number(recStats.total) || 0;
+      actionableCount = Number(recStats.actionable) || 0;
+      avgConfidence = Number(recStats.avg_conf) || 0;
+      avgRiskReward = Number(recStats.avg_rr) || 0;
+      actionablePercent = totalRecs > 0 ? (actionableCount / totalRecs) * 100 : 0;
     }
 
     // Recent logs (last 3)

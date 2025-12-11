@@ -152,11 +152,13 @@ export default function InstanceCard({ instance, onAction }: InstanceCardProps) 
     return `${(hours / 24).toFixed(1)}d`
   }
 
-  // Format symbols list
+  // Format symbols list (deduplicate first)
   const formatSymbols = (symbols: string[]) => {
     if (!symbols || symbols.length === 0) return null
-    if (symbols.length <= 3) return symbols.join(', ')
-    return `${symbols.slice(0, 3).join(', ')} (+${symbols.length - 3})`
+    // Deduplicate symbols
+    const uniqueSymbols = Array.from(new Set(symbols))
+    if (uniqueSymbols.length <= 3) return uniqueSymbols.join(', ')
+    return `${uniqueSymbols.slice(0, 3).join(', ')} (+${uniqueSymbols.length - 3})`
   }
 
   // Calculate win rates per mode
@@ -207,12 +209,16 @@ export default function InstanceCard({ instance, onAction }: InstanceCardProps) 
           }`}>
             {instance.config.use_testnet ? 'TESTNET' : 'MAINNET'}
           </span>
-          {instance.last_cycle_symbols && instance.last_cycle_symbols.length > 0 && (
+          {instance.last_cycle_symbols && instance.last_cycle_symbols.length > 0 ? (
             <span
               className="px-2 py-1 text-xs bg-slate-700/50 text-slate-400 rounded cursor-help flex items-center gap-1"
               title={instance.last_cycle_symbols.join(', ')}
             >
               <Target className="w-3 h-3" /> {formatSymbols(instance.last_cycle_symbols)}
+            </span>
+          ) : (
+            <span className="px-2 py-1 text-xs bg-slate-700/50 text-slate-500 rounded flex items-center gap-1 italic">
+              <Target className="w-3 h-3" /> No recommendations for last cycle
             </span>
           )}
         </div>
