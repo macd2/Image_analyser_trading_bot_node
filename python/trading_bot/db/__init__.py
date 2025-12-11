@@ -9,6 +9,7 @@ from trading_bot.db.client import (
     query_one,
     convert_placeholders,
     DB_TYPE,
+    release_connection,
 )
 
 from trading_bot.db.init_trading_db import (
@@ -31,6 +32,7 @@ __all__ = [
     "query_one",
     "convert_placeholders",
     "DB_TYPE",
+    "release_connection",
     # Schema initialization
     "init_database",
     "init_schema",
