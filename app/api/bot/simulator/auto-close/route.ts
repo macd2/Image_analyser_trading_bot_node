@@ -154,12 +154,11 @@ async function getHistoricalCandles(
     // Bybit allows max 200 candles per request
     const limit = Math.min(expectedCandles + 5, 200);
 
-    // Bybit API expects start time in SECONDS (not milliseconds)
-    // startTime is in milliseconds, so divide by 1000
-    const startTimeSeconds = Math.floor(startTime / 1000);
-    const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${apiSymbol}&interval=${interval}&start=${startTimeSeconds}&limit=${limit}`;
+    // NOTE: Do NOT use 'start' parameter - it causes issues with future timestamps
+    // Just request without time params to get most recent candles
+    const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${apiSymbol}&interval=${interval}&limit=${limit}`;
 
-    console.log(`[Auto-Close] Bybit API request: ${url} (startTime: ${startTime}ms = ${startTimeSeconds}s)`);
+    console.log(`[Auto-Close] Bybit API request: ${url}`);
 
     // Add timeout to prevent hanging
     const controller = new AbortController();
