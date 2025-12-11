@@ -1476,7 +1476,9 @@ export interface InstanceWithHierarchy extends InstanceRow {
 
 /**
  * Get instances with full hierarchy for LogTrail (Level 0)
- * Instance → Runs → Cycles → Recommendations → Trades → Executions
+ * Instance → Runs → Cycles → Recommendations → Trades (NO executions to avoid N+1)
+ *
+ * OPTIMIZATION: Only fetch last 2 runs per instance and skip executions to reduce queries
  */
 export async function getInstancesWithHierarchy(limit: number = 10): Promise<InstanceWithHierarchy[]> {
   // Get all active instances
@@ -1488,19 +1490,20 @@ export async function getInstancesWithHierarchy(limit: number = 10): Promise<Ins
 
   const results: InstanceWithHierarchy[] = [];
   for (const instance of instances) {
-    // Get runs for this instance (limited)
+    // Get runs for this instance (limited to 2 to reduce queries)
+    const runsLimit = Math.min(limit, 2);
     const runs = await dbQuery<RunRow>(`
       SELECT * FROM runs
       WHERE instance_id = ?
       ORDER BY started_at DESC
       LIMIT ?
-    `, [instance.id, limit]);
+    `, [instance.id, runsLimit]);
 
     const runsWithHierarchy: RunWithHierarchy[] = [];
     for (const run of runs) {
       runsWithHierarchy.push({
         ...run,
-        cycles: await getCyclesWithRecommendations(run.id),
+        cycles: await getCyclesWithRecommendationsOptimized(run.id),
       });
     }
 
@@ -1582,6 +1585,28 @@ async function getCyclesWithRecommendations(runId: string): Promise<CycleWithRec
 }
 
 /**
+ * Get cycles with recommendations for a run (OPTIMIZED - no executions)
+ * Used by LogTrail to avoid N+1 query explosion
+ */
+async function getCyclesWithRecommendationsOptimized(runId: string): Promise<CycleWithRecommendations[]> {
+  const cycles = await dbQuery<CycleRow>(`
+    SELECT * FROM cycles
+    WHERE run_id = ?
+    ORDER BY started_at DESC
+    LIMIT 5
+  `, [runId]);
+
+  const results: CycleWithRecommendations[] = [];
+  for (const cycle of cycles) {
+    results.push({
+      ...cycle,
+      recommendations: await getRecommendationsWithTradesOptimized(cycle.id),
+    });
+  }
+  return results;
+}
+
+/**
  * Get recommendations with trades for a cycle
  */
 async function getRecommendationsWithTrades(cycleId: string): Promise<RecommendationWithTrades[]> {
@@ -1596,6 +1621,38 @@ async function getRecommendationsWithTrades(cycleId: string): Promise<Recommenda
     results.push({
       ...rec,
       trades: await getTradesWithExecutions(rec.id),
+    });
+  }
+  return results;
+}
+
+/**
+ * Get recommendations with trades for a cycle (OPTIMIZED - no executions)
+ * Used by LogTrail to avoid N+1 query explosion
+ */
+async function getRecommendationsWithTradesOptimized(cycleId: string): Promise<RecommendationWithTrades[]> {
+  const recommendations = await dbQuery<RecommendationRow>(`
+    SELECT * FROM recommendations
+    WHERE cycle_id = ?
+    ORDER BY created_at DESC
+    LIMIT 10
+  `, [cycleId]);
+
+  const results: RecommendationWithTrades[] = [];
+  for (const rec of recommendations) {
+    // Get trades WITHOUT executions to avoid N+1
+    const trades = await dbQuery<TradeRow>(`
+      SELECT * FROM trades
+      WHERE recommendation_id = ?
+      ORDER BY created_at DESC
+    `, [rec.id]);
+
+    results.push({
+      ...rec,
+      trades: trades.map(t => ({
+        ...t,
+        executions: [] // Skip executions to avoid N+1 queries
+      })),
     });
   }
   return results;
