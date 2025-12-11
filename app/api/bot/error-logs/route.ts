@@ -34,11 +34,19 @@ export async function GET(request: NextRequest) {
       count: logs.length
     });
   } catch (error) {
-    console.error('Error logs GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get error logs' },
-      { status: 500 }
-    );
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('[Error Logs API] Failed to fetch logs:', errorMsg);
+
+    // Return graceful error response with empty logs instead of 500
+    // This prevents frontend from breaking when database is temporarily unavailable
+    return NextResponse.json({
+      logs: [],
+      runs: [],
+      count: 0,
+      run_count: 0,
+      error: 'Database temporarily unavailable, showing cached logs',
+      status: 'degraded'
+    }, { status: 200 });
   }
 }
 
