@@ -49,6 +49,9 @@ def get_s3_client():
         access_id = os.getenv('SUPABASE_BUCKET_ACCESS_ID', '')
         secret_key = os.getenv('SUPABASE_BUCKET_SECRET', '')
 
+        if not bucket_url or not access_id or not secret_key:
+            raise ValueError("Missing Supabase S3 credentials in environment variables")
+
         # Extract base URL (remove /storage/v1)
         endpoint_url = bucket_url.replace('/storage/v1', '/storage/v1/s3')
 
@@ -61,8 +64,12 @@ def get_s3_client():
             config=Config(signature_version='s3v4')
         )
         return _s3_client
-    except ImportError:
-        raise ImportError("boto3 package required: pip install boto3")
+    except ImportError as e:
+        logger.error(f"boto3 import failed: {e}. Install with: pip install boto3")
+        raise ImportError("boto3 package required: pip install boto3") from e
+    except Exception as e:
+        logger.error(f"Failed to initialize S3 client: {e}")
+        raise
 
 
 def get_bucket_name() -> str:
@@ -159,8 +166,13 @@ def list_files(dir_path: str) -> List[str]:
                 if folder:
                     files.append(folder)
             return files
+        except ImportError as e:
+            error_msg = f"list_files error: boto3 not installed - {e}"
+            logger.error(error_msg)
+            return []
         except Exception as e:
-            logger.error(f"list_files error: {e}")
+            error_msg = f"list_files error: {type(e).__name__}: {e}"
+            logger.error(error_msg)
             return []
 
 
@@ -222,9 +234,14 @@ def save_file(file_path: str, data: bytes, content_type: str = 'image/png') -> d
             )
             logger.info(f"Saved file to S3: {bucket}/{file_path}")
             return {'success': True, 'path': f"s3://{bucket}/{file_path}"}
+        except ImportError as e:
+            error_msg = f"S3 save error: boto3 not installed - {e}"
+            logger.error(error_msg)
+            return {'success': False, 'error': error_msg}
         except Exception as e:
-            logger.error(f"S3 save error: {e}")
-            return {'success': False, 'error': str(e)}
+            error_msg = f"S3 save error: {type(e).__name__}: {e}"
+            logger.error(error_msg)
+            return {'success': False, 'error': error_msg}
 
 
 def read_file(file_path: str) -> Optional[bytes]:
