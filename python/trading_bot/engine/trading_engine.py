@@ -17,7 +17,7 @@ from trading_bot.core.websocket_manager import BybitWebSocketManager
 from trading_bot.core.shared_websocket_manager import SharedWebSocketManager
 from trading_bot.engine.order_executor import OrderExecutor
 from trading_bot.engine.position_sizer import PositionSizer
-from trading_bot.db.client import get_connection, execute, release_connection
+from trading_bot.db.client import get_connection, execute, release_connection, query
 
 logger = logging.getLogger(__name__)
 
@@ -527,6 +527,18 @@ class TradingEngine:
             return
 
         try:
+            # Get timeframe from trade or fallback to recommendation
+            timeframe = trade.get("timeframe")
+            if not timeframe and trade.get("recommendation_id"):
+                try:
+                    rec_result = query(self._db, """
+                        SELECT timeframe FROM recommendations WHERE id = ?
+                    """, (trade.get("recommendation_id"),))
+                    if rec_result:
+                        timeframe = rec_result[0].get("timeframe")
+                except Exception as e:
+                    logger.debug(f"Could not fetch timeframe from recommendation: {e}")
+
             execute(self._db, """
                 INSERT INTO trades
                 (id, recommendation_id, run_id, cycle_id, symbol, side, entry_price, take_profit,
@@ -547,7 +559,7 @@ class TradingEngine:
                 trade.get("order_id"),
                 trade.get("confidence"),
                 trade.get("rr_ratio"),
-                trade.get("timeframe"),  # Store timeframe for chart display
+                timeframe,  # Use timeframe from trade or recommendation
                 self.paper_trading,  # Pass boolean directly
                 trade["timestamp"].isoformat(),
             ))

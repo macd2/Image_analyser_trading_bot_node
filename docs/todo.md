@@ -105,3 +105,19 @@ WHERE id = ?
 Again, exit_price is set to currentPrice (line 544). So indeed, the simulator sets exit price for cancelled trades.
 
 ------
+
+[ErrorLogger] Failed to log error: connection pool exhausted
+2025-12-11 03:40:32 | ERROR | trading_bot.core.slot_manager | Error querying database for pending orders count: connection pool exhausted
+[ErrorLogger] Failed to log error: connection pool exhausted
+2025-12-11 03:40:32 | ERROR | trading_bot.core.state_manager | Error querying database for open positions: connection pool exhausted
+
+
+------
+[ ] each part of the trading cycle must be instance aware
+[ ] each step of the trading cycle must check its own data iteegrety 
+[ ] each part of the trading cylce must be timeframe and boundery aware
+- example sources must check if there already images for the current timeframe and boundery
+- cleaner must only clean images that are outside the crrent boundery based on tieframe 
+[ ] analyzer must only analze images if there is no recomendation for current timeframe and boundery and instance than return results as if it analyzed them but with the note of chached results so later parts of the code can run 
+[ ] execution must check in dry run of the given recomendation was already executed based on database status in live trading ofcause based on exchnage data
+[ ] we need to define a set of error that pause the bot permantly until manually resumed 

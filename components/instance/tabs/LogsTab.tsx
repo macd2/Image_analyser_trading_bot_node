@@ -63,10 +63,15 @@ export function LogsTab({ instanceId }: LogsTabProps) {
       if (res.ok) {
         const data = await res.json()
         if (data.runs) {
-          setRuns(data.runs)
+          // Convert log_count from string to number (PostgreSQL returns bigint as string)
+          const processedRuns = data.runs.map((run: any) => ({
+            ...run,
+            log_count: Number(run.log_count) || 0
+          }))
+          setRuns(processedRuns)
           // Auto-expand first run only on initial load
-          if (loading && data.runs.length > 0) {
-            setExpandedRuns(new Set([data.runs[0].run_id]))
+          if (loading && processedRuns.length > 0) {
+            setExpandedRuns(new Set([processedRuns[0].run_id]))
           }
         }
       }
