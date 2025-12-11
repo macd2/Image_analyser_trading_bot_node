@@ -19,7 +19,7 @@ from typing import List, Dict, Any
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Use centralized database client
-from trading_bot.db.client import get_connection, query, execute, get_table_name, DB_TYPE
+from trading_bot.db.client import get_connection, release_connection, query, execute, get_table_name, DB_TYPE
 
 
 def _convert_timeframe_to_bybit(timeframe: str) -> str:
@@ -151,7 +151,7 @@ def _get_candles_from_db(symbol: str, timeframe: str, start_ts: int, end_ts: int
             })
         return candles
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def _insert_candles_to_db(candles: List[Dict[str, Any]], symbol: str, timeframe: str, category: str):
@@ -180,7 +180,7 @@ def _insert_candles_to_db(candles: List[Dict[str, Any]], symbol: str, timeframe:
                 pass  # Ignore duplicates
         conn.commit()
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def get_candles_for_trade(symbol: str, timeframe: str, timestamp_ms: int,

@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 # Import centralized database client
 from trading_bot.db.client import (
     get_connection,
+    release_connection,
     get_db_path,
     should_run_migrations,
     should_init_schema,
@@ -504,10 +505,10 @@ if __name__ == "__main__":
     print(f"Initializing trading.db at {get_db_path()}...")
     conn = init_database()
     print("✅ Schema created successfully!")
-    
+
     # Verify tables
     cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     tables = [row[0] for row in cursor.fetchall()]
     print(f"📊 Tables created: {tables}")
-    conn.close()
+    release_connection(conn)
 

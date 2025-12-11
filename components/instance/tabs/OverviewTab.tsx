@@ -421,7 +421,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
                 )}
               </h3>
               {monitorStatus?.last_check && (
-                <div className="text-xs text-slate-500">
+                <div className="text-sm text-slate-500">
                   Last check: {new Date(monitorStatus.last_check).toLocaleTimeString()}
                 </div>
               )}

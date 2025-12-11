@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional, Union
 
 from trading_bot.db.client import (
     get_connection as get_db_connection,
+    release_connection,
     get_table_columns,
     add_column_if_missing,
     get_timestamp_type,
@@ -51,14 +52,14 @@ class DataAgent:
             if len(self._connection_pool) < self._max_pool_size:
                 self._connection_pool.append(conn)
             else:
-                conn.close()
+                release_connection(conn)
     
     def cleanup_connection_pool(self):
         """Clean up all connections in the pool."""
         with self._pool_lock:
             for conn in self._connection_pool:
                 try:
-                    conn.close()
+                    release_connection(conn)
                 except:
                     pass
             self._connection_pool.clear()
@@ -326,7 +327,7 @@ class DataAgent:
             ''')
             
             conn.commit()
-            conn.close()
+            release_connection(conn)
             
         except sqlite3.Error as e:
             print(f"Database initialization error: {e}")
@@ -438,7 +439,7 @@ class DataAgent:
             self._create_analytics_tables(cursor)
             
             conn.commit()
-            conn.close()
+            release_connection(conn)
             
         except sqlite3.Error as e:
             print(f"Database migration error: {e}")
@@ -657,7 +658,7 @@ class DataAgent:
             print(f"Database error in store_result: {e}")
             raise
         finally:
-            conn.close()
+            release_connection(conn)
 
     def clear_latest_recommendations(self):
         """Clear all data from the latest_recommendations table."""
@@ -669,7 +670,7 @@ class DataAgent:
         except sqlite3.Error as e:
             print(f"Database error in clear_latest_recommendations: {e}")
         finally:
-            conn.close()
+            release_connection(conn)
 
     def store_latest_recommendations(self, recommendations: List[Dict[str, Any]]):
         """Store a list of recommendations in the latest_recommendations table."""
@@ -736,7 +737,7 @@ class DataAgent:
             print(f"Database error in store_latest_recommendations: {e}")
             raise
         finally:
-            conn.close()
+            release_connection(conn)
     
     def get_distinct_symbol_timeframes(self) -> List[Dict[str, str]]:
         """Get all distinct symbol/timeframe pairs from the database."""
@@ -749,7 +750,7 @@ class DataAgent:
             print(f"Database error in get_distinct_symbol_timeframes: {e}")
             return []
         finally:
-            conn.close()
+            release_connection(conn)
 
     def get_latest_analysis(self, symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
         """Get the most recent analysis for a symbol/timeframe."""
@@ -817,7 +818,7 @@ class DataAgent:
             finally:
                 if conn:
                     try:
-                        conn.close()
+                        release_connection(conn)
                     except Exception:
                         pass
 
@@ -874,7 +875,7 @@ class DataAgent:
             finally:
                 if conn:
                     try:
-                        conn.close()
+                        release_connection(conn)
                     except Exception:
                         pass
 
@@ -923,7 +924,7 @@ class DataAgent:
             print(f"Database error in get_analysis_history: {e}")
             return []
         finally:
-            conn.close()
+            release_connection(conn)
     
     def get_performance_stats(self, symbol: Optional[str] = None) -> Dict[str, Any]:
         """Get performance statistics for stored analyses."""
@@ -968,7 +969,7 @@ class DataAgent:
                 'recommendations': {'buy': 0, 'sell': 0, 'hold': 0}
             }
         finally:
-            conn.close()
+            release_connection(conn)
 
     def reset_database(self):
         """Clear all data and reapply the schema."""
@@ -988,7 +989,7 @@ class DataAgent:
             print(f"Database error in reset_database: {e}")
             raise
         finally:
-            conn.close()
+            release_connection(conn)
     
     def clear_all_data(self):
         """Clear all data from the database but keep the schema."""
@@ -1002,7 +1003,7 @@ class DataAgent:
         except sqlite3.Error as e:
             print(f"Database error in clear_all_data: {e}")
         finally:
-            conn.close()
+            release_connection(conn)
     
     def _row_to_dict(self, cursor, row) -> Dict[str, Any]:
         """Convert SQLite row to dictionary."""
@@ -1063,7 +1064,7 @@ class DataAgent:
                   prompt_name, timeframe, confidence, risk_reward_ratio, order_type))
 
             conn.commit()
-            conn.close()
+            release_connection(conn)
             return True
 
         except sqlite3.Error as e:
@@ -1107,7 +1108,7 @@ class DataAgent:
 
             conn.commit()
             # print(f"DEBUG: Rows affected: {rows_affected}")
-            conn.close()
+            release_connection(conn)
 
             if rows_affected == 0:
                 # print(f"DEBUG: No rows updated for trade_id {trade_id} - trade may not exist")
@@ -1148,7 +1149,7 @@ class DataAgent:
             rows_affected = db_execute(conn, query_str, tuple(values))
 
             conn.commit()
-            conn.close()
+            release_connection(conn)
 
             return rows_affected > 0
 
@@ -1189,7 +1190,7 @@ class DataAgent:
             print(f"Error getting trades needing PnL: {e}")
             return []
         finally:
-            conn.close()
+            release_connection(conn)
 
     def get_trades(self, symbol: Optional[str] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get trades from database with optional filtering."""
@@ -1218,7 +1219,7 @@ class DataAgent:
 
             trades = [dict(row.items()) for row in rows]
 
-            conn.close()
+            release_connection(conn)
             return trades
 
         except Exception as e:
@@ -1236,10 +1237,10 @@ class DataAgent:
             if row:
                 # Convert UnifiedRow to dict
                 trade = dict(row.items())
-                conn.close()
+                release_connection(conn)
                 return trade
 
-            conn.close()
+            release_connection(conn)
             return None
 
         except Exception as e:
@@ -1279,11 +1280,12 @@ class DataAgent:
             ))
             
             conn.commit()
-            conn.close()
+            release_connection(conn)
             return True
-            
+
         except sqlite3.Error as e:
             print(f"Error storing position tracking data: {e}")
+            release_connection(conn)
             return False
     
     def update_trading_stats_for_closed_trade(self, trade_data: Dict[str, Any]) -> bool:
@@ -1375,7 +1377,7 @@ class DataAgent:
                 ))
             
             conn.commit()
-            conn.close()
+            release_connection(conn)
             return True
             
         except Exception as e:
@@ -1404,7 +1406,7 @@ class DataAgent:
 
             # Use centralized query to handle SQLite/PostgreSQL placeholder conversion
             results = query(conn, query_str, tuple(params))
-            conn.close()
+            release_connection(conn)
 
             return [dict(row.items()) for row in results]
 
@@ -1434,7 +1436,7 @@ class DataAgent:
             ''')
             
             result = cursor.fetchone()
-            conn.close()
+            release_connection(conn)
             
             if result and result[0]:  # Check if we have data
                 total_trades = result[0]
@@ -1555,7 +1557,7 @@ class DataAgent:
                         # If validation fails, exclude the result
                         pass
             
-            conn.close()
+            release_connection(conn)
             
             # Log debug information
             import logging
@@ -1615,7 +1617,7 @@ class DataAgent:
 
             results = [dict(row.items()) for row in rows]
             
-            conn.close()
+            release_connection(conn)
             
             import logging
             logger = logging.getLogger(__name__)
@@ -1703,7 +1705,7 @@ class DataAgent:
                     print(f"Error processing trade data: {e}")
                     error_count += 1
             
-            conn.close()
+            release_connection(conn)
             
             return {
                 'status': 'success',

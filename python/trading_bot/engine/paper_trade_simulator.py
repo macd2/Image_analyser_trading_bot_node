@@ -16,7 +16,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
 
-from trading_bot.db.client import get_connection, query, execute as db_execute
+from trading_bot.db.client import get_connection, release_connection, query, execute as db_execute
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class PaperTradeSimulator:
         # Convert rows to list of dicts (both databases return dict-like rows)
         trades = [dict(row) for row in rows]
 
-        conn.close()
+        release_connection(conn)
         return trades
     
     def update_trade_status(self, trade_id: str, updates: Dict[str, Any]) -> bool:
@@ -97,7 +97,7 @@ class PaperTradeSimulator:
 
             return rows_affected > 0
         finally:
-            conn.close()
+            release_connection(conn)
     
     def _update_run_aggregates_on_trade_close(self, conn, trade_id: str, pnl: float) -> None:
         """Update run aggregates (win_count, loss_count, total_pnl) when a paper trade closes."""

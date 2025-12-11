@@ -87,7 +87,7 @@ def get_timeframe_from_trade_data(trade_data: Dict[str, Any], data_agent) -> str
         ''', (recommendation_id,))
         
         result = cursor.fetchone()
-        conn.close()
+        release_connection(conn)
         
         return result[0] if result else 'unknown'
         
@@ -190,7 +190,7 @@ def update_comprehensive_trading_stats(data_agent) -> Dict[str, Any]:
         trades = cursor.fetchall()
         
         if not trades:
-            conn.close()
+            release_connection(conn)
             return {
                 "status": "success",
                 "message": "No trades found for statistics update",
@@ -545,7 +545,7 @@ def update_comprehensive_trading_stats(data_agent) -> Dict[str, Any]:
             holding_period_updated_records += 1
         
         conn.commit()
-        conn.close()
+        release_connection(conn)
         
         return {
             "status": "success",

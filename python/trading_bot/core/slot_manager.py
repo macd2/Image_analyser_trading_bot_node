@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional, Tuple
 from trading_bot.core.utils import count_open_positions_and_orders
-from trading_bot.db.client import query, get_connection, DB_TYPE, get_boolean_comparison
+from trading_bot.db.client import query, get_connection, release_connection, DB_TYPE, get_boolean_comparison
 
 
 class SlotManager:
@@ -386,7 +386,7 @@ class SlotManager:
             positions = [dict(row.items()) for row in results]
             self.logger.debug(f"[DB Query] Found {len(positions)} open positions for instance {self.instance_id}")
 
-            conn.close()
+            release_connection(conn)
             return positions
 
         except Exception as e:
@@ -436,7 +436,7 @@ class SlotManager:
             count = results[0]['count'] if results else 0
             self.logger.debug(f"[DB Query] Found {count} pending orders for instance {self.instance_id}")
 
-            conn.close()
+            release_connection(conn)
             return count
 
         except Exception as e:

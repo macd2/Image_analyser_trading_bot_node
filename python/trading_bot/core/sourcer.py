@@ -12,7 +12,7 @@ from typing import List, Optional, Dict, Any
 
 import requests
 from trading_bot.core.secrets_manager import get_tradingview_email
-from trading_bot.db.client import get_connection, query_one, execute, DB_TYPE, get_boolean_comparison, get_boolean_value
+from trading_bot.db.client import get_connection, release_connection, query_one, execute, DB_TYPE, get_boolean_comparison, get_boolean_value
 
 # Realistic user agents for stealth - rotated randomly
 # These match real Chrome on Windows 10/11 installations
@@ -1583,75 +1583,91 @@ class ChartSourcer:
         self.last_request_time = time.time()
 
     async def _load_session_from_db(self) -> dict | None:
-        """Load encrypted session from database (supports both SQLite and PostgreSQL)."""
-        try:
-            from trading_bot.core.secrets_manager import SecretsManager
-            username = os.getenv('TRADINGVIEW_EMAIL', '')
-            self.logger.info(f"🔍 Loading session for user: {username} from {DB_TYPE} database")
+        """Load encrypted session from database (supports both SQLite and PostgreSQL).
 
-            conn = get_connection()
+        Retries on connection pool exhaustion to ensure session is loaded.
+        """
+        max_retries = 3
+        retry_delay = 1  # seconds
 
-            # Check if table exists (tradingview_sessions for PostgreSQL, sessions for SQLite)
-            if DB_TYPE == 'postgres':
-                table_check = query_one(conn, """
-                    SELECT EXISTS (
-                        SELECT FROM information_schema.tables
-                        WHERE table_name = 'tradingview_sessions'
-                    )
-                """)
+        for attempt in range(max_retries):
+            conn = None
+            try:
+                from trading_bot.core.secrets_manager import SecretsManager
+                username = os.getenv('TRADINGVIEW_EMAIL', '')
+                self.logger.info(f"🔍 Loading session for user: {username} from {DB_TYPE} database (attempt {attempt + 1}/{max_retries})")
+
+                conn = get_connection()
+
+                # Check if table exists (tradingview_sessions for PostgreSQL, sessions for SQLite)
+                if DB_TYPE == 'postgres':
+                    table_check = query_one(conn, """
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables
+                            WHERE table_name = 'tradingview_sessions'
+                        )
+                    """)
+                    # UnifiedRow supports both index and key access
+                    if not table_check or not table_check['exists']:
+                        self.logger.warning("❌ tradingview_sessions table does not exist")
+                        return None
+
+                    # Get most recent valid session
+                    self.logger.debug(f"🔍 Querying for session: username={username}, is_valid=true")
+                    row = query_one(conn, """
+                        SELECT encrypted_data FROM tradingview_sessions
+                        WHERE username = ? AND is_valid = true
+                        ORDER BY created_at DESC LIMIT 1
+                    """, (username,))
+                else:
+                    # SQLite
+                    table_check = query_one(conn, """
+                        SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'
+                    """)
+                    if not table_check:
+                        self.logger.warning("❌ sessions table does not exist")
+                        return None
+
+                    # Get most recent valid session
+                    is_valid_check = get_boolean_comparison('is_valid', True)
+                    self.logger.debug(f"🔍 Querying for session: username={username}, is_valid=true")
+                    row = query_one(conn, f"""
+                        SELECT encrypted_data FROM sessions
+                        WHERE username = ? AND {is_valid_check}
+                        ORDER BY created_at DESC LIMIT 1
+                    """, (username,))
+
+                if not row:
+                    self.logger.warning(f"❌ No valid session found in database for user: {username}")
+                    return None
+
+                # Decrypt session data
+                secrets = SecretsManager()
                 # UnifiedRow supports both index and key access
-                if not table_check or not table_check['exists']:
-                    self.logger.warning("❌ tradingview_sessions table does not exist")
-                    conn.close()
+                encrypted_data = row['encrypted_data']
+                decrypted = secrets.decrypt(encrypted_data)
+                session_data = json.loads(decrypted)
+                cookie_count = len(session_data.get('cookies', []))
+                self.logger.info(f"✅ Loaded session from {DB_TYPE} database for user: {username} ({cookie_count} cookies)")
+                return session_data
+
+            except Exception as e:
+                error_msg = str(e)
+                is_pool_exhausted = 'connection pool exhausted' in error_msg.lower()
+
+                if is_pool_exhausted and attempt < max_retries - 1:
+                    self.logger.warning(f"⚠️  Connection pool exhausted, retrying in {retry_delay}s... (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    self.logger.error(f"❌ Could not load session from database: {e}")
+                    import traceback
+                    self.logger.debug(traceback.format_exc())
                     return None
-
-                # Get most recent valid session
-                self.logger.debug(f"🔍 Querying for session: username={username}, is_valid=true")
-                row = query_one(conn, """
-                    SELECT encrypted_data FROM tradingview_sessions
-                    WHERE username = ? AND is_valid = true
-                    ORDER BY created_at DESC LIMIT 1
-                """, (username,))
-            else:
-                # SQLite
-                table_check = query_one(conn, """
-                    SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'
-                """)
-                if not table_check:
-                    self.logger.warning("❌ sessions table does not exist")
-                    conn.close()
-                    return None
-
-                # Get most recent valid session
-                is_valid_check = get_boolean_comparison('is_valid', True)
-                self.logger.debug(f"🔍 Querying for session: username={username}, is_valid=true")
-                row = query_one(conn, f"""
-                    SELECT encrypted_data FROM sessions
-                    WHERE username = ? AND {is_valid_check}
-                    ORDER BY created_at DESC LIMIT 1
-                """, (username,))
-
-            conn.close()
-
-            if not row:
-                self.logger.warning(f"❌ No valid session found in database for user: {username}")
-                return None
-
-            # Decrypt session data
-            secrets = SecretsManager()
-            # UnifiedRow supports both index and key access
-            encrypted_data = row['encrypted_data']
-            decrypted = secrets.decrypt(encrypted_data)
-            session_data = json.loads(decrypted)
-            cookie_count = len(session_data.get('cookies', []))
-            self.logger.info(f"✅ Loaded session from {DB_TYPE} database for user: {username} ({cookie_count} cookies)")
-            return session_data
-
-        except Exception as e:
-            self.logger.error(f"❌ Could not load session from database: {e}")
-            import traceback
-            self.logger.debug(traceback.format_exc())
-            return None
+            finally:
+                # Always release connection back to pool (PostgreSQL) or close (SQLite)
+                if conn is not None:
+                    release_connection(conn)
     
     async def _save_session_data(self) -> None:
         """Save current session data to database (encrypted only - no file storage)."""
@@ -1677,68 +1693,89 @@ class ChartSourcer:
             self.logger.warning(f"Failed to save session data: {str(e)}")
 
     async def _save_session_to_db(self, session_data: dict) -> None:
-        """Save session to database with encryption (supports both SQLite and PostgreSQL)."""
-        try:
-            from trading_bot.core.secrets_manager import SecretsManager
-            username = os.getenv('TRADINGVIEW_EMAIL', 'unknown')
+        """Save session to database with encryption (supports both SQLite and PostgreSQL).
 
-            # Encrypt session data
-            secrets = SecretsManager()
-            encrypted = secrets.encrypt(json.dumps(session_data))
+        Retries on connection pool exhaustion to ensure session is saved.
+        """
+        max_retries = 3
+        retry_delay = 1  # seconds
 
-            conn = get_connection()
+        for attempt in range(max_retries):
+            conn = None
+            try:
+                from trading_bot.core.secrets_manager import SecretsManager
+                username = os.getenv('TRADINGVIEW_EMAIL', 'unknown')
 
-            if DB_TYPE == 'postgres':
-                # Create tradingview_sessions table if not exists (custom table to avoid Supabase auth conflict)
-                execute(conn, """
-                    CREATE TABLE IF NOT EXISTS tradingview_sessions (
-                        id SERIAL PRIMARY KEY,
-                        username TEXT NOT NULL,
-                        encrypted_data TEXT NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        expires_at TIMESTAMP,
-                        is_valid BOOLEAN DEFAULT true
-                    )
-                """)
+                # Encrypt session data
+                secrets = SecretsManager()
+                encrypted = secrets.encrypt(json.dumps(session_data))
 
-                # Invalidate old sessions for this user
-                execute(conn, "UPDATE tradingview_sessions SET is_valid = false WHERE username = ?", (username,))
+                conn = get_connection()
 
-                # Insert new session
-                execute(conn, """
-                    INSERT INTO tradingview_sessions (username, encrypted_data, is_valid)
-                    VALUES (?, ?, true)
-                """, (username, encrypted))
-            else:
-                # SQLite
-                execute(conn, """
-                    CREATE TABLE IF NOT EXISTS sessions (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        username TEXT NOT NULL,
-                        encrypted_data TEXT NOT NULL,
-                        created_at TEXT DEFAULT (datetime('now')),
-                        expires_at TEXT,
-                        is_valid INTEGER DEFAULT 1
-                    )
-                """)
+                if DB_TYPE == 'postgres':
+                    # Create tradingview_sessions table if not exists (custom table to avoid Supabase auth conflict)
+                    execute(conn, """
+                        CREATE TABLE IF NOT EXISTS tradingview_sessions (
+                            id SERIAL PRIMARY KEY,
+                            username TEXT NOT NULL,
+                            encrypted_data TEXT NOT NULL,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            expires_at TIMESTAMP,
+                            is_valid BOOLEAN DEFAULT true
+                        )
+                    """)
 
-                # Invalidate old sessions for this user
-                is_valid_false = get_boolean_value(False)
-                is_valid_true = get_boolean_value(True)
-                execute(conn, f"UPDATE sessions SET is_valid = {is_valid_false} WHERE username = ?", (username,))
+                    # Invalidate old sessions for this user
+                    execute(conn, "UPDATE tradingview_sessions SET is_valid = false WHERE username = ?", (username,))
 
-                # Insert new session
-                execute(conn, f"""
-                    INSERT INTO sessions (username, encrypted_data, is_valid)
-                    VALUES (?, ?, {is_valid_true})
-                """, (username, encrypted))
+                    # Insert new session
+                    execute(conn, """
+                        INSERT INTO tradingview_sessions (username, encrypted_data, is_valid)
+                        VALUES (?, ?, true)
+                    """, (username, encrypted))
+                else:
+                    # SQLite
+                    execute(conn, """
+                        CREATE TABLE IF NOT EXISTS sessions (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            username TEXT NOT NULL,
+                            encrypted_data TEXT NOT NULL,
+                            created_at TEXT DEFAULT (datetime('now')),
+                            expires_at TEXT,
+                            is_valid INTEGER DEFAULT 1
+                        )
+                    """)
 
-            conn.commit()
-            conn.close()
-            self.logger.info(f"✅ Session saved to {DB_TYPE} database for user: {username}")
+                    # Invalidate old sessions for this user
+                    is_valid_false = get_boolean_value(False)
+                    is_valid_true = get_boolean_value(True)
+                    execute(conn, f"UPDATE sessions SET is_valid = {is_valid_false} WHERE username = ?", (username,))
 
-        except Exception as e:
-            self.logger.warning(f"Could not save session to database: {e}")
+                    # Insert new session
+                    execute(conn, f"""
+                        INSERT INTO sessions (username, encrypted_data, is_valid)
+                        VALUES (?, ?, {is_valid_true})
+                    """, (username, encrypted))
+
+                conn.commit()
+                self.logger.info(f"✅ Session saved to {DB_TYPE} database for user: {username}")
+                return
+
+            except Exception as e:
+                error_msg = str(e)
+                is_pool_exhausted = 'connection pool exhausted' in error_msg.lower()
+
+                if is_pool_exhausted and attempt < max_retries - 1:
+                    self.logger.warning(f"⚠️  Connection pool exhausted while saving session, retrying in {retry_delay}s... (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    self.logger.warning(f"Could not save session to database: {e}")
+                    return
+            finally:
+                # Always release connection back to pool (PostgreSQL) or close (SQLite)
+                if conn is not None:
+                    release_connection(conn)
     
     async def _test_existing_session(self) -> bool:
         """Test if the existing session is still valid by checking current page state."""

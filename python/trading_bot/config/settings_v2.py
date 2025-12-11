@@ -291,7 +291,7 @@ class ConfigV2:
             "SELECT settings, timeframe, min_confidence, max_leverage FROM instances WHERE id = ?",
             (instance_id,)
         )
-        conn.close()
+        release_connection(conn)
 
         if not row:
             raise ConfigurationError(f"Instance {instance_id} not found in database.")

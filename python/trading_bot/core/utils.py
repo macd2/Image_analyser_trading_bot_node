@@ -1783,7 +1783,7 @@ def get_timeframe_from_trade_data(trade_data: Dict[str, Any], data_agent) -> str
         ''', (recommendation_id,))
         
         result = cursor.fetchone()
-        conn.close()
+        release_connection(conn)
         
         return result[0] if result else 'unknown'
         

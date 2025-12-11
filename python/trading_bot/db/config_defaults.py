@@ -150,7 +150,7 @@ def reset_config_to_defaults(conn) -> int:
 
 
 if __name__ == "__main__":
-    from trading_bot.db import get_connection, query
+    from trading_bot.db import get_connection, release_connection, query
 
     print("Inserting default config values...")
     conn = get_connection()
@@ -163,4 +163,4 @@ if __name__ == "__main__":
     for row in rows:
         print(f"  [{row['category']}] {row['key']} = {row['value']}")
 
-    conn.close()
+    release_connection(conn)
