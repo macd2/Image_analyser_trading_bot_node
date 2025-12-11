@@ -20,11 +20,18 @@ interface SimulatorStatus {
   last_check: string | null
 }
 
+interface Instance {
+  id: string
+  name: string
+  is_running: boolean
+}
+
 export default function Sidebar() {
   const pathname = usePathname()
   const [instanceStatus, setInstanceStatus] = useState<InstanceStatus>({ runningCount: 0, totalCount: 0 })
   const [envConfig, setEnvConfig] = useState<EnvConfig | null>(null)
   const [simulatorStatus, setSimulatorStatus] = useState<SimulatorStatus>({ running: false, last_check: null })
+  const [instances, setInstances] = useState<Instance[]>([])
 
   // Poll instance status every 5 seconds
   useEffect(() => {
@@ -33,12 +40,18 @@ export default function Sidebar() {
         const res = await fetch('/api/bot/instances')
         if (res.ok) {
           const data = await res.json()
-          const instances = data.instances || []
-          const running = instances.filter((i: { is_running: number }) => i.is_running === 1).length
+          const instancesList = data.instances || []
+          const running = instancesList.filter((i: { is_running: boolean }) => i.is_running).length
           setInstanceStatus({
             runningCount: running,
-            totalCount: instances.length,
+            totalCount: instancesList.length,
           })
+          // Store instances for sidebar menu
+          setInstances(instancesList.map((i: { id: string; name: string; is_running: boolean }) => ({
+            id: i.id,
+            name: i.name,
+            is_running: i.is_running,
+          })))
         }
       } catch {
         // Ignore fetch errors
@@ -107,6 +120,8 @@ export default function Sidebar() {
           const isActive = pathname === tab.href || (tab.id === 'learning' && (pathname === '/backtest' || pathname === '/find-best-prompt'))
           const showInstanceCount = tab.showInstanceCount
           const showSimulatorStatus = 'showSimulatorStatus' in tab && tab.showSimulatorStatus
+          const isInstancesTab = tab.id === 'instances'
+
           return (
             <div key={tab.id}>
               <Link
@@ -146,6 +161,30 @@ export default function Sidebar() {
                   <div className="text-xs opacity-60">{tab.desc}</div>
                 </div>
               </Link>
+
+              {/* Sub-menu for Instances */}
+              {isInstancesTab && instances.length > 0 && (
+                <div className="ml-4 mt-1 space-y-1">
+                  {instances.map((instance) => (
+                    <Link
+                      key={instance.id}
+                      href={`/instances/${instance.id}`}
+                      className={`w-full flex items-center gap-2 px-3 py-1.5 rounded transition text-left text-sm ${
+                        pathname === `/instances/${instance.id}`
+                          ? 'bg-slate-700 text-white'
+                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      <ChevronRight size={12} className="text-slate-500" />
+                      <span className="flex-1 truncate">{instance.name}</span>
+                      {instance.is_running && (
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0" />
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              )}
+
               {/* Sub-menu for Learning */}
               {tab.id === 'learning' && (
                 <div className="ml-4 mt-1 space-y-1">
