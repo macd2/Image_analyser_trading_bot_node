@@ -133,7 +133,7 @@ export default function StatsBar({
             icon={TrendingUp}
             label="Win Rate"
             value={`${winRate}%`}
-            subValue={`${stats?.win_count || 0}W / ${stats?.loss_count || 2}L`}
+            subValue={`${stats?.win_count || 0}W / ${stats?.loss_count || 0}L`}
           />
           <StatItem
             icon={DollarSign}
