@@ -283,7 +283,7 @@ class ConfigV2:
     @staticmethod
     def _load_instance_config(instance_id: str) -> Dict[str, Any]:
         """Load config from instance's settings JSON."""
-        from trading_bot.db import get_connection, query_one
+        from trading_bot.db import get_connection, query_one, release_connection
 
         conn = get_connection()
         row = query_one(
