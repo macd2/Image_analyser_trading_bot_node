@@ -60,7 +60,9 @@ RUN pnpm install --frozen-lockfile
 
 # Copy Python requirements and install
 COPY python/requirements.txt ./python/
-RUN python3 -m pip install --break-system-packages -r python/requirements.txt
+RUN python3 -m pip install --break-system-packages -r ./python/requirements.txt && \
+    python3 -c "import boto3; print('✓ boto3 installed successfully')" || \
+    (echo "ERROR: boto3 installation failed!" && exit 1)
 
 # Install Playwright browsers (Chromium with minimal args for VNC)
 # Set PLAYWRIGHT_BROWSERS_PATH to cache location
