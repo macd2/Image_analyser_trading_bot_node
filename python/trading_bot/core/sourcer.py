@@ -3144,7 +3144,7 @@ class ChartSourcer:
                     break
 
                 try:
-                    self.logger.info(f"Processing symbol {i+1}/{len(symbols)}: {symbol}")
+                    self.logger.info(f"\n##############\nProcessing symbol {i+1}/{len(symbols)}: {symbol}")
 
                     # Normalize symbol name for Bybit format (removes .P suffix etc.)
                     symbol_clean = symbol.replace('/', '_').replace(':', '_').replace(' ', '_')

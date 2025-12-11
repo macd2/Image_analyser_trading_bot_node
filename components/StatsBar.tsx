@@ -127,13 +127,13 @@ export default function StatsBar({
           <StatItem
             icon={TrendingUp}
             label="Actionable"
-            value={`${(stats?.actionable_percent || 0).toFixed(0)}%`}
+            value={`${(stats?.actionable_percent || 0).toFixed(1)}%`}
           />
           <StatItem
             icon={TrendingUp}
             label="Win Rate"
             value={`${winRate}%`}
-            subValue={`${stats?.win_count || 0}W / ${stats?.loss_count || 0}L`}
+            subValue={`${stats?.win_count || 0}W / ${stats?.loss_count || 2}L`}
           />
           <StatItem
             icon={DollarSign}

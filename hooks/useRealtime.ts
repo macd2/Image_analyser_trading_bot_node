@@ -187,9 +187,9 @@ export function useRealtime() {
     onInstanceStatus,
     isInstanceRunning,
     reconnect: () => {
-      socket?.disconnect();
-      connect();
+      socket?.disconnect()
+      connect()
     }
-  };
+  }
 }
 
