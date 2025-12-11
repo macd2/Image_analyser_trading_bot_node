@@ -154,7 +154,12 @@ async function getHistoricalCandles(
     // Bybit allows max 200 candles per request
     const limit = Math.min(expectedCandles + 5, 200);
 
-    const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${apiSymbol}&interval=${interval}&start=${startTime}&limit=${limit}`;
+    // Bybit API expects start time in SECONDS (not milliseconds)
+    // startTime is in milliseconds, so divide by 1000
+    const startTimeSeconds = Math.floor(startTime / 1000);
+    const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${apiSymbol}&interval=${interval}&start=${startTimeSeconds}&limit=${limit}`;
+
+    console.log(`[Auto-Close] Bybit API request: ${url} (startTime: ${startTime}ms = ${startTimeSeconds}s)`);
 
     // Add timeout to prevent hanging
     const controller = new AbortController();
@@ -199,7 +204,8 @@ async function getHistoricalCandles(
 
     console.log(`[Auto-Close] Bybit returned ${candles.length} candles for ${symbol} ${timeframe}`);
     if (candles.length > 0) {
-      console.log(`  First: ${new Date(candles[0].timestamp).toISOString()}, Last: ${new Date(candles[candles.length - 1].timestamp).toISOString()}`);
+      console.log(`  First: ${new Date(candles[0].timestamp).toISOString()} [${candles[0].low}-${candles[0].high}]`);
+      console.log(`  Last: ${new Date(candles[candles.length - 1].timestamp).toISOString()} [${candles[candles.length - 1].low}-${candles[candles.length - 1].high}]`);
     }
 
     // Store fetched candles to database for future use
@@ -426,6 +432,12 @@ export async function POST() {
         continue;
       }
 
+      // Log candle time range for debugging
+      const firstCandleTime = new Date(candles[0].timestamp).toISOString();
+      const lastCandleTime = new Date(candles[candles.length - 1].timestamp).toISOString();
+      const tradeCreatedTime = new Date(createdAt).toISOString();
+      console.log(`[Auto-Close] Candle range: ${firstCandleTime} to ${lastCandleTime} (trade created: ${tradeCreatedTime})`);
+
       // STEP 1: Check if trade is already filled or find fill candle
       let fillCandleIndex = 0;
       const alreadyFilled = trade.status === 'filled' && trade.filled_at;
@@ -444,7 +456,8 @@ export async function POST() {
 
         if (!fillResult.filled) {
           // Trade not filled yet - check if it's pending_fill and been waiting too long
-          const currentPrice = candles[candles.length - 1].close;
+          // Use ticker price instead of last candle close for current price
+          const currentPrice = await getCurrentPrice(trade.symbol);
           const barsPending = candles.length;  // Bars since trade creation
 
           console.log(`[Auto-Close] ${trade.symbol} NOT FILLED: entry=${entryPrice}, checked ${candles.length} candles, current_price=${currentPrice}`);
