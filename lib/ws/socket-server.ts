@@ -80,11 +80,19 @@ export async function updateWatchlist(): Promise<void> {
 }
 
 /**
- * Emit a log message to all connected clients
+ * Emit a log message to clients subscribed to this instance
+ * Uses Socket.IO rooms for proper isolation between instances
  */
 export function emitLog(log: string, instanceId?: string): void {
   if (io) {
-    io.emit('bot_log', { log, instanceId, timestamp: Date.now() });
+    if (instanceId) {
+      // Emit to specific instance room + global room
+      io.to(`instance:${instanceId}`).emit('bot_log', { log, instanceId, timestamp: Date.now() });
+      io.to('global').emit('bot_log', { log, instanceId, timestamp: Date.now() });
+    } else {
+      // Emit to global room only
+      io.to('global').emit('bot_log', { log, instanceId, timestamp: Date.now() });
+    }
   }
 }
 
@@ -198,12 +206,26 @@ export function initSocketServer(httpServer: HTTPServer): SocketIOServer {
   io.on('connection', (socket) => {
     console.log('[Socket.io] Client connected:', socket.id);
 
+    // Join global room for all clients
+    socket.join('global');
+
     // Send current state on connect (include bot process statuses)
     socket.emit('init', {
       tickers,
       positions,
       wallet,
       runningInstances: processMonitor.getRunningInstanceIds()
+    });
+
+    // Allow client to subscribe to instance-specific logs
+    socket.on('subscribe_instance', (instanceId: string) => {
+      console.log(`[Socket.io] Client ${socket.id} subscribed to instance: ${instanceId}`);
+      socket.join(`instance:${instanceId}`);
+    });
+
+    socket.on('unsubscribe_instance', (instanceId: string) => {
+      console.log(`[Socket.io] Client ${socket.id} unsubscribed from instance: ${instanceId}`);
+      socket.leave(`instance:${instanceId}`);
     });
 
     socket.on('disconnect', () => {
