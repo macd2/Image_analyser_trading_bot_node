@@ -253,11 +253,11 @@ CREATE TABLE IF NOT EXISTS position_snapshots (
 CREATE INDEX IF NOT EXISTS idx_snapshot_symbol ON position_snapshots(symbol);
 CREATE INDEX IF NOT EXISTS idx_snapshot_time ON position_snapshots(snapshot_time);
 
--- Error log trail (ERROR, CRITICAL, and INFO for monitor actions)
+-- Error log trail (WARNING, ERROR, CRITICAL, and INFO for monitor actions)
 CREATE TABLE IF NOT EXISTS error_logs (
     id TEXT PRIMARY KEY,
     timestamp TEXT NOT NULL,
-    level TEXT NOT NULL CHECK (level IN ('ERROR', 'CRITICAL', 'INFO')),
+    level TEXT NOT NULL CHECK (level IN ('WARNING', 'ERROR', 'CRITICAL', 'INFO')),
 
     -- Correlation IDs
     run_id TEXT,

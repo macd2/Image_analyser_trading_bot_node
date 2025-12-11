@@ -37,13 +37,13 @@ def clear_cycle_id() -> None:
 
 class DatabaseErrorHandler(logging.Handler):
     """
-    Logging handler that stores ERROR and CRITICAL logs to database.
+    Logging handler that stores ERROR, WARNING, and CRITICAL logs to database.
     Uses centralized database client (auto-detects SQLite/PostgreSQL).
     Captures stack traces and context for debugging.
     """
 
     def __init__(self, db_path: str):
-        super().__init__(level=logging.ERROR)  # Only ERROR and above
+        super().__init__(level=logging.WARNING)  # WARNING and above (ERROR, CRITICAL)
         self.db_path = Path(db_path)
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -96,11 +96,16 @@ class DatabaseErrorHandler(logging.Handler):
 
             conn.commit()
 
+            # DEBUG: Log successful database write
+            import sys
+            print(f"[ErrorLogger] ✅ Stored {record.levelname} to DB: {message[:80]}", file=sys.stderr)
+
         except Exception as e:
             # Don't let logging errors break the app
             # But print to stderr for debugging
             import sys
-            print(f"[ErrorLogger] Failed to log error: {e}", file=sys.stderr)
+            print(f"[ErrorLogger] ❌ Failed to log error: {e}", file=sys.stderr)
+            print(f"[ErrorLogger] Original message: {record.getMessage()[:100]}", file=sys.stderr)
         finally:
             if conn:
                 release_connection(conn)
