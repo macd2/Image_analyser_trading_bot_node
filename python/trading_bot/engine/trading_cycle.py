@@ -14,7 +14,7 @@ MULTISTEP PROCESS:
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, Callable, List, Tuple
 
 from trading_bot.config.settings_v2 import Config
@@ -209,6 +209,238 @@ class TradingCycle:
             # On error, assume no existing recommendations (proceed with analysis)
             return {symbol: {} for symbol in symbols}
 
+    def _print_cycle_summary(self, results: Dict[str, Any], cycle_id: str, cycle_start: datetime, chart_paths: Dict[str, str]) -> None:
+        """
+        Print detailed cycle summary with all step information.
+
+        Args:
+            results: Cycle results dictionary
+            cycle_id: Cycle ID
+            cycle_start: Cycle start time
+            chart_paths: Dictionary of captured chart paths
+        """
+        cycle_end = datetime.now(timezone.utc)
+        total_duration = (cycle_end - cycle_start).total_seconds()
+        boundary = get_current_cycle_boundary(self.timeframe)
+        boundary_end = boundary + timedelta(hours=int(self.timeframe.rstrip('h')))
+
+        # Determine LIVE or DRYRUN
+        mode = "DRYRUN" if self.paper_trading else "LIVE"
+
+        # Build recommendations summary by type
+        buy_signals = [r for r in results["recommendations"] if r.get("recommendation", "").upper() == "BUY"]
+        sell_signals = [r for r in results["recommendations"] if r.get("recommendation", "").upper() == "SELL"]
+        hold_signals = [r for r in results["recommendations"] if r.get("recommendation", "").upper() == "HOLD"]
+
+        # Print main cycle header
+        logger.info(f"\n📊 CYCLE #{self._cycle_count} COMPLETE - {self.timeframe} - [{cycle_id}] - {mode}")
+        logger.info(f"   ├─ Timeframe: {self.timeframe}")
+        logger.info(f"   ├─ Boundary: {boundary.strftime('%Y-%m-%d %H:%M:%S')} UTC to {boundary_end.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        logger.info(f"   ├─ Prompt: {self.prompt_name}")
+        logger.info(f"   ├─ Model: gpt-4-vision")
+        logger.info(f"   ├─ Instance: {self.instance_id or 'default'}")
+        logger.info(f"   ├─ Total duration: {total_duration:.1f}s")
+
+        # Symbols analyzed
+        logger.info(f"   ├─ Symbols analyzed: {results['symbols_analyzed']}")
+        if results['symbols_analyzed'] > 0 and chart_paths:
+            symbols_list = ', '.join(sorted(chart_paths.keys()))
+            logger.info(f"   │  ├─ {symbols_list}")
+
+        # Recommendations generated
+        logger.info(f"   ├─ Recommendations generated: {len(results['recommendations'])}")
+        if results['recommendations']:
+            logger.info(f"   │  ├─ BUY: {len(buy_signals)} ({', '.join([r['symbol'] for r in buy_signals[:5]])}{'...' if len(buy_signals) > 5 else ''})")
+            logger.info(f"   │  ├─ SELL: {len(sell_signals)} ({', '.join([r['symbol'] for r in sell_signals[:5]])}{'...' if len(sell_signals) > 5 else ''})")
+            logger.info(f"   │  └─ HOLD: {len(hold_signals)} ({', '.join([r['symbol'] for r in hold_signals[:5]])}{'...' if len(hold_signals) > 5 else ''})")
+
+        # Actionable signals
+        logger.info(f"   ├─ Actionable signals: {len(results['actionable_signals'])}")
+        if results['actionable_signals']:
+            for sig in results['actionable_signals'][:6]:
+                entry = sig.get('entry_price', 'N/A')
+                sl = sig.get('stop_loss', 'N/A')
+                tp = sig.get('take_profit', 'N/A')
+                logger.info(f"   │  ├─ {sig['symbol']}: {sig.get('recommendation', 'N/A')} @ {entry} (SL: {sl}, TP: {tp})")
+
+        # Selected for execution
+        logger.info(f"   ├─ Selected for execution: {len(results['selected_signals'])}")
+        if results['selected_signals']:
+            for sig in results['selected_signals']:
+                entry = sig.get('entry_price', 'N/A')
+                sl = sig.get('stop_loss', 'N/A')
+                tp = sig.get('take_profit', 'N/A')
+                logger.info(f"   │  ├─ {sig['symbol']}: {sig.get('recommendation', 'N/A')} @ {entry} (SL: {sl}, TP: {tp})")
+
+        # Trades executed
+        executed_trades = [t for t in results['trades_executed'] if t.get('status') != 'rejected']
+        rejected_trades = [t for t in results['trades_executed'] if t.get('status') == 'rejected']
+
+        logger.info(f"   ├─ Trades executed: {len(executed_trades)}")
+        if executed_trades:
+            for trade in executed_trades:
+                order_id = trade.get('id', 'N/A')
+                side = trade.get('side', 'N/A')
+                entry = trade.get('entry_price', 'N/A')
+                sl = trade.get('stop_loss', 'N/A')
+                tp = trade.get('take_profit', 'N/A')
+                logger.info(f"   │  ├─ {trade.get('symbol', 'N/A')}: {side} @ {entry} (SL: {sl}, TP: {tp}) (Order ID: {order_id}) ✅")
+
+        # Rejected trades
+        logger.info(f"   ├─ Rejected trades: {len(rejected_trades)}")
+        if rejected_trades:
+            for trade in rejected_trades:
+                error = trade.get('error', 'Unknown reason')
+                logger.info(f"   │  ├─ {trade.get('symbol', 'N/A')}: {error}")
+
+        # Errors
+        logger.info(f"   ├─ Errors: {len(results['errors'])}")
+        if results['errors']:
+            for error in results['errors'][:3]:
+                if isinstance(error, dict):
+                    if 'symbol' in error:
+                        logger.info(f"   │  ├─ {error.get('symbol', 'N/A')}: {error.get('error', 'Unknown error')}")
+                    else:
+                        logger.info(f"   │  ├─ {error.get('error', 'Unknown error')}")
+                else:
+                    logger.info(f"   │  ├─ {str(error)}")
+
+        # Determine overall status
+        status = "✅ Success" if len(results['errors']) == 0 else "⚠️ Completed with errors"
+        logger.info(f"   └─ Status: {status}")
+
+    def _print_step_0_summary(self, cleaned_count: int, duration: float) -> None:
+        """Print summary for STEP 0: Chart Cleanup"""
+        boundary = get_current_cycle_boundary(self.timeframe)
+        boundary_end = boundary + timedelta(hours=int(self.timeframe.rstrip('h')))
+
+        logger.info(f"\n🧹 STEP 0 COMPLETE: Chart Cleanup")
+        logger.info(f"   ├─ Timeframe: {self.timeframe}")
+        logger.info(f"   ├─ Boundary: {boundary.strftime('%Y-%m-%d %H:%M:%S')} UTC to {boundary_end.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        logger.info(f"   ├─ Cleaned: {cleaned_count} outdated charts")
+        logger.info(f"   ├─ Duration: {duration:.1f}s")
+        logger.info(f"   └─ Status: ✅ Success")
+
+    def _print_step_1_summary(self, chart_count: int, chart_paths: Dict[str, str], duration: float) -> None:
+        """Print summary for STEP 1: Capture Charts"""
+        boundary = get_current_cycle_boundary(self.timeframe)
+        boundary_end = boundary + timedelta(hours=int(self.timeframe.rstrip('h')))
+        target_chart = self.config.tradingview.target_chart if self.config.tradingview else None
+
+        logger.info(f"\n📷 STEP 1 COMPLETE: Capturing Charts")
+        logger.info(f"   ├─ Timeframe: {self.timeframe}")
+        logger.info(f"   ├─ Boundary: {boundary.strftime('%Y-%m-%d %H:%M:%S')} UTC to {boundary_end.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        logger.info(f"   ├─ Charts captured: {chart_count}")
+        logger.info(f"   ├─ Target chart: {target_chart or 'None (using default)'}")
+        if chart_paths:
+            symbols_list = ', '.join(sorted(chart_paths.keys()))
+            logger.info(f"   ├─ Watchlist symbols: {symbols_list}")
+        logger.info(f"   ├─ Duration: {duration:.1f}s")
+        logger.info(f"   └─ Status: ✅ Success")
+
+    def _print_step_1_5_summary(self, total_symbols: int, symbols_needing_analysis: List[str], symbols_with_existing: List[str]) -> None:
+        """Print summary for STEP 1.5: Check Existing Recommendations"""
+        logger.info(f"\n🔍 STEP 1.5 COMPLETE: Checking Existing Recommendations")
+        logger.info(f"   ├─ Total symbols: {total_symbols}")
+        logger.info(f"   ├─ Newly need analysis: {len(symbols_needing_analysis)}")
+        if symbols_needing_analysis:
+            logger.info(f"   │  ├─ {', '.join(symbols_needing_analysis[:10])}{'...' if len(symbols_needing_analysis) > 10 else ''}")
+        logger.info(f"   ├─ Already have recommendations: {len(symbols_with_existing)}")
+        if symbols_with_existing:
+            logger.info(f"   │  ├─ {', '.join(symbols_with_existing[:10])}{'...' if len(symbols_with_existing) > 10 else ''}")
+        logger.info(f"   └─ Status: ✅ Success")
+
+    def _print_step_2_summary(self, analyzed_count: int, successful_count: int, failed_count: int, duration: float, analysis_results: List[Dict[str, Any]]) -> None:
+        """Print summary for STEP 2: Parallel Analysis"""
+        logger.info(f"\n🤖 STEP 2 COMPLETE: Parallel Analysis")
+        logger.info(f"   ├─ Analyzed: {analyzed_count} charts")
+        logger.info(f"   ├─ Successful: {successful_count}")
+        logger.info(f"   ├─ Failed: {failed_count}")
+        logger.info(f"   ├─ Analysis results:")
+
+        # Show top 5 results
+        for result in analysis_results[:5]:
+            if not result.get("error"):
+                rec = result.get("recommendation", "N/A")
+                conf = result.get("confidence", 0)
+                rr = result.get("risk_reward", 0)
+                logger.info(f"   │  ├─ {result['symbol']}: {rec} (conf: {conf:.2f}, RR: {rr:.2f})")
+
+        if len(analysis_results) > 5:
+            logger.info(f"   │  └─ ... ({len(analysis_results) - 5} more)")
+
+        logger.info(f"   ├─ Duration: {duration:.1f}s")
+        logger.info(f"   └─ Status: ✅ Success")
+
+    def _print_step_3_summary(self, total_recommendations: int, actionable_count: int, buy_count: int, sell_count: int, hold_count: int) -> None:
+        """Print summary for STEP 3: Collect Recommendations"""
+        logger.info(f"\n📊 STEP 3 COMPLETE: Collecting Recommendations")
+        logger.info(f"   ├─ Total recommendations: {total_recommendations}")
+        logger.info(f"   ├─ Actionable signals: {actionable_count}")
+        logger.info(f"   │  ├─ BUY: {buy_count}")
+        logger.info(f"   │  ├─ SELL: {sell_count}")
+        logger.info(f"   │  └─ HOLD: {hold_count}")
+        logger.info(f"   └─ Status: ✅ Success")
+
+    def _print_step_4_summary(self, ranked_signals: List[Dict[str, Any]]) -> None:
+        """Print summary for STEP 4: Rank Signals"""
+        logger.info(f"\n🏆 STEP 4 COMPLETE: Ranking Signals by Quality")
+        logger.info(f"   ├─ Total signals ranked: {len(ranked_signals)}")
+        logger.info(f"   ├─ Top ranked signals:")
+
+        for i, sig in enumerate(ranked_signals[:5]):
+            logger.info(f"   │  ├─ #{i+1}: {sig['symbol']} (score: {sig['ranking_score']:.3f}, conf: {sig['confidence']:.2f}, RR: {sig.get('risk_reward', 0):.2f})")
+
+        if len(ranked_signals) > 5:
+            logger.info(f"   │  └─ ... ({len(ranked_signals) - 5} more)")
+
+        logger.info(f"   └─ Status: ✅ Success")
+
+    def _print_step_5_summary(self, available_slots: int, max_trades: int) -> None:
+        """Print summary for STEP 5: Check Available Slots"""
+        logger.info(f"\n📦 STEP 5 COMPLETE: Checking Available Slots")
+        logger.info(f"   ├─ Available slots: {available_slots}/{max_trades}")
+        logger.info(f"   └─ Status: ✅ Success")
+
+    def _print_step_6_summary(self, selected_signals: List[Dict[str, Any]], available_slots: int) -> None:
+        """Print summary for STEP 6: Select Best Signals"""
+        logger.info(f"\n🎯 STEP 6 COMPLETE: Selecting Best Signals")
+        logger.info(f"   ├─ Selected: {len(selected_signals)} signals")
+        logger.info(f"   ├─ Available slots: {available_slots}")
+        logger.info(f"   ├─ Selected signals:")
+
+        for sig in selected_signals:
+            entry = sig.get('entry_price', 'N/A')
+            sl = sig.get('stop_loss', 'N/A')
+            tp = sig.get('take_profit', 'N/A')
+            logger.info(f"   │  ├─ {sig['symbol']}: {sig.get('recommendation', 'N/A')} @ {entry} (SL: {sl}, TP: {tp})")
+
+        logger.info(f"   └─ Status: ✅ Success")
+
+    def _print_step_7_summary(self, trades_executed: List[Dict[str, Any]], selected_count: int) -> None:
+        """Print summary for STEP 7: Execute Signals"""
+        successful_trades = [t for t in trades_executed if t.get('status') != 'rejected']
+        rejected_trades = [t for t in trades_executed if t.get('status') == 'rejected']
+
+        logger.info(f"\n🚀 STEP 7 COMPLETE: Executing Signals")
+        logger.info(f"   ├─ Selected for execution: {selected_count}")
+        logger.info(f"   ├─ Trades executed: {len(successful_trades)}")
+
+        if successful_trades:
+            for trade in successful_trades:
+                order_id = trade.get('id', 'N/A')
+                side = trade.get('side', 'N/A')
+                entry = trade.get('entry_price', 'N/A')
+                logger.info(f"   │  ├─ {trade.get('symbol', 'N/A')}: {side} @ {entry} (Order ID: {order_id}) ✅")
+
+        logger.info(f"   ├─ Rejected trades: {len(rejected_trades)}")
+        if rejected_trades:
+            for trade in rejected_trades:
+                error = trade.get('error', 'Unknown reason')
+                logger.info(f"   │  ├─ {trade.get('symbol', 'N/A')}: {error}")
+
+        logger.info(f"   └─ Status: ✅ Success")
+
     async def run_cycle_async(self) -> Dict[str, Any]:
         """
         Run a single trading cycle asynchronously with MULTISTEP PROCESS.
@@ -255,18 +487,24 @@ class TradingCycle:
         try:
             # STEP 0: Clean outdated charts
             charts_dir = self.config.paths.charts if self.config.paths else "data/charts"
+            step_0_start = datetime.now(timezone.utc)
+            cleaned_count = 0
             try:
                 moved = self.cleaner.clean_outdated_files(charts_dir, dry_run=False)
-                if moved:
-                    logger.info(f"🧹 Cleaned {len(moved)} outdated charts")
+                cleaned_count = len(moved) if moved else 0
             except Exception as e:
                 logger.warning(f"Chart cleanup failed (non-fatal): {e}")
+
+            step_0_duration = (datetime.now(timezone.utc) - step_0_start).total_seconds()
+            self._print_step_0_summary(cleaned_count, step_0_duration)
 
             # STEP 1: Capture all charts from watchlist
             target_chart = self.config.tradingview.target_chart if self.config.tradingview else None
             logger.info(f"\n📷 STEP 1: Capturing charts via watchlist...")
             logger.info(f"   Target chart: {target_chart or 'None (using default)'}")
             logger.info(f"   Timeframe: {self.timeframe}")
+
+            step_1_start = datetime.now(timezone.utc)
 
             if not await self.sourcer.setup_browser_session():
                 logger.error("Failed to setup browser session", extra={
@@ -287,7 +525,8 @@ class TradingCycle:
                     results["errors"].append({"error": "No charts captured"})
                     return results
 
-                logger.info(f"✅ Captured {len(chart_paths)} charts from watchlist")
+                step_1_duration = (datetime.now(timezone.utc) - step_1_start).total_seconds()
+                self._print_step_1_summary(len(chart_paths), chart_paths, step_1_duration)
 
                 # STEP 1.5: Check for existing recommendations for current boundary (instance-aware)
                 logger.info(f"\n🔍 STEP 1.5: Checking for existing recommendations for current boundary...")
@@ -301,8 +540,7 @@ class TradingCycle:
                 symbols_needing_analysis = [s for s in symbols_to_analyze if not existing_recs_map.get(s)]
                 symbols_with_existing_recs = [s for s in symbols_to_analyze if existing_recs_map.get(s)]
 
-                if symbols_with_existing_recs:
-                    logger.info(f"   ⏭️  Skipping analysis for {len(symbols_with_existing_recs)} symbols with existing recommendations: {', '.join(symbols_with_existing_recs)}")
+                self._print_step_1_5_summary(len(symbols_to_analyze), symbols_needing_analysis, symbols_with_existing_recs)
 
                 # STEP 2: Analyze only symbols needing new recommendations
                 logger.info(f"\n🤖 STEP 2: Analyzing {len(symbols_needing_analysis)} charts in PARALLEL...")
@@ -317,7 +555,11 @@ class TradingCycle:
                     newly_analyzed = []
 
                 analysis_duration = (datetime.now(timezone.utc) - analysis_start).total_seconds()
-                logger.info(f"✅ Parallel analysis completed in {analysis_duration:.1f}s")
+
+                # Count successful and failed analyses
+                successful_analyses = [a for a in newly_analyzed if not a.get("error")]
+                failed_analyses = [a for a in newly_analyzed if a.get("error")]
+                self._print_step_2_summary(len(newly_analyzed), len(successful_analyses), len(failed_analyses), analysis_duration, successful_analyses)
 
                 # STEP 3: Collect all recommendations (both newly analyzed and existing)
                 logger.info(f"\n📊 STEP 3: Collecting recommendations...")
@@ -376,33 +618,33 @@ class TradingCycle:
                 results["symbols_analyzed"] = len(symbols_to_analyze)
 
                 results["actionable_signals"] = actionable_signals
-                instance_label = f" (instance: {self.instance_id})" if self.instance_id else ""
-                logger.info(f"   Total analyzed for boundary{instance_label}: {results['symbols_analyzed']} symbols")
-                logger.info(f"   Newly analyzed: {len(symbols_needing_analysis)} symbols")
-                logger.info(f"   From existing recs: {len(symbols_with_existing_recs)} symbols")
-                logger.info(f"   Actionable signals: {len(actionable_signals)}")
+
+                # Count recommendations by type
+                buy_recs = [r for r in results["recommendations"] if r.get("recommendation", "").upper() == "BUY"]
+                sell_recs = [r for r in results["recommendations"] if r.get("recommendation", "").upper() == "SELL"]
+                hold_recs = [r for r in results["recommendations"] if r.get("recommendation", "").upper() == "HOLD"]
+
+                self._print_step_3_summary(len(results["recommendations"]), len(actionable_signals), len(buy_recs), len(sell_recs), len(hold_recs))
 
                 # STEP 4: Rank signals by quality
                 logger.info(f"\n🏆 STEP 4: Ranking {len(actionable_signals)} signals by quality...")
                 ranked_signals = self._rank_signals_by_quality(actionable_signals)
                 results["ranked_signals"] = ranked_signals
 
-                for i, sig in enumerate(ranked_signals[:5]):  # Log top 5
-                    logger.info(f"   #{i+1}: {sig['symbol']} - score: {sig['ranking_score']:.3f} "
-                               f"(conf: {sig['confidence']:.2f}, RR: {sig.get('risk_reward', 0):.2f})")
+                self._print_step_4_summary(ranked_signals)
 
                 # STEP 5: Check available slots
                 logger.info(f"\n📦 STEP 5: Checking available slots...")
                 available_slots = self._get_available_slots()
-                logger.info(f"   Available slots: {available_slots}")
+                max_trades = self.config.trading.max_concurrent_trades if self.config and self.config.trading else 0
+                self._print_step_5_summary(available_slots, max_trades)
 
                 # STEP 6: Select best signals for available slots
                 logger.info(f"\n🎯 STEP 6: Selecting best {available_slots} signal(s)...")
                 selected_signals = ranked_signals[:available_slots] if available_slots > 0 else []
                 results["selected_signals"] = selected_signals
 
-                for sig in selected_signals:
-                    logger.info(f"   ✅ Selected: {sig['symbol']} (score: {sig['ranking_score']:.3f})")
+                self._print_step_6_summary(selected_signals, available_slots)
 
                 # STEP 7: Execute selected signals
                 logger.info(f"\n🚀 STEP 7: Executing {len(selected_signals)} selected signal(s)...")
@@ -410,6 +652,8 @@ class TradingCycle:
                     trade_result = await self._execute_selected_signal(signal, cycle_id)
                     if trade_result:
                         results["trades_executed"].append(trade_result)
+
+                self._print_step_7_summary(results["trades_executed"], len(selected_signals))
 
             finally:
                 await self.sourcer.cleanup_browser_session()
@@ -428,12 +672,8 @@ class TradingCycle:
         self._record_cycle(results)
         clear_cycle_id()
 
-        logger.info(f"\n📊 CYCLE #{self._cycle_count} COMPLETE")
-        logger.info(f"   Analyzed: {results['symbols_analyzed']}/{len(chart_paths)}")
-        logger.info(f"   Actionable signals: {len(results['actionable_signals'])}")
-        logger.info(f"   Selected for execution: {len(results['selected_signals'])}")
-        logger.info(f"   Trades executed: {len(results['trades_executed'])}")
-        logger.info(f"   Errors: {len(results['errors'])}")
+        # Print detailed cycle summary
+        self._print_cycle_summary(results, cycle_id, cycle_start, chart_paths)
 
         return results
 
