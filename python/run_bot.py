@@ -335,6 +335,7 @@ class TradingBot:
     async def _run_async(self) -> None:
         """Async main loop that runs trading cycles at boundaries."""
         timeframe = self.trading_cycle.timeframe
+        self._pause_reason = None  # Track why bot is paused
 
         # Run initial cycle immediately
         logger.info("🚀 Running initial cycle immediately...")
@@ -415,8 +416,85 @@ class TradingBot:
                 logger.error(f"   Continuing to next cycle...")
                 # Continue to next cycle
 
+            # Check for critical OpenAI rate limit errors
+            if self._check_for_openai_rate_limit_error():
+                logger.error("🛑 OpenAI rate limit (429) detected - PAUSING BOT")
+                logger.error("   Waiting for user confirmation via UI banner...")
+                self._pause_reason = "openai_rate_limit"
+                await self._wait_for_user_confirmation()
+                logger.info("✅ User confirmed recharge - resuming bot")
+                self._pause_reason = None
+
             # Small buffer before next wait calculation
             await asyncio.sleep(2)
+
+    def _check_for_openai_rate_limit_error(self) -> bool:
+        """
+        Check if recent error logs contain OpenAI 429 rate limit error.
+        Returns True if found and not yet acknowledged.
+        """
+        try:
+            from trading_bot.db import get_connection, query_one, release_connection
+
+            conn = get_connection()
+            # Check for recent OpenAI 429 error (last 5 minutes)
+            error = query_one(conn, """
+                SELECT id, message FROM error_logs
+                WHERE message LIKE '%OpenAI API rate limit exceeded (429)%'
+                  AND timestamp > datetime('now', '-5 minutes')
+                  AND (SELECT COUNT(*) FROM error_logs el2
+                       WHERE el2.message LIKE '%OpenAI rate limit acknowledged%'
+                       AND el2.timestamp > ?) = 0
+                ORDER BY timestamp DESC
+                LIMIT 1
+            """, (datetime.now(timezone.utc).isoformat(),))
+
+            release_connection(conn)
+            return error is not None
+
+        except Exception as e:
+            logger.error(f"Failed to check for OpenAI rate limit error: {e}")
+            return False
+
+    async def _wait_for_user_confirmation(self, timeout_seconds: int = 3600) -> None:
+        """
+        Wait for user to confirm via API endpoint that credits have been recharged.
+        Polls /api/bot/pause-state every 5 seconds.
+
+        Args:
+            timeout_seconds: Maximum time to wait (default 1 hour)
+        """
+        import aiohttp
+
+        start_time = datetime.now(timezone.utc)
+        poll_interval = 5  # seconds
+
+        logger.info(f"⏸️  Bot paused - waiting for user confirmation (timeout: {timeout_seconds}s)")
+
+        while self._running:
+            elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
+
+            if elapsed > timeout_seconds:
+                logger.warning(f"⏱️  Pause timeout after {timeout_seconds}s - resuming anyway")
+                break
+
+            try:
+                # Poll the pause state endpoint
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        f"http://localhost:3000/api/bot/pause-state?instance_id={self.instance_id}",
+                        timeout=aiohttp.ClientTimeout(total=5)
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            if data.get("user_confirmed"):
+                                logger.info("✅ User confirmed recharge - resuming bot")
+                                return
+            except Exception as e:
+                logger.debug(f"Pause state check failed (will retry): {e}")
+
+            # Wait before next poll
+            await asyncio.sleep(poll_interval)
 
     def get_status(self) -> dict:
         """Get bot status."""
@@ -424,6 +502,7 @@ class TradingBot:
             "running": self._running,
             "paper_trading": self.paper_trading,
             "testnet": self.testnet,
+            "paused_reason": self._pause_reason,
             "engine": self.engine.get_status(),
             "cycle": self.trading_cycle.get_status(),
             "open_trades": len(self.trade_tracker.get_open_trades()),
