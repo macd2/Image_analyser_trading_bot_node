@@ -61,7 +61,17 @@ function getPgPool(): Pool {
     pgPool.on('error', (err: Error & { code?: string }) => {
       console.error('[TradingDB] PostgreSQL pool error:', err.message);
       // Reset pool on fatal errors so next query creates a fresh pool
-      if (err.code === 'XX000' || err.code === '57P01' || err.code === '57P02') {
+      // Include "DbHandler exited" and other connection termination errors
+      const isFatalError =
+        err.code === 'XX000' ||  // Internal error
+        err.code === '57P01' ||  // admin_shutdown
+        err.code === '57P02' ||  // crash_shutdown
+        err.message?.includes('DbHandler exited') ||
+        err.message?.includes('Connection terminated') ||
+        err.message?.includes('ECONNREFUSED') ||
+        err.message?.includes('ENOTFOUND');
+
+      if (isFatalError) {
         console.warn('[TradingDB] Resetting pool due to fatal error');
         resetPgPool();
       }
@@ -103,7 +113,7 @@ async function pgQueryWithRetry<T>(
   pool: Pool,
   sql: string,
   params: unknown[],
-  maxRetries: number = 2
+  maxRetries: number = 3
 ): Promise<T[]> {
   let lastError: Error | null = null;
 
@@ -114,15 +124,26 @@ async function pgQueryWithRetry<T>(
     } catch (err) {
       lastError = err as Error;
       const errorCode = (err as { code?: string }).code;
+      const errorMsg = (err as Error).message || '';
 
-      // XX000 = DbHandler exited (Supabase pooler issue)
+      // Retryable errors:
+      // XX000 = Internal error
       // 57P01 = admin_shutdown
       // 57P02 = crash_shutdown
       // 08006 = connection_failure
-      const isRetryable = ['XX000', '57P01', '57P02', '08006'].includes(errorCode || '');
+      // DbHandler exited = Supabase pooler issue
+      // Connection terminated = Pool connection lost
+      const isRetryable =
+        ['XX000', '57P01', '57P02', '08006'].includes(errorCode || '') ||
+        errorMsg.includes('DbHandler exited') ||
+        errorMsg.includes('Connection terminated') ||
+        errorMsg.includes('ECONNREFUSED') ||
+        errorMsg.includes('ENOTFOUND');
 
       if (isRetryable && attempt < maxRetries) {
-        console.warn(`[TradingDB] Connection error (${errorCode}): ${lastError?.message}, retrying... (${attempt + 1}/${maxRetries})`);
+        console.warn(`[TradingDB] Connection error (${errorCode}): ${errorMsg}, retrying... (${attempt + 1}/${maxRetries})`);
+        // Reset pool on connection errors to force fresh connection
+        resetPgPool();
         // Wait before retry with exponential backoff
         await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, attempt)));
         continue;
@@ -202,7 +223,7 @@ async function pgExecuteWithRetry(
   pool: Pool,
   sql: string,
   params: unknown[],
-  maxRetries: number = 2
+  maxRetries: number = 3
 ): Promise<{ changes: number }> {
   let lastError: Error | null = null;
 
@@ -213,11 +234,19 @@ async function pgExecuteWithRetry(
     } catch (err) {
       lastError = err as Error;
       const errorCode = (err as { code?: string }).code;
+      const errorMsg = (err as Error).message || '';
 
-      const isRetryable = ['XX000', '57P01', '57P02', '08006'].includes(errorCode || '');
+      const isRetryable =
+        ['XX000', '57P01', '57P02', '08006'].includes(errorCode || '') ||
+        errorMsg.includes('DbHandler exited') ||
+        errorMsg.includes('Connection terminated') ||
+        errorMsg.includes('ECONNREFUSED') ||
+        errorMsg.includes('ENOTFOUND');
 
       if (isRetryable && attempt < maxRetries) {
         console.warn(`[TradingDB] Connection error (${errorCode}), retrying execute... (${attempt + 1}/${maxRetries})`);
+        // Reset pool on connection errors to force fresh connection
+        resetPgPool();
         await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, attempt)));
         continue;
       }
@@ -1823,10 +1852,11 @@ export interface ErrorLogRow {
 export async function getErrorLogs(limit = 100, instanceId?: string): Promise<ErrorLogRow[]> {
   if (instanceId) {
     // Filter by instance via run_id
+    // IMPORTANT: Include logs with run_id IS NULL (errors before run started)
     return dbQuery<ErrorLogRow>(`
       SELECT el.* FROM error_logs el
       LEFT JOIN runs r ON el.run_id = r.id
-      WHERE r.instance_id = ?
+      WHERE r.instance_id = ? OR el.run_id IS NULL
       ORDER BY el.timestamp DESC
       LIMIT ?
     `, [instanceId, limit]);
@@ -1850,7 +1880,7 @@ interface RunWithLogs {
 /**
  * Get error logs grouped by run
  */
-export async function getErrorLogsGroupedByRun(limit = 200, instanceId?: string): Promise<RunWithLogs[]> {
+export async function getErrorLogsGroupedByRun(_limit = 200, instanceId?: string): Promise<RunWithLogs[]> {
   // Get runs with log counts
   const runsQuery = instanceId
     ? `
@@ -1862,7 +1892,7 @@ export async function getErrorLogsGroupedByRun(limit = 200, instanceId?: string)
         MAX(el.timestamp) as last_log_time
       FROM error_logs el
       LEFT JOIN runs r ON el.run_id = r.id
-      WHERE r.instance_id = ?
+      WHERE r.instance_id = ? OR el.run_id IS NULL
       GROUP BY el.run_id, r.started_at, r.ended_at
       ORDER BY COALESCE(r.started_at, MAX(el.timestamp)) DESC
       LIMIT 20
@@ -1886,12 +1916,14 @@ export async function getErrorLogsGroupedByRun(limit = 200, instanceId?: string)
     : await dbQuery<{ run_id: string | null; started_at: string | null; ended_at: string | null; log_count: number }>(runsQuery);
 
   // Get logs for each run
+  // IMPORTANT: Fetch ALL logs for each run (no limit) to match the log_count shown in header
+  // The limit parameter is for the number of runs, not logs per run
   const result: RunWithLogs[] = [];
 
   for (const run of runs) {
     const logs = run.run_id
-      ? await dbQuery<ErrorLogRow>(`SELECT * FROM error_logs WHERE run_id = ? ORDER BY timestamp ASC LIMIT ?`, [run.run_id, Math.min(50, limit)])
-      : await dbQuery<ErrorLogRow>(`SELECT * FROM error_logs WHERE run_id IS NULL ORDER BY timestamp ASC LIMIT ?`, [Math.min(50, limit)]);
+      ? await dbQuery<ErrorLogRow>(`SELECT * FROM error_logs WHERE run_id = ? ORDER BY timestamp ASC`, [run.run_id])
+      : await dbQuery<ErrorLogRow>(`SELECT * FROM error_logs WHERE run_id IS NULL ORDER BY timestamp ASC`);
 
     result.push({
       run_id: run.run_id,
