@@ -114,7 +114,35 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
   }, [logs, instanceId])
 
   // Connect to Socket.IO for real-time updates (wallet, positions, tickers)
-  const { wallet: liveWallet, positions: livePositions } = useRealtime()
+  const { wallet: liveWallet, positions: livePositions, socket } = useRealtime()
+
+  // Subscribe to instance-specific logs on mount
+  useEffect(() => {
+    if (!socket) return
+    console.log(`[OverviewTab] Subscribing to instance logs: ${instanceId}`)
+    socket.emit('subscribe_instance', instanceId)
+
+    // Fetch recent logs from database for this instance
+    const fetchRecentLogs = async () => {
+      try {
+        const res = await fetch(`/api/bot/logs/recent?instance_id=${instanceId}&limit=100`)
+        if (res.ok) {
+          const data = await res.json()
+          console.log(`[OverviewTab] Loaded ${data.count} recent logs for instance`)
+          setLogs(data.logs, instanceId)
+        }
+      } catch (err) {
+        console.error('[OverviewTab] Failed to fetch recent logs:', err)
+      }
+    }
+
+    fetchRecentLogs()
+
+    return () => {
+      console.log(`[OverviewTab] Unsubscribing from instance logs: ${instanceId}`)
+      socket.emit('unsubscribe_instance', instanceId)
+    }
+  }, [socket, instanceId, setLogs])
 
   const [status, setStatus] = useState<BotStatus | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
