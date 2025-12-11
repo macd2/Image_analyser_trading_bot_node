@@ -446,7 +446,7 @@ export default function TradeVerificationModal({ isOpen, onClose, tournament }: 
 
         // Add markers for signal and fill using v5 API
         const markers: Array<{ time: Time; position: 'belowBar' | 'aboveBar'; color: string; shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'; text: string }> = [
-          { time: entryTime, position: 'belowBar', color: '#3b82f6', shape: 'circle', text: 'Signal' },
+          { time: entryTime, position: isLong ? 'belowBar' : 'aboveBar', color: '#3b82f6', shape: 'circle', text: 'Signal' },
         ];
 
         if (fillTime) {

@@ -387,6 +387,8 @@ export async function POST() {
       // Fetch all candles from trade creation to now
       const candles = await getHistoricalCandles(trade.symbol, timeframe, createdAt);
 
+      console.log(`[Auto-Close] Trade ${trade.id} (${trade.symbol}): entry=${entryPrice}, SL=${stopLoss}, TP=${takeProfit}, timeframe=${timeframe}, created=${new Date(createdAt).toISOString()}, candles_fetched=${candles.length}`);
+
       if (candles.length === 0) {
         // Fallback: get current price from ticker API
         const currentPrice = await getCurrentPrice(trade.symbol);
@@ -423,6 +425,13 @@ export async function POST() {
           // Trade not filled yet - check if it's pending_fill and been waiting too long
           const currentPrice = candles[candles.length - 1].close;
           const barsPending = candles.length;  // Bars since trade creation
+
+          console.log(`[Auto-Close] ${trade.symbol} NOT FILLED: entry=${entryPrice}, checked ${candles.length} candles, current_price=${currentPrice}`);
+          // Log first and last candle for debugging
+          if (candles.length > 0) {
+            console.log(`  First candle: ${new Date(candles[0].timestamp).toISOString()} [${candles[0].low}-${candles[0].high}]`);
+            console.log(`  Last candle: ${new Date(candles[candles.length - 1].timestamp).toISOString()} [${candles[candles.length - 1].low}-${candles[candles.length - 1].high}]`);
+          }
 
           // Apply max bars cancellation to pending_fill and paper_trade status
           if ((trade.status === 'pending_fill' || trade.status === 'paper_trade') && maxOpenBars > 0 && barsPending >= maxOpenBars) {

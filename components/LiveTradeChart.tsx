@@ -281,9 +281,11 @@ export default function LiveTradeChart({ trade, height = 400 }: LiveTradeChartPr
       const signalTime = Math.floor(new Date(signalTs).getTime() / 1000)
       const closestSignal = findClosestCandle(signalTime)
       if (closestSignal) {
+        // Position signal marker above/below based on side
+        const signalPosition = isLong ? 'belowBar' : 'aboveBar'
         markers.push({
           time: closestSignal.time,
-          position: 'belowBar',
+          position: signalPosition,
           color: '#3b82f6',
           shape: 'circle',
           text: 'Signal',
