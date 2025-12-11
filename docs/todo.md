@@ -120,4 +120,4 @@ Again, exit_price is set to currentPrice (line 544). So indeed, the simulator se
 - cleaner must only clean images that are outside the crrent boundery based on tieframe 
 [ ] analyzer must only analze images if there is no recomendation for current timeframe and boundery and instance than return results as if it analyzed them but with the note of chached results so later parts of the code can run 
 [ ] execution must check in dry run of the given recomendation was already executed based on database status in live trading ofcause based on exchnage data
-[ ] we need to define a set of error that pause the bot permantly until manually resumed 
+[ ] we need to define a set of error that pause the bot permantly until manually resumed
