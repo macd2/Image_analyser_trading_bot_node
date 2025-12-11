@@ -6,7 +6,7 @@ import path from 'path';
 import { initSocketServer } from './lib/ws/socket-server';
 
 const STATUS_FILE = path.join(process.cwd(), 'data', 'simulator_status.json');
-const AUTO_CLOSE_INTERVAL_MS = 30000; // Check every 30 seconds
+const AUTO_CLOSE_INTERVAL_MS = 60000; // Check every 60 seconds
 
 // Read simulator status
 function getSimulatorStatus(): { running: boolean; last_check?: string | null } {
@@ -45,11 +45,11 @@ function updateSimulatorStatus(tradesChecked: number, tradesClosed: number, resu
 async function runAutoCloseCheck(baseUrl: string) {
   const status = getSimulatorStatus();
   if (!status.running) {
-    console.log('  ➜  Simulator: Auto mode is OFF (skipping check)');
+    console.log(`  ➜  Simulator: Auto mode is OFF (skipping check) - ${new Date().toISOString()}`);
     return; // Auto mode is OFF in UI
   }
 
-  console.log('  ➜  Simulator: Running background check...');
+  console.log(`  ➜  Simulator: Running background check... - ${new Date().toISOString()}`);
 
   try {
     const res = await fetch(`${baseUrl}/api/bot/simulator/auto-close`, {
@@ -60,12 +60,12 @@ async function runAutoCloseCheck(baseUrl: string) {
     if (res.ok) {
       const data = await res.json();
       updateSimulatorStatus(data.checked || 0, data.closed || 0, data.results || [], data.filled || 0);
-      console.log(`  ➜  Simulator: Checked ${data.checked || 0} trades, Filled ${data.filled || 0}, Closed ${data.closed || 0}`);
+      console.log(`  ➜  Simulator: Checked ${data.checked || 0} trades, Filled ${data.filled || 0}, Closed ${data.closed || 0} - ${new Date().toISOString()}`);
     } else {
-      console.error(`  ➜  Simulator: Auto-close API returned ${res.status}`);
+      console.error(`  ➜  Simulator: Auto-close API returned ${res.status} - ${new Date().toISOString()}`);
     }
   } catch (err) {
-    console.error('  ➜  Simulator: Background check failed:', err instanceof Error ? err.message : String(err));
+    console.error(`  ➜  Simulator: Background check failed: ${err instanceof Error ? err.message : String(err)} - ${new Date().toISOString()}`);
   }
 }
 
@@ -88,15 +88,15 @@ function startSimulatorMonitor(port: number) {
   };
 
   fs.writeFileSync(STATUS_FILE, JSON.stringify(status, null, 2));
-  console.log('  ➜  Simulator: Auto-monitor started (background interval)');
+  console.log(`  ➜  Simulator: Auto-monitor started (background interval: ${AUTO_CLOSE_INTERVAL_MS / 1000}s)`);
 
   // Start background interval for auto-close checks
   const baseUrl = `http://localhost:${port}`;
 
-  // Run immediately on startup (don't wait 30 seconds)
+  // Run immediately on startup (don't wait 60 seconds)
   setTimeout(() => runAutoCloseCheck(baseUrl), 5000); // Wait 5s for server to be ready
 
-  // Then run every 30 seconds
+  // Then run every 60 seconds
   setInterval(() => runAutoCloseCheck(baseUrl), AUTO_CLOSE_INTERVAL_MS);
 }
 

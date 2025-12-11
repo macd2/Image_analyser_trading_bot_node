@@ -155,7 +155,13 @@ async function getHistoricalCandles(
     const limit = Math.min(expectedCandles + 5, 200);
 
     const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${apiSymbol}&interval=${interval}&start=${startTime}&limit=${limit}`;
-    const res = await fetch(url);
+
+    // Add timeout to prevent hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
 
     if (!res.ok) {
       console.error(`[Auto-Close] Bybit API error for ${symbol}: ${res.status} ${res.statusText}`);
@@ -171,7 +177,8 @@ async function getHistoricalCandles(
 
     const data: KlineResult = await res.json();
     if (data.retCode !== 0 || !data.result?.list) {
-      console.error(`[Auto-Close] Bybit returned error for ${symbol}: retCode=${data.retCode}`);
+      console.error(`[Auto-Close] Bybit returned error for ${symbol}: retCode=${data.retCode}, message=${(data as any).retMsg}`);
+      console.error(`[Auto-Close] Request URL: ${url}`);
       return dbCandles.map(c => ({
         timestamp: c.start_time,
         open: c.open_price,
@@ -190,13 +197,22 @@ async function getHistoricalCandles(
       close: parseFloat(c[4])
     })).reverse(); // Oldest first for chronological checking
 
+    console.log(`[Auto-Close] Bybit returned ${candles.length} candles for ${symbol} ${timeframe}`);
+    if (candles.length > 0) {
+      console.log(`  First: ${new Date(candles[0].timestamp).toISOString()}, Last: ${new Date(candles[candles.length - 1].timestamp).toISOString()}`);
+    }
+
     // Store fetched candles to database for future use
     await storeCandles(symbol, timeframe, candles);
     console.log(`[Auto-Close] Stored ${candles.length} candles to database for ${symbol} ${timeframe}`);
 
     return candles;
   } catch (e) {
-    console.error(`Failed to get candles for ${symbol}:`, e);
+    if (e instanceof Error && e.name === 'AbortError') {
+      console.error(`[Auto-Close] Bybit API timeout for ${symbol} ${timeframe}`);
+    } else {
+      console.error(`Failed to get candles for ${symbol}:`, e);
+    }
     // Fall back to DB candles
     return dbCandles.map(c => ({
       timestamp: c.start_time,
@@ -322,6 +338,9 @@ function checkHistoricalSLTP(
  * Accurately detects if SL/TP was hit at any point since trade was created
  */
 export async function POST() {
+  const checkStartTime = Date.now();
+  console.log(`[Auto-Close] POST handler called at ${new Date().toISOString()}`);
+
   try {
     if (!await isTradingDbAvailable()) {
       return NextResponse.json(
@@ -344,6 +363,8 @@ export async function POST() {
         AND t.status IN ('paper_trade', 'pending_fill', 'filled')
       ORDER BY t.created_at DESC
     `);
+
+    console.log(`[Auto-Close] Found ${openTrades.length} trades to check`);
 
     const results: Array<{
       trade_id: string;
@@ -630,6 +651,9 @@ export async function POST() {
         });
       }
     }
+
+    const checkDuration = Date.now() - checkStartTime;
+    console.log(`[Auto-Close] Check complete: ${filledCount} filled, ${closedCount} closed, ${cancelledCount} cancelled (took ${checkDuration}ms)`);
 
     return NextResponse.json({
       success: true,
