@@ -1733,6 +1733,35 @@ function normalizeStats(
 }
 
 /**
+ * Helper to normalize cycle/run instance stats (handles PostgreSQL string aggregates)
+ */
+export interface CycleRunStats {
+  charts_captured: number;
+  analyses_completed: number;
+  recommendations_generated: number;
+  trades_executed: number;
+  running_duration_hours: number;
+  cycle_count: number;
+  slots_used: number;
+  slots_available: number;
+  start_time: string;
+}
+
+function normalizeCycleRunStats(data: Record<string, unknown>): CycleRunStats {
+  return {
+    charts_captured: Number(data.charts_captured) || 0,
+    analyses_completed: Number(data.analyses_completed) || 0,
+    recommendations_generated: Number(data.recommendations_generated) || 0,
+    trades_executed: Number(data.trades_executed) || 0,
+    running_duration_hours: Number(data.running_duration_hours) || 0,
+    cycle_count: Number(data.cycle_count) || 0,
+    slots_used: Number(data.slots_used) || 0,
+    slots_available: Number(data.slots_available) || 5,
+    start_time: String(data.start_time) || '',
+  };
+}
+
+/**
  * Get stats for a specific cycle
  */
 export async function getStatsByCycleId(cycleId: string): Promise<StatsResult> {
@@ -1883,6 +1912,96 @@ export async function getLatestCycleStatsByInstanceId(instanceId: string): Promi
   if (!latestCycle) return null;
 
   return getStatsByCycleId(latestCycle.id);
+}
+
+/**
+ * Get instance stats for a specific cycle
+ */
+export async function getCycleInstanceStats(cycleId: string): Promise<CycleRunStats> {
+  const cycle = await dbQueryOne<{
+    charts_captured: number | string
+    analyses_completed: number | string
+    recommendations_generated: number | string
+    trades_executed: number | string
+    started_at: string
+  }>('SELECT charts_captured, analyses_completed, recommendations_generated, trades_executed, started_at FROM cycles WHERE id = ?', [cycleId]);
+
+  if (!cycle) {
+    return {
+      charts_captured: 0,
+      analyses_completed: 0,
+      recommendations_generated: 0,
+      trades_executed: 0,
+      running_duration_hours: 0,
+      cycle_count: 1,
+      slots_used: 0,
+      slots_available: 5,
+      start_time: '',
+    };
+  }
+
+  return normalizeCycleRunStats({
+    charts_captured: cycle.charts_captured,
+    analyses_completed: cycle.analyses_completed,
+    recommendations_generated: cycle.recommendations_generated,
+    trades_executed: cycle.trades_executed,
+    running_duration_hours: 0,
+    cycle_count: 1,
+    slots_used: 0,
+    slots_available: 5,
+    start_time: cycle.started_at,
+  });
+}
+
+/**
+ * Get instance stats for a specific run (aggregated from all cycles)
+ */
+export async function getRunInstanceStats(runId: string): Promise<CycleRunStats> {
+  const run = await dbQueryOne<{ started_at: string }>('SELECT started_at FROM runs WHERE id = ?', [runId]);
+
+  if (!run) {
+    return {
+      charts_captured: 0,
+      analyses_completed: 0,
+      recommendations_generated: 0,
+      trades_executed: 0,
+      running_duration_hours: 0,
+      cycle_count: 0,
+      slots_used: 0,
+      slots_available: 5,
+      start_time: '',
+    };
+  }
+
+  // Get aggregated cycle data for this run
+  const cycleStats = await dbQueryOne<{
+    cycle_count: number | string
+    charts_captured: number | string
+    analyses_completed: number | string
+    recommendations_generated: number | string
+    trades_executed: number | string
+  }>(`
+    SELECT
+      COUNT(*) as cycle_count,
+      SUM(charts_captured) as charts_captured,
+      SUM(analyses_completed) as analyses_completed,
+      SUM(recommendations_generated) as recommendations_generated,
+      SUM(trades_executed) as trades_executed
+    FROM cycles
+    WHERE run_id = ?
+  `, [runId]);
+
+  return normalizeCycleRunStats({
+    charts_captured: cycleStats?.charts_captured || 0,
+    analyses_completed: cycleStats?.analyses_completed || 0,
+    recommendations_generated: cycleStats?.recommendations_generated || 0,
+    trades_executed: cycleStats?.trades_executed || 0,
+    running_duration_hours: 0,
+    cycle_count: cycleStats?.cycle_count || 0,
+    slots_used: 0,
+    slots_available: 5,
+    start_time: run.started_at,
+  });
 }
 
 
