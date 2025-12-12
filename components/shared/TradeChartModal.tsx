@@ -158,7 +158,11 @@ export default function TradeChartModal({ isOpen, onClose, trade, mode = 'live' 
         )}
         
         {/* Chart */}
-        <div className="p-4 pb-2">
+        <div className="p-4 pb-2 relative">
+          {/* Timezone indicator */}
+          <div className="absolute top-6 right-6 text-xs text-slate-400 bg-slate-800/50 px-2 py-1 rounded">
+            {Intl.DateTimeFormat().resolvedOptions().timeZone}
+          </div>
           <TradeChart trade={trade} height={450} mode={mode} />
         </div>
 
@@ -206,6 +210,37 @@ export default function TradeChartModal({ isOpen, onClose, trade, mode = 'live' 
                 Exit: ${formatPrice(trade.exit_price)}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Timestamp Row */}
+        <div className="grid grid-cols-4 gap-3 p-4 pt-2 bg-slate-900/30">
+          {/* Entry Date/Time */}
+          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+            <div className="text-xs text-slate-400 mb-1">Entry Date/Time</div>
+            <div className="text-xs text-slate-300 font-mono">{new Date(trade.created_at).toISOString().replace('T', ' ').slice(0, 19)}</div>
+          </div>
+
+          {/* Entry to Fill Bars */}
+          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+            <div className="text-xs text-slate-400 mb-1">Entry to Fill</div>
+            <div className="text-xs text-slate-300 font-mono">
+              {trade.filled_at ? `${Math.round((new Date(trade.filled_at).getTime() - new Date(trade.created_at).getTime()) / (1000 * 60 * (trade.timeframe === '1h' ? 60 : trade.timeframe === '2h' ? 120 : trade.timeframe === '4h' ? 240 : 60)))} bars` : '—'}
+            </div>
+          </div>
+
+          {/* Fill to Close Bars */}
+          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+            <div className="text-xs text-slate-400 mb-1">Fill to Close</div>
+            <div className="text-xs text-slate-300 font-mono">
+              {trade.filled_at && trade.closed_at ? `${Math.round((new Date(trade.closed_at).getTime() - new Date(trade.filled_at).getTime()) / (1000 * 60 * (trade.timeframe === '1h' ? 60 : trade.timeframe === '2h' ? 120 : trade.timeframe === '4h' ? 240 : 60)))} bars` : '—'}
+            </div>
+          </div>
+
+          {/* Filled Date/Time */}
+          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+            <div className="text-xs text-slate-400 mb-1">Filled Date/Time</div>
+            <div className="text-xs text-slate-300 font-mono">{trade.filled_at ? new Date(trade.filled_at).toISOString().replace('T', ' ').slice(0, 19) : '—'}</div>
           </div>
         </div>
       </div>
