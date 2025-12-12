@@ -75,13 +75,15 @@ interface MonitorStatus {
   trades_checked: number
   trades_closed: number
   trades_cancelled?: number
-  max_open_bars?: MaxOpenBarsConfig  // Per-timeframe max bars (0 = disabled for that timeframe)
+  max_open_bars_before_filled?: MaxOpenBarsConfig  // Max bars for pending trades (0 = no cancellation)
+  max_open_bars_after_filled?: MaxOpenBarsConfig   // Max bars for filled trades (0 = no cancellation)
   next_check: number
   results: Array<{
     trade_id: string
     symbol: string
     action: 'checked' | 'closed' | 'cancelled'
     current_price: number
+    instance_name?: string
     checked_at?: string
     bars_open?: number
   }>
@@ -114,11 +116,12 @@ interface ClosedTrade {
 type CancelledTrade = ClosedTrade
 
 // Timeframes we support for max open bars config
-const TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d'] as const
+const TIMEFRAMES = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d', '1D'] as const
 
 // Map timeframe to minutes per bar
 const TIMEFRAME_MINUTES: Record<string, number> = {
   '1m': 1,
+  '3m': 3,
   '5m': 5,
   '15m': 15,
   '30m': 30,
@@ -128,6 +131,7 @@ const TIMEFRAME_MINUTES: Record<string, number> = {
   '6h': 360,
   '12h': 720,
   '1d': 1440,
+  '1D': 1440,
 }
 
 // Convert bars to human-readable duration
@@ -157,20 +161,34 @@ export function SimulatorPage() {
   const [autoClosing, setAutoClosing] = useState(false)
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null)
   const [monitorLoading, setMonitorLoading] = useState(false)
-  const [maxOpenBarsConfig, setMaxOpenBarsConfig] = useState<MaxOpenBarsConfig>({})  // Per-timeframe (editable)
-  const [savedMaxOpenBars, setSavedMaxOpenBars] = useState<MaxOpenBarsConfig>({})  // Per-timeframe (saved in DB)
+
+  // Before filled settings
+  const [maxOpenBarsBeforeFilled, setMaxOpenBarsBeforeFilled] = useState<MaxOpenBarsConfig>({})
+  const [savedMaxOpenBarsBeforeFilled, setSavedMaxOpenBarsBeforeFilled] = useState<MaxOpenBarsConfig>({})
+
+  // After filled settings
+  const [maxOpenBarsAfterFilled, setMaxOpenBarsAfterFilled] = useState<MaxOpenBarsConfig>({})
+  const [savedMaxOpenBarsAfterFilled, setSavedMaxOpenBarsAfterFilled] = useState<MaxOpenBarsConfig>({})
+
   const [savingMaxBars, setSavingMaxBars] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
   // Check if any max bars settings have changed
   const hasMaxBarsChanges = useMemo(() => {
-    return TIMEFRAMES.some(tf => (maxOpenBarsConfig[tf] ?? 0) !== (savedMaxOpenBars[tf] ?? 0))
-  }, [maxOpenBarsConfig, savedMaxOpenBars])
+    const beforeChanged = TIMEFRAMES.some(tf => (maxOpenBarsBeforeFilled[tf] ?? 0) !== (savedMaxOpenBarsBeforeFilled[tf] ?? 0))
+    const afterChanged = TIMEFRAMES.some(tf => (maxOpenBarsAfterFilled[tf] ?? 0) !== (savedMaxOpenBarsAfterFilled[tf] ?? 0))
+    return beforeChanged || afterChanged
+  }, [maxOpenBarsBeforeFilled, savedMaxOpenBarsBeforeFilled, maxOpenBarsAfterFilled, savedMaxOpenBarsAfterFilled])
 
-  // Get list of changed timeframes
-  const changedTimeframes = useMemo(() => {
-    return TIMEFRAMES.filter(tf => (maxOpenBarsConfig[tf] ?? 0) !== (savedMaxOpenBars[tf] ?? 0))
-  }, [maxOpenBarsConfig, savedMaxOpenBars])
+  // Get list of changed timeframes for before filled
+  const changedTimeframesBeforeFilled = useMemo(() => {
+    return TIMEFRAMES.filter(tf => (maxOpenBarsBeforeFilled[tf] ?? 0) !== (savedMaxOpenBarsBeforeFilled[tf] ?? 0))
+  }, [maxOpenBarsBeforeFilled, savedMaxOpenBarsBeforeFilled])
+
+  // Get list of changed timeframes for after filled
+  const changedTimeframesAfterFilled = useMemo(() => {
+    return TIMEFRAMES.filter(tf => (maxOpenBarsAfterFilled[tf] ?? 0) !== (savedMaxOpenBarsAfterFilled[tf] ?? 0))
+  }, [maxOpenBarsAfterFilled, savedMaxOpenBarsAfterFilled])
 
   // Modal state for trade chart
   const [selectedTrade, setSelectedTrade] = useState<TradeData | null>(null)
@@ -205,12 +223,15 @@ export function SimulatorPage() {
       if (!res.ok) throw new Error('Failed to fetch monitor status')
       const data = await res.json()
       setMonitorStatus(data)
-      // Sync max_open_bars config from monitor status (both saved and editable)
-      if (data.max_open_bars && typeof data.max_open_bars === 'object') {
-        // Only update config if there are no unsaved changes
-        if (!hasMaxBarsChanges) {
-          setMaxOpenBarsConfig(data.max_open_bars)
-          setSavedMaxOpenBars(data.max_open_bars)  // Track saved state for change detection
+      // Sync max_open_bars configs from monitor status (both saved and editable)
+      if (!hasMaxBarsChanges) {
+        if (data.max_open_bars_before_filled && typeof data.max_open_bars_before_filled === 'object') {
+          setMaxOpenBarsBeforeFilled(data.max_open_bars_before_filled)
+          setSavedMaxOpenBarsBeforeFilled(data.max_open_bars_before_filled)
+        }
+        if (data.max_open_bars_after_filled && typeof data.max_open_bars_after_filled === 'object') {
+          setMaxOpenBarsAfterFilled(data.max_open_bars_after_filled)
+          setSavedMaxOpenBarsAfterFilled(data.max_open_bars_after_filled)
         }
       }
     } catch (err) {
@@ -600,42 +621,96 @@ export function SimulatorPage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
             <Clock className="w-4 h-4 text-orange-400" />
-            Max Open Bars per Timeframe
-            <span className="text-slate-500 text-xs font-normal">(0 = disabled, trade never cancelled)</span>
+            Max Open Bars Configuration
+            <span className="text-slate-500 text-xs font-normal">(0 = no cancellation)</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-5 gap-4 mb-6">
-            {TIMEFRAMES.map(tf => {
-              const isChanged = changedTimeframes.includes(tf)
-              const bars = maxOpenBarsConfig[tf] ?? 0
-              const durationText = barsToDuration(bars, tf)
-              return (
-                <div key={tf} className="flex flex-col items-center p-3 bg-slate-800/30 rounded-lg border border-slate-700 hover:bg-slate-800/50 transition-colors">
-                  <div className="flex items-center gap-2 mb-2">
-                    <label className={`text-xs w-8 ${isChanged ? 'text-yellow-400 font-semibold' : 'text-slate-400'}`}>
-                      {tf}{isChanged && '*'}
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={bars}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value) || 0
-                        setMaxOpenBarsConfig(prev => ({ ...prev, [tf]: val }))
-                      }}
-                      className={`w-20 px-2 py-1.5 bg-slate-700 rounded text-white text-sm text-center ${
-                        isChanged ? 'border-2 border-yellow-400 ring-1 ring-yellow-400' : 'border border-slate-600'
-                      } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
-                    />
-                  </div>
-                  {durationText && (
-                    <span className="text-xs text-slate-400 mt-1">{durationText}</span>
-                  )}
-                </div>
-              )
-            })}
+          {/* Table View */}
+          <div className="overflow-x-auto mb-6">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-600">
+                  <th className="text-left py-2 px-3 text-slate-400 font-semibold">Timeframe</th>
+                  <th className="text-center py-2 px-3 text-blue-400 font-semibold">Before Filled</th>
+                  <th className="text-center py-2 px-3 text-blue-300 font-semibold text-xs">Duration</th>
+                  <th className="text-center py-2 px-3 text-green-400 font-semibold">After Filled</th>
+                  <th className="text-center py-2 px-3 text-green-300 font-semibold text-xs">Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                {TIMEFRAMES.map((tf, idx) => {
+                  const isChangedBefore = changedTimeframesBeforeFilled.includes(tf)
+                  const isChangedAfter = changedTimeframesAfterFilled.includes(tf)
+                  const barsBefore = maxOpenBarsBeforeFilled[tf] ?? 0
+                  const barsAfter = maxOpenBarsAfterFilled[tf] ?? 0
+                  const durationBefore = barsToDuration(barsBefore, tf)
+                  const durationAfter = barsToDuration(barsAfter, tf)
+
+                  return (
+                    <tr key={tf} className={`border-b border-slate-700 hover:bg-slate-700/30 transition-colors ${idx % 2 === 0 ? 'bg-slate-800/20' : ''}`}>
+                      {/* Timeframe Column */}
+                      <td className="py-3 px-3 text-slate-300 font-medium">{tf}</td>
+
+                      {/* Before Filled Input */}
+                      <td className="py-3 px-3">
+                        <div className="flex items-center justify-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            value={barsBefore}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 0
+                              setMaxOpenBarsBeforeFilled(prev => ({ ...prev, [tf]: val }))
+                            }}
+                            className={`w-14 px-2 py-1.5 bg-slate-700 rounded text-white text-sm text-center ${
+                              isChangedBefore ? 'border-2 border-yellow-400 ring-1 ring-yellow-400' : 'border border-slate-600'
+                            } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+                          />
+                          {isChangedBefore && <span className="text-yellow-400 text-xs font-bold">*</span>}
+                        </div>
+                      </td>
+
+                      {/* Before Filled Duration */}
+                      <td className="py-3 px-3 text-center">
+                        <span className="text-xs text-blue-300 bg-blue-900/20 px-2 py-1 rounded">
+                          {durationBefore || '—'}
+                        </span>
+                      </td>
+
+                      {/* After Filled Input */}
+                      <td className="py-3 px-3">
+                        <div className="flex items-center justify-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            value={barsAfter}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 0
+                              setMaxOpenBarsAfterFilled(prev => ({ ...prev, [tf]: val }))
+                            }}
+                            className={`w-14 px-2 py-1.5 bg-slate-700 rounded text-white text-sm text-center ${
+                              isChangedAfter ? 'border-2 border-yellow-400 ring-1 ring-yellow-400' : 'border border-slate-600'
+                            } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500`}
+                          />
+                          {isChangedAfter && <span className="text-yellow-400 text-xs font-bold">*</span>}
+                        </div>
+                      </td>
+
+                      {/* After Filled Duration */}
+                      <td className="py-3 px-3 text-center">
+                        <span className="text-xs text-green-300 bg-green-900/20 px-2 py-1 rounded">
+                          {durationAfter || '—'}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
+
+          {/* Save Button */}
           <div className="flex items-center gap-3 p-4 bg-slate-800/30 rounded-lg border border-slate-700">
             <Button
               size="sm"
@@ -643,18 +718,32 @@ export function SimulatorPage() {
               onClick={async () => {
                 setSavingMaxBars(true)
                 try {
-                  const res = await fetch('/api/bot/simulator/monitor', {
+                  // Save before filled
+                  const resBeforeFilled = await fetch('/api/bot/simulator/monitor', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'set-max-bars', max_open_bars: maxOpenBarsConfig })
+                    body: JSON.stringify({ action: 'set-max-bars', type: 'before_filled', max_open_bars: maxOpenBarsBeforeFilled })
                   })
-                  if (!res.ok) throw new Error('Failed to save')
-                  const data = await res.json()
-                  // Update saved state with server response to clear unsaved changes indicator
-                  if (data.max_open_bars && typeof data.max_open_bars === 'object') {
-                    setSavedMaxOpenBars(data.max_open_bars)
-                    setMaxOpenBarsConfig(data.max_open_bars)
+                  if (!resBeforeFilled.ok) throw new Error('Failed to save before_filled settings')
+                  const dataBeforeFilled = await resBeforeFilled.json()
+                  if (dataBeforeFilled.max_open_bars_before_filled) {
+                    setSavedMaxOpenBarsBeforeFilled(dataBeforeFilled.max_open_bars_before_filled)
+                    setMaxOpenBarsBeforeFilled(dataBeforeFilled.max_open_bars_before_filled)
                   }
+
+                  // Save after filled
+                  const resAfterFilled = await fetch('/api/bot/simulator/monitor', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'set-max-bars', type: 'after_filled', max_open_bars: maxOpenBarsAfterFilled })
+                  })
+                  if (!resAfterFilled.ok) throw new Error('Failed to save after_filled settings')
+                  const dataAfterFilled = await resAfterFilled.json()
+                  if (dataAfterFilled.max_open_bars_after_filled) {
+                    setSavedMaxOpenBarsAfterFilled(dataAfterFilled.max_open_bars_after_filled)
+                    setMaxOpenBarsAfterFilled(dataAfterFilled.max_open_bars_after_filled)
+                  }
+
                   await fetchMonitorStatus()
                 } catch (err) {
                   console.error('Failed to save max open bars:', err)
@@ -664,20 +753,13 @@ export function SimulatorPage() {
                 }
               }}
               variant="default"
-              className={`${hasMaxBarsChanges ? 'bg-orange-600 hover:bg-orange-700' : 'bg-slate-600'} disabled:opacity-50`}
+              className="bg-blue-600 hover:bg-blue-700"
             >
-              {savingMaxBars ? (
-                <>
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                'Save Settings'
-              )}
+              {savingMaxBars ? 'Saving...' : 'Save Settings'}
             </Button>
             {hasMaxBarsChanges && (
               <Badge variant="secondary" className="bg-yellow-900/50 text-yellow-400 border-yellow-700">
-                {changedTimeframes.length} unsaved change{changedTimeframes.length > 1 ? 's' : ''}
+                {changedTimeframesBeforeFilled.length + changedTimeframesAfterFilled.length} unsaved change{(changedTimeframesBeforeFilled.length + changedTimeframesAfterFilled.length) > 1 ? 's' : ''}
               </Badge>
             )}
           </div>

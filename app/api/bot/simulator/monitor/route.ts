@@ -19,7 +19,8 @@ const SIMULATOR_SETTINGS_KEY = 'simulator'
 
 // Settings stored in database (persisted)
 interface SimulatorSettings {
-  max_open_bars: MaxOpenBarsConfig
+  max_open_bars_before_filled: MaxOpenBarsConfig  // Max bars for pending trades (before filled)
+  max_open_bars_after_filled: MaxOpenBarsConfig   // Max bars for filled trades (before cancelled)
 }
 
 // Runtime status stored in file (ephemeral)
@@ -45,11 +46,18 @@ interface RuntimeStatus {
 
 // Combined status returned to frontend
 interface MonitorStatus extends RuntimeStatus {
-  max_open_bars?: MaxOpenBarsConfig
+  max_open_bars_before_filled?: MaxOpenBarsConfig
+  max_open_bars_after_filled?: MaxOpenBarsConfig
 }
 
-// Default per-timeframe max open bars (0 = disabled)
-const DEFAULT_MAX_OPEN_BARS: MaxOpenBarsConfig = {
+// Default per-timeframe max open bars (0 = no cancellation)
+const DEFAULT_MAX_OPEN_BARS_BEFORE_FILLED: MaxOpenBarsConfig = {
+  '1m': 0, '3m': 0, '5m': 0, '15m': 0, '30m': 0,
+  '1h': 0, '2h': 0, '4h': 0, '6h': 0, '12h': 0,
+  '1d': 0, '1D': 0
+}
+
+const DEFAULT_MAX_OPEN_BARS_AFTER_FILLED: MaxOpenBarsConfig = {
   '1m': 0, '3m': 0, '5m': 0, '15m': 0, '30m': 0,
   '1h': 0, '2h': 0, '4h': 0, '6h': 0, '12h': 0,
   '1d': 0, '1D': 0
@@ -59,12 +67,18 @@ const DEFAULT_MAX_OPEN_BARS: MaxOpenBarsConfig = {
 async function getSimulatorSettings(): Promise<SimulatorSettings> {
   try {
     const settings = await getSettings<SimulatorSettings>(SIMULATOR_SETTINGS_KEY)
+
+
     return {
-      max_open_bars: { ...DEFAULT_MAX_OPEN_BARS, ...(settings?.max_open_bars || {}) }
+      max_open_bars_before_filled: { ...DEFAULT_MAX_OPEN_BARS_BEFORE_FILLED, ...(settings?.max_open_bars_before_filled || {}) },
+      max_open_bars_after_filled: { ...DEFAULT_MAX_OPEN_BARS_AFTER_FILLED, ...(settings?.max_open_bars_after_filled || {}) }
     }
   } catch (e) {
     console.error('Failed to read simulator settings from DB:', e)
-    return { max_open_bars: { ...DEFAULT_MAX_OPEN_BARS } }
+    return {
+      max_open_bars_before_filled: { ...DEFAULT_MAX_OPEN_BARS_BEFORE_FILLED },
+      max_open_bars_after_filled: { ...DEFAULT_MAX_OPEN_BARS_AFTER_FILLED }
+    }
   }
 }
 
@@ -127,7 +141,8 @@ async function getStatus(): Promise<MonitorStatus> {
   const runtime = getRuntimeStatus()
   return {
     ...runtime,
-    max_open_bars: settings.max_open_bars
+    max_open_bars_before_filled: settings.max_open_bars_before_filled,
+    max_open_bars_after_filled: settings.max_open_bars_after_filled
   }
 }
 
@@ -227,12 +242,17 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
 
     } else if (action === 'set-max-bars') {
-      // Update max_open_bars setting in DATABASE (persisted across restarts)
-      // Can receive: { timeframe: "1h", max_bars: 24 } OR { max_open_bars: { "1h": 24, "4h": 12 } }
-      const { max_open_bars, timeframe, max_bars } = body
+      // Update max_open_bars settings in DATABASE (persisted across restarts)
+      // Can receive:
+      // { type: "before_filled", timeframe: "1h", max_bars: 24 }
+      // { type: "after_filled", timeframe: "1h", max_bars: 24 }
+      // { type: "before_filled", max_open_bars: { "1h": 24, "4h": 12 } }
+      const { type, timeframe, max_bars, max_open_bars } = body
       const currentSettings = await getSimulatorSettings()
 
-      let updatedMaxBars = { ...currentSettings.max_open_bars }
+      // Determine which setting to update (default to before_filled for backward compatibility)
+      const settingType = type === 'after_filled' ? 'max_open_bars_after_filled' : 'max_open_bars_before_filled'
+      let updatedMaxBars = { ...currentSettings[settingType] }
 
       if (timeframe && typeof max_bars === 'number') {
         // Update single timeframe
@@ -243,14 +263,18 @@ export async function POST(request: NextRequest) {
       }
 
       // Save to database (persisted)
-      await saveSimulatorSettings({ max_open_bars: updatedMaxBars })
+      const updatePayload = settingType === 'max_open_bars_after_filled'
+        ? { max_open_bars_after_filled: updatedMaxBars }
+        : { max_open_bars_before_filled: updatedMaxBars }
+
+      await saveSimulatorSettings(updatePayload)
 
       return NextResponse.json({
         success: true,
         message: timeframe
-          ? `Max open bars for ${timeframe} set to ${max_bars}`
-          : 'Max open bars updated',
-        max_open_bars: updatedMaxBars
+          ? `Max open bars (${type || 'before_filled'}) for ${timeframe} set to ${max_bars}`
+          : `Max open bars (${type || 'before_filled'}) updated`,
+        [settingType]: updatedMaxBars
       })
 
     } else {

@@ -12,21 +12,31 @@ import { getSettings } from '@/lib/db/settings';
 
 type MaxOpenBarsConfig = Record<string, number>;
 
-// Read max_open_bars from database (persisted settings)
-async function getMaxOpenBarsConfig(): Promise<MaxOpenBarsConfig> {
-  try {
-    const settings = await getSettings<{ max_open_bars?: MaxOpenBarsConfig }>('simulator');
-    if (settings?.max_open_bars && typeof settings.max_open_bars === 'object') {
-      return settings.max_open_bars;
-    }
-  } catch {
-    // Ignore errors, return default
-  }
-  return {}; // Empty = all disabled
+interface SimulatorSettings {
+  max_open_bars_before_filled?: MaxOpenBarsConfig;
+  max_open_bars_after_filled?: MaxOpenBarsConfig;
 }
 
-async function getMaxOpenBarsForTimeframe(timeframe: string): Promise<number> {
-  const config = await getMaxOpenBarsConfig();
+// Read max_open_bars configs from database (persisted settings)
+async function getMaxOpenBarsConfigs(): Promise<{ before_filled: MaxOpenBarsConfig; after_filled: MaxOpenBarsConfig }> {
+  try {
+    const settings = await getSettings<SimulatorSettings>('simulator');
+    return {
+      before_filled: (settings?.max_open_bars_before_filled && typeof settings.max_open_bars_before_filled === 'object') ? settings.max_open_bars_before_filled : {},
+      after_filled: (settings?.max_open_bars_after_filled && typeof settings.max_open_bars_after_filled === 'object') ? settings.max_open_bars_after_filled : {}
+    };
+  } catch {
+    // Ignore errors, return defaults
+  }
+  return { before_filled: {}, after_filled: {} }; // Empty = all disabled
+}
+
+async function getMaxOpenBarsForTimeframe(timeframe: string, tradeStatus: 'pending_fill' | 'paper_trade' | 'filled'): Promise<number> {
+  const configs = await getMaxOpenBarsConfigs();
+
+  // Use before_filled config for pending/paper trades, after_filled for filled trades
+  const config = (tradeStatus === 'filled') ? configs.after_filled : configs.before_filled;
+
   // Try exact match first, then normalized (1D -> 1d)
   return config[timeframe] ?? config[timeframe.toLowerCase()] ?? 0;
 }
@@ -420,9 +430,6 @@ export async function POST() {
     let filledCount = 0;
     let cancelledCount = 0;
 
-    // Get max_open_bars config (per-timeframe)
-    const maxOpenBarsConfig = getMaxOpenBarsConfig();
-
     for (const trade of openTrades) {
       const isLong = trade.side === 'Buy';
       const entryPrice = trade.entry_price || 0;
@@ -430,8 +437,8 @@ export async function POST() {
       const takeProfit = trade.take_profit || 0;
       const timeframe = trade.timeframe || '1h';
 
-      // Get max open bars for this trade's timeframe (0 = disabled)
-      const maxOpenBars = await getMaxOpenBarsForTimeframe(timeframe);
+      // Get max open bars for this trade's timeframe and status (0 = disabled)
+      const maxOpenBars = await getMaxOpenBarsForTimeframe(timeframe, trade.status as 'pending_fill' | 'paper_trade' | 'filled');
 
       // Parse trade creation time - validate it's a valid date
       const createdAtDate = new Date(trade.created_at);
@@ -731,7 +738,6 @@ export async function POST() {
       filled: filledCount,
       closed: closedCount,
       cancelled: cancelledCount,
-      max_open_bars: maxOpenBarsConfig,
       method: 'historical_candles_with_fill',
       results
     });
