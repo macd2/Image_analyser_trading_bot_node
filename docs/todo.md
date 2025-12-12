@@ -121,3 +121,9 @@ Again, exit_price is set to currentPrice (line 544). So indeed, the simulator se
 [ ] analyzer must only analze images if there is no recomendation for current timeframe and boundery and instance than return results as if it analyzed them but with the note of chached results so later parts of the code can run 
 [ ] execution must check in dry run of the given recomendation was already executed based on database status in live trading ofcause based on exchnage data
 [ ] we need to define a set of error that pause the bot permantly until manually resumed
+
+
+[ ] start server with log filter:
+cd /home/slicks/projects/^^Python/Analyse_Chart_Screenshot_Node && npm run dev 2>&1 | grep -E "\[Auto-Close\]|Bybit API request" | head -50
+
+[ ] the cleaner step from trade cycle must be a microservice calle by rhe innstance and maage duplicated calles, since it can be used by multiple istance if that happens than the one that was launched second thors error becuase it cant find the imagease already  cleaned up by the first instance 

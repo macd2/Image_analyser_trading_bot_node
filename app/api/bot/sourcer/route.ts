@@ -107,12 +107,12 @@ export async function GET(request: NextRequest) {
     // Calculate next boundary
     const { time: nextTime, seconds } = getNextBoundary(timeframe);
 
-    // Get most recent cycle
-    const cycles = await getRecentCycles(1);
+    // Get most recent cycle (instance-aware if instanceId provided)
+    const cycles = await getRecentCycles(1, instanceId || undefined);
     const currentCycle = cycles[0] || null;
 
-    // Get recent recommendations for capture info
-    const recommendations = await getRecentRecommendations(50);
+    // Get recent recommendations for capture info (instance-aware if instanceId provided)
+    const recommendations = await getRecentRecommendations(50, instanceId || undefined);
     
     // Extract unique symbols from recent recommendations
     const watchlist = [...new Set(recommendations.map(r => r.symbol))];

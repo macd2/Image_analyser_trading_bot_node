@@ -33,22 +33,23 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20', 10);
 
     // Get recent monitor activity from error_logs (INFO level)
-    // Filter by instance_id in the message field
+    // Filter by instance_id via run_id join (proper instance-aware filtering)
     const query = instanceId
       ? `
         SELECT
-          id,
-          timestamp,
-          symbol,
-          event,
-          message,
-          trade_id,
-          run_id
-        FROM error_logs
-        WHERE component = 'position_monitor'
-          AND level = 'INFO'
-          AND message LIKE ?
-        ORDER BY timestamp DESC
+          el.id,
+          el.timestamp,
+          el.symbol,
+          el.event,
+          el.message,
+          el.trade_id,
+          el.run_id
+        FROM error_logs el
+        LEFT JOIN runs r ON el.run_id = r.id
+        WHERE el.component = 'position_monitor'
+          AND el.level = 'INFO'
+          AND (r.instance_id = ? OR el.run_id IS NULL)
+        ORDER BY el.timestamp DESC
         LIMIT ?
       `
       : `
@@ -68,7 +69,7 @@ export async function GET(request: NextRequest) {
       `;
 
     const params = instanceId
-      ? [`[${instanceId}]%`, limit]
+      ? [instanceId, limit]
       : [limit];
 
     const activities = await dbQuery<MonitorActivity>(query, params);

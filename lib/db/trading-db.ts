@@ -1255,8 +1255,20 @@ export interface CycleRow {
 
 /**
  * Get recent cycles
+ * @param limit - number of cycles to return
+ * @param instanceId - optional instance_id to filter by specific instance
  */
-export async function getRecentCycles(limit: number = 20): Promise<CycleRow[]> {
+export async function getRecentCycles(limit: number = 20, instanceId?: string): Promise<CycleRow[]> {
+  if (instanceId) {
+    return dbQuery<CycleRow>(`
+      SELECT c.* FROM cycles c
+      JOIN runs r ON c.run_id = r.id
+      WHERE r.instance_id = ?
+      ORDER BY c.started_at DESC
+      LIMIT ?
+    `, [instanceId, limit]);
+  }
+
   return dbQuery<CycleRow>(`
     SELECT * FROM cycles
     ORDER BY started_at DESC
@@ -1291,8 +1303,21 @@ export interface RecommendationRow {
 
 /**
  * Get recent recommendations
+ * @param limit - number of recommendations to return
+ * @param instanceId - optional instance_id to filter by specific instance
  */
-export async function getRecentRecommendations(limit: number = 50): Promise<RecommendationRow[]> {
+export async function getRecentRecommendations(limit: number = 50, instanceId?: string): Promise<RecommendationRow[]> {
+  if (instanceId) {
+    return dbQuery<RecommendationRow>(`
+      SELECT r.* FROM recommendations r
+      JOIN cycles c ON r.cycle_id = c.id
+      JOIN runs ru ON c.run_id = ru.id
+      WHERE ru.instance_id = ?
+      ORDER BY r.created_at DESC
+      LIMIT ?
+    `, [instanceId, limit]);
+  }
+
   return dbQuery<RecommendationRow>(`
     SELECT * FROM recommendations
     ORDER BY created_at DESC

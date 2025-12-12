@@ -70,9 +70,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const cycles = await getRecentCycles(currentOnly ? 1 : limit);
+    const cycles = await getRecentCycles(currentOnly ? 1 : limit, instanceId || undefined);
     const recommendations = includeRecommendations
-      ? await getRecentRecommendations(limit * 5)
+      ? await getRecentRecommendations(limit * 5, instanceId || undefined)
       : [];
 
     // Get current cycle's recommendations for analysis view
