@@ -1,194 +1,121 @@
 /**
- * Unit tests for CycleSummaryCard log parsing logic
- * Tests that regex patterns correctly extract cycle summary data and steps
+ * Unit tests for CycleSummaryCard log filtering logic
+ * Tests that logs are correctly filtered by section markers
  */
 
-function parseLogsForCycleSummary(logs: string[]) {
-  const cycleSummaryLine = logs.find(log =>
-    log.includes('CYCLE #') && log.includes('COMPLETE')
-  )
+interface SectionLogs {
+  step0: string[]
+  step1: string[]
+  step1_5: string[]
+  step2: string[]
+  step3: string[]
+  step4: string[]
+  step5: string[]
+  step6: string[]
+  step7: string[]
+  cycleSummary: string[]
+}
 
-  if (!cycleSummaryLine) return null
-
-  const cycleMatch = cycleSummaryLine.match(/CYCLE #(\d+).*\[([a-z0-9]+)\].*-\s*(LIVE|DRYRUN)/)
-  const timeframeMatch = cycleSummaryLine.match(/(\d+h)/)
-
-  if (!cycleMatch) return null
-
-  const cycleNumber = parseInt(cycleMatch[1])
-  const cycleId = cycleMatch[2]
-  const mode = cycleMatch[3] as 'LIVE' | 'DRYRUN'
-  const timeframe = timeframeMatch ? timeframeMatch[1] : 'unknown'
-
-  let symbolsAnalyzed = 0, recommendationsGenerated = 0, buySignals = 0, sellSignals = 0
-  let holdSignals = 0, actionableSignals = 0, selectedForExecution = 0, tradesExecuted = 0
-  let rejectedTrades = 0, errors = 0, duration = 0
-
-  logs.forEach(log => {
-    if (log.includes('Symbols analyzed:')) {
-      const m = log.match(/Symbols analyzed:\s*(\d+)/)
-      if (m) symbolsAnalyzed = parseInt(m[1])
-    }
-    if (log.includes('Recommendations generated:')) {
-      const m = log.match(/Recommendations generated:\s*(\d+)/)
-      if (m) recommendationsGenerated = parseInt(m[1])
-    }
-    if (log.includes('BUY:')) {
-      const m = log.match(/BUY:\s*(\d+)/)
-      if (m) buySignals = parseInt(m[1])
-    }
-    if (log.includes('SELL:')) {
-      const m = log.match(/SELL:\s*(\d+)/)
-      if (m) sellSignals = parseInt(m[1])
-    }
-    if (log.includes('HOLD:')) {
-      const m = log.match(/HOLD:\s*(\d+)/)
-      if (m) holdSignals = parseInt(m[1])
-    }
-    if (log.includes('Actionable signals:')) {
-      const m = log.match(/Actionable signals:\s*(\d+)/)
-      if (m) actionableSignals = parseInt(m[1])
-    }
-    if (log.includes('Selected for execution:')) {
-      const m = log.match(/Selected for execution:\s*(\d+)/)
-      if (m) selectedForExecution = parseInt(m[1])
-    }
-    if (log.includes('Trades executed:')) {
-      const m = log.match(/Trades executed:\s*(\d+)/)
-      if (m) tradesExecuted = parseInt(m[1])
-    }
-    if (log.includes('Rejected trades:')) {
-      const m = log.match(/Rejected trades:\s*(\d+)/)
-      if (m) rejectedTrades = parseInt(m[1])
-    }
-    if (log.includes('Errors:')) {
-      const m = log.match(/Errors:\s*(\d+)/)
-      if (m) errors = parseInt(m[1])
-    }
-    if (log.includes('Total duration:')) {
-      const m = log.match(/Total duration:\s*([\d.]+)s/)
-      if (m) duration = parseFloat(m[1])
-    }
-  })
-
-  // Extract steps
-  const steps: Array<{ step: string; emoji: string; title: string; logs: string[] }> = []
-  const stepPatterns = [
-    { step: '0', emoji: '🧹', title: 'Chart Cleanup', pattern: /STEP 0 COMPLETE/ },
-    { step: '1', emoji: '📷', title: 'Capturing Charts', pattern: /STEP 1 COMPLETE/ },
-    { step: '1.5', emoji: '🔍', title: 'Checking Existing Recommendations', pattern: /STEP 1.5 COMPLETE/ },
-    { step: '2', emoji: '🤖', title: 'Parallel Analysis', pattern: /STEP 2 COMPLETE/ },
-    { step: '3', emoji: '📊', title: 'Collecting Recommendations', pattern: /STEP 3 COMPLETE/ },
-    { step: '4', emoji: '🏆', title: 'Ranking Signals by Quality', pattern: /STEP 4 COMPLETE/ },
-    { step: '5', emoji: '📦', title: 'Checking Available Slots', pattern: /STEP 5 COMPLETE/ },
-    { step: '6', emoji: '🎯', title: 'Selecting Best Signals', pattern: /STEP 6 COMPLETE/ },
-    { step: '7', emoji: '🚀', title: 'Executing Signals', pattern: /STEP 7 COMPLETE/ },
-  ]
-
-  stepPatterns.forEach(({ step, emoji, title, pattern }) => {
-    const idx = logs.findIndex(log => pattern.test(log))
-    if (idx !== -1) {
-      const stepLogs: string[] = []
-      for (let i = idx; i < logs.length; i++) {
-        const log = logs[i]
-        if (i > idx && (log.includes('STEP') || log.includes('CYCLE #'))) break
-        stepLogs.push(log)
-      }
-      steps.push({ step, emoji, title, logs: stepLogs })
-    }
-  })
-
+function filterLogsBySection(logs: string[]): SectionLogs {
   return {
-    cycleNumber, cycleId, timeframe, mode, duration,
-    status: errors === 0 ? 'success' : 'error',
-    symbolsAnalyzed, recommendationsGenerated, buySignals, sellSignals, holdSignals,
-    actionableSignals, selectedForExecution, tradesExecuted, rejectedTrades, errors, steps,
+    step0: logs.filter(log => log.includes('[STEP_0_SUMMARY]')),
+    step1: logs.filter(log => log.includes('[STEP_1_SUMMARY]')),
+    step1_5: logs.filter(log => log.includes('[STEP_1.5_SUMMARY]')),
+    step2: logs.filter(log => log.includes('[STEP_2_SUMMARY]')),
+    step3: logs.filter(log => log.includes('[STEP_3_SUMMARY]')),
+    step4: logs.filter(log => log.includes('[STEP_4_SUMMARY]')),
+    step5: logs.filter(log => log.includes('[STEP_5_SUMMARY]')),
+    step6: logs.filter(log => log.includes('[STEP_6_SUMMARY]')),
+    step7: logs.filter(log => log.includes('[STEP_7_SUMMARY]')),
+    cycleSummary: logs.filter(log => log.includes('[CYCLE_SUMMARY]'))
   }
 }
 
-// Test 1: Full cycle with all steps
+// Test 1: Full cycle with all steps and markers
 const logs1 = [
-  'STEP 0 COMPLETE: Chart Cleanup',
-  '   ├─ Cleaned: 2 charts',
-  '   └─ Status: Success',
-  'STEP 1 COMPLETE: Capturing Charts',
-  '   ├─ Charts captured: 5',
-  '   └─ Status: Success',
-  'STEP 2 COMPLETE: Parallel Analysis',
-  '   ├─ Analyzed: 5 charts',
-  '   └─ Status: Success',
-  'STEP 3 COMPLETE: Collecting Recommendations',
-  '   ├─ Total recommendations: 3',
-  '   ├─ BUY: 2',
-  '   ├─ SELL: 1',
-  '   └─ HOLD: 0',
-  'STEP 4 COMPLETE: Ranking Signals',
-  '   └─ Status: Success',
-  'STEP 5 COMPLETE: Checking Available Slots',
-  '   └─ Status: Success',
-  'STEP 6 COMPLETE: Selecting Best Signals',
-  '   ├─ Selected: 2 signals',
-  '   └─ Status: Success',
-  'STEP 7 COMPLETE: Executing Signals',
-  '   ├─ Trades executed: 2',
-  '   └─ Status: Success',
-  'CYCLE #1 COMPLETE - 1h - [abc123def456] - LIVE',
-  '   ├─ Total duration: 12.5s',
-  '   ├─ Symbols analyzed: 5',
-  '   ├─ Recommendations generated: 3',
-  '   ├─ Actionable signals: 3',
-  '   ├─ Selected for execution: 2',
-  '   ├─ Trades executed: 2',
-  '   ├─ Rejected trades: 0',
-  '   ├─ Errors: 0',
+  '[STEP_0_SUMMARY] 🧹 STEP 0 COMPLETE: Chart Cleanup',
+  '[STEP_0_SUMMARY]    ├─ Cleaned: 2 charts',
+  '[STEP_0_SUMMARY]    └─ Status: ✅ Success',
+  '[STEP_1_SUMMARY] 📷 STEP 1 COMPLETE: Capturing Charts',
+  '[STEP_1_SUMMARY]    ├─ Charts captured: 5',
+  '[STEP_1_SUMMARY]    └─ Status: ✅ Success',
+  '[STEP_2_SUMMARY] 🤖 STEP 2 COMPLETE: Parallel Analysis',
+  '[STEP_2_SUMMARY]    ├─ Analyzed: 5 charts',
+  '[STEP_2_SUMMARY]    └─ Status: ✅ Success',
+  '[STEP_3_SUMMARY] 📊 STEP 3 COMPLETE: Collecting Recommendations',
+  '[STEP_3_SUMMARY]    ├─ Total recommendations: 3',
+  '[STEP_3_SUMMARY]    │  ├─ BUY: 2',
+  '[STEP_3_SUMMARY]    │  ├─ SELL: 1',
+  '[STEP_3_SUMMARY]    │  └─ HOLD: 0',
+  '[STEP_4_SUMMARY] 🏆 STEP 4 COMPLETE: Ranking Signals',
+  '[STEP_4_SUMMARY]    └─ Status: ✅ Success',
+  '[STEP_5_SUMMARY] 📦 STEP 5 COMPLETE: Checking Available Slots',
+  '[STEP_5_SUMMARY]    └─ Status: ✅ Success',
+  '[STEP_6_SUMMARY] 🎯 STEP 6 COMPLETE: Selecting Best Signals',
+  '[STEP_6_SUMMARY]    ├─ Selected: 2 signals',
+  '[STEP_6_SUMMARY]    └─ Status: ✅ Success',
+  '[STEP_7_SUMMARY] 🚀 STEP 7 COMPLETE: Executing Signals',
+  '[STEP_7_SUMMARY]    ├─ Trades executed: 2',
+  '[STEP_7_SUMMARY]    └─ Status: ✅ Success',
+  '[CYCLE_SUMMARY] 📊 CYCLE #1 COMPLETE - 1h - [abc123def456] - LIVE',
+  '[CYCLE_SUMMARY]    ├─ Total duration: 12.5s',
+  '[CYCLE_SUMMARY]    ├─ Symbols analyzed: 5',
+  '[CYCLE_SUMMARY]    ├─ Recommendations generated: 3',
+  '[CYCLE_SUMMARY]    ├─ Actionable signals: 3',
+  '[CYCLE_SUMMARY]    ├─ Selected for execution: 2',
+  '[CYCLE_SUMMARY]    ├─ Trades executed: 2',
+  '[CYCLE_SUMMARY]    ├─ Rejected trades: 0',
+  '[CYCLE_SUMMARY]    └─ Errors: 0',
 ]
 
-const result1 = parseLogsForCycleSummary(logs1)
-console.log('Test 1: Full cycle with all steps')
-console.assert(result1?.cycleNumber === 1, 'Cycle #1')
-console.assert(result1?.cycleId === 'abc123def456', 'Cycle ID')
-console.assert(result1?.mode === 'LIVE', 'Mode LIVE')
-console.assert(result1?.duration === 12.5, 'Duration 12.5s')
-console.assert(result1?.symbolsAnalyzed === 5, '5 symbols')
-console.assert(result1?.tradesExecuted === 2, '2 trades')
-console.assert(result1?.steps.length === 8, '8 steps')
-console.assert(result1?.steps[0].step === '0', 'Step 0')
-console.assert(result1?.steps[7].step === '7', 'Step 7')
+const result1 = filterLogsBySection(logs1)
+console.log('Test 1: Full cycle with all steps and markers')
+console.assert(result1.step0.length === 3, 'Step 0 has 3 logs')
+console.assert(result1.step1.length === 3, 'Step 1 has 3 logs')
+console.assert(result1.step2.length === 3, 'Step 2 has 3 logs')
+console.assert(result1.step3.length === 5, 'Step 3 has 5 logs')
+console.assert(result1.step4.length === 2, 'Step 4 has 2 logs')
+console.assert(result1.step5.length === 2, 'Step 5 has 2 logs')
+console.assert(result1.step6.length === 3, 'Step 6 has 3 logs')
+console.assert(result1.step7.length === 3, 'Step 7 has 3 logs')
+console.assert(result1.cycleSummary.length === 9, 'Cycle summary has 9 logs')
+console.assert(result1.step1_5.length === 0, 'Step 1.5 has no logs')
 console.log('✅ Test 1 passed\n')
 
-// Test 2: DRYRUN cycle
+// Test 2: Partial cycle with only some steps
 const logs2 = [
-  'STEP 0 COMPLETE: Chart Cleanup',
-  'STEP 1 COMPLETE: Capturing Charts',
-  'STEP 2 COMPLETE: Parallel Analysis',
-  'STEP 3 COMPLETE: Collecting Recommendations',
-  '   ├─ BUY: 4',
-  '   ├─ SELL: 3',
-  '   └─ HOLD: 1',
-  'STEP 4 COMPLETE: Ranking Signals',
-  'STEP 5 COMPLETE: Checking Available Slots',
-  'STEP 6 COMPLETE: Selecting Best Signals',
-  'STEP 7 COMPLETE: Executing Signals',
-  '   ├─ Trades executed: 3',
-  'CYCLE #2 COMPLETE - 1h - [xyz789abc123] - DRYRUN',
-  '   ├─ Total duration: 8.0s',
-  '   ├─ Symbols analyzed: 10',
-  '   ├─ Recommendations generated: 8',
-  '   ├─ Actionable signals: 7',
-  '   ├─ Selected for execution: 3',
-  '   ├─ Trades executed: 3',
-  '   ├─ Rejected trades: 0',
-  '   ├─ Errors: 0',
+  '[STEP_0_SUMMARY] 🧹 STEP 0 COMPLETE: Chart Cleanup',
+  '[STEP_0_SUMMARY]    └─ Status: ✅ Success',
+  '[STEP_1_SUMMARY] 📷 STEP 1 COMPLETE: Capturing Charts',
+  '[STEP_1_SUMMARY]    ├─ Charts captured: 10',
+  '[STEP_1_SUMMARY]    └─ Status: ✅ Success',
+  '[STEP_1.5_SUMMARY] 🔍 STEP 1.5 COMPLETE: Checking Existing Recommendations',
+  '[STEP_1.5_SUMMARY]    ├─ Total symbols: 10',
+  '[STEP_1.5_SUMMARY]    └─ Status: ✅ Success',
+  '[STEP_2_SUMMARY] 🤖 STEP 2 COMPLETE: Parallel Analysis',
+  '[STEP_2_SUMMARY]    ├─ Analyzed: 8 charts',
+  '[STEP_2_SUMMARY]    └─ Status: ✅ Success',
 ]
 
-const result2 = parseLogsForCycleSummary(logs2)
-console.log('Test 2: DRYRUN cycle')
-console.assert(result2?.cycleNumber === 2, 'Cycle #2')
-console.assert(result2?.mode === 'DRYRUN', 'Mode DRYRUN')
-console.assert(result2?.buySignals === 4, '4 BUY signals')
-console.assert(result2?.sellSignals === 3, '3 SELL signals')
-console.assert(result2?.holdSignals === 1, '1 HOLD signal')
-console.assert(result2?.steps.length === 8, '8 steps')
+const result2 = filterLogsBySection(logs2)
+console.log('Test 2: Partial cycle with some steps')
+console.assert(result2.step0.length === 2, 'Step 0 has 2 logs')
+console.assert(result2.step1.length === 3, 'Step 1 has 3 logs')
+console.assert(result2.step1_5.length === 3, 'Step 1.5 has 3 logs')
+console.assert(result2.step2.length === 3, 'Step 2 has 3 logs')
+console.assert(result2.step3.length === 0, 'Step 3 has no logs')
+console.assert(result2.cycleSummary.length === 0, 'Cycle summary has no logs')
 console.log('✅ Test 2 passed\n')
+
+// Test 3: Log marker removal
+function formatLog(log: string): string {
+  return log.replace(/\[STEP_\d\.?\d?_SUMMARY\]|\[CYCLE_SUMMARY\]/, '').trim()
+}
+
+const testLog = '[STEP_3_SUMMARY] 📊 STEP 3 COMPLETE: Collecting Recommendations'
+const formatted = formatLog(testLog)
+console.log('Test 3: Log marker removal')
+console.assert(formatted === '📊 STEP 3 COMPLETE: Collecting Recommendations', 'Marker removed correctly')
+console.log('✅ Test 3 passed\n')
 
 console.log('✅ All tests passed!')

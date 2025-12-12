@@ -233,50 +233,50 @@ class TradingCycle:
         hold_signals = [r for r in results["recommendations"] if r.get("recommendation", "").upper() == "HOLD"]
 
         # Print main cycle header
-        logger.info(f"\n📊 CYCLE #{self._cycle_count} COMPLETE - {self.timeframe} - [{cycle_id}] - {mode}")
-        logger.info(f"   ├─ Timeframe: {self.timeframe}")
-        logger.info(f"   ├─ Boundary: {boundary.strftime('%Y-%m-%d %H:%M:%S')} UTC to {boundary_end.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-        logger.info(f"   ├─ Prompt: {self.prompt_name}")
-        logger.info(f"   ├─ Model: gpt-4-vision")
-        logger.info(f"   ├─ Instance: {self.instance_id or 'default'}")
-        logger.info(f"   ├─ Total duration: {total_duration:.1f}s")
+        logger.info(f"[CYCLE_SUMMARY] 📊 CYCLE #{self._cycle_count} COMPLETE - {self.timeframe} - [{cycle_id}] - {mode}")
+        logger.info(f"[CYCLE_SUMMARY]    ├─ Timeframe: {self.timeframe}")
+        logger.info(f"[CYCLE_SUMMARY]    ├─ Boundary: {boundary.strftime('%Y-%m-%d %H:%M:%S')} UTC to {boundary_end.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        logger.info(f"[CYCLE_SUMMARY]    ├─ Prompt: {self.prompt_name}")
+        logger.info(f"[CYCLE_SUMMARY]    ├─ Model: gpt-4-vision")
+        logger.info(f"[CYCLE_SUMMARY]    ├─ Instance: {self.instance_id or 'default'}")
+        logger.info(f"[CYCLE_SUMMARY]    ├─ Total duration: {total_duration:.1f}s")
 
         # Symbols analyzed
-        logger.info(f"   ├─ Symbols analyzed: {results['symbols_analyzed']}")
+        logger.info(f"[CYCLE_SUMMARY]    ├─ Symbols analyzed: {results['symbols_analyzed']}")
         if results['symbols_analyzed'] > 0 and chart_paths:
             symbols_list = ', '.join(sorted(chart_paths.keys()))
-            logger.info(f"   │  ├─ {symbols_list}")
+            logger.info(f"[CYCLE_SUMMARY]    │  ├─ {symbols_list}")
 
         # Recommendations generated
-        logger.info(f"   ├─ Recommendations generated: {len(results['recommendations'])}")
+        logger.info(f"[CYCLE_SUMMARY]    ├─ Recommendations generated: {len(results['recommendations'])}")
         if results['recommendations']:
-            logger.info(f"   │  ├─ BUY: {len(buy_signals)} ({', '.join([r['symbol'] for r in buy_signals[:5]])}{'...' if len(buy_signals) > 5 else ''})")
-            logger.info(f"   │  ├─ SELL: {len(sell_signals)} ({', '.join([r['symbol'] for r in sell_signals[:5]])}{'...' if len(sell_signals) > 5 else ''})")
-            logger.info(f"   │  └─ HOLD: {len(hold_signals)} ({', '.join([r['symbol'] for r in hold_signals[:5]])}{'...' if len(hold_signals) > 5 else ''})")
+            logger.info(f"[CYCLE_SUMMARY]    │  ├─ BUY: {len(buy_signals)} ({', '.join([r['symbol'] for r in buy_signals[:5]])}{'...' if len(buy_signals) > 5 else ''})")
+            logger.info(f"[CYCLE_SUMMARY]    │  ├─ SELL: {len(sell_signals)} ({', '.join([r['symbol'] for r in sell_signals[:5]])}{'...' if len(sell_signals) > 5 else ''})")
+            logger.info(f"[CYCLE_SUMMARY]    │  └─ HOLD: {len(hold_signals)} ({', '.join([r['symbol'] for r in hold_signals[:5]])}{'...' if len(hold_signals) > 5 else ''})")
 
         # Actionable signals
-        logger.info(f"   ├─ Actionable signals: {len(results['actionable_signals'])}")
+        logger.info(f"[CYCLE_SUMMARY]    ├─ Actionable signals: {len(results['actionable_signals'])}")
         if results['actionable_signals']:
             for sig in results['actionable_signals'][:6]:
                 entry = sig.get('entry_price', 'N/A')
                 sl = sig.get('stop_loss', 'N/A')
                 tp = sig.get('take_profit', 'N/A')
-                logger.info(f"   │  ├─ {sig['symbol']}: {sig.get('recommendation', 'N/A')} @ {entry} (SL: {sl}, TP: {tp})")
+                logger.info(f"[CYCLE_SUMMARY]    │  ├─ {sig['symbol']}: {sig.get('recommendation', 'N/A')} @ {entry} (SL: {sl}, TP: {tp})")
 
         # Selected for execution
-        logger.info(f"   ├─ Selected for execution: {len(results['selected_signals'])}")
+        logger.info(f"[CYCLE_SUMMARY]    ├─ Selected for execution: {len(results['selected_signals'])}")
         if results['selected_signals']:
             for sig in results['selected_signals']:
                 entry = sig.get('entry_price', 'N/A')
                 sl = sig.get('stop_loss', 'N/A')
                 tp = sig.get('take_profit', 'N/A')
-                logger.info(f"   │  ├─ {sig['symbol']}: {sig.get('recommendation', 'N/A')} @ {entry} (SL: {sl}, TP: {tp})")
+                logger.info(f"[CYCLE_SUMMARY]    │  ├─ {sig['symbol']}: {sig.get('recommendation', 'N/A')} @ {entry} (SL: {sl}, TP: {tp})")
 
         # Trades executed
         executed_trades = [t for t in results['trades_executed'] if t.get('status') != 'rejected']
         rejected_trades = [t for t in results['trades_executed'] if t.get('status') == 'rejected']
 
-        logger.info(f"   ├─ Trades executed: {len(executed_trades)}")
+        logger.info(f"[CYCLE_SUMMARY]    ├─ Trades executed: {len(executed_trades)}")
         if executed_trades:
             for trade in executed_trades:
                 order_id = trade.get('id', 'N/A')
@@ -284,42 +284,42 @@ class TradingCycle:
                 entry = trade.get('entry_price', 'N/A')
                 sl = trade.get('stop_loss', 'N/A')
                 tp = trade.get('take_profit', 'N/A')
-                logger.info(f"   │  ├─ {trade.get('symbol', 'N/A')}: {side} @ {entry} (SL: {sl}, TP: {tp}) (Order ID: {order_id}) ✅")
+                logger.info(f"[CYCLE_SUMMARY]    │  ├─ {trade.get('symbol', 'N/A')}: {side} @ {entry} (SL: {sl}, TP: {tp}) (Order ID: {order_id}) ✅")
 
         # Rejected trades
-        logger.info(f"   ├─ Rejected trades: {len(rejected_trades)}")
+        logger.info(f"[CYCLE_SUMMARY]    ├─ Rejected trades: {len(rejected_trades)}")
         if rejected_trades:
             for trade in rejected_trades:
                 error = trade.get('error', 'Unknown reason')
-                logger.info(f"   │  ├─ {trade.get('symbol', 'N/A')}: {error}")
+                logger.info(f"[CYCLE_SUMMARY]    │  ├─ {trade.get('symbol', 'N/A')}: {error}")
 
         # Errors
-        logger.info(f"   ├─ Errors: {len(results['errors'])}")
+        logger.info(f"[CYCLE_SUMMARY]    ├─ Errors: {len(results['errors'])}")
         if results['errors']:
             for error in results['errors'][:3]:
                 if isinstance(error, dict):
                     if 'symbol' in error:
-                        logger.info(f"   │  ├─ {error.get('symbol', 'N/A')}: {error.get('error', 'Unknown error')}")
+                        logger.info(f"[CYCLE_SUMMARY]    │  ├─ {error.get('symbol', 'N/A')}: {error.get('error', 'Unknown error')}")
                     else:
-                        logger.info(f"   │  ├─ {error.get('error', 'Unknown error')}")
+                        logger.info(f"[CYCLE_SUMMARY]    │  ├─ {error.get('error', 'Unknown error')}")
                 else:
-                    logger.info(f"   │  ├─ {str(error)}")
+                    logger.info(f"[CYCLE_SUMMARY]    │  ├─ {str(error)}")
 
         # Determine overall status
         status = "✅ Success" if len(results['errors']) == 0 else "⚠️ Completed with errors"
-        logger.info(f"   └─ Status: {status}")
+        logger.info(f"[CYCLE_SUMMARY]    └─ Status: {status}")
 
     def _print_step_0_summary(self, cleaned_count: int, duration: float) -> None:
         """Print summary for STEP 0: Chart Cleanup"""
         boundary = get_current_cycle_boundary(self.timeframe)
         boundary_end = boundary + timedelta(hours=int(self.timeframe.rstrip('h')))
 
-        logger.info(f"\n🧹 STEP 0 COMPLETE: Chart Cleanup")
-        logger.info(f"   ├─ Timeframe: {self.timeframe}")
-        logger.info(f"   ├─ Boundary: {boundary.strftime('%Y-%m-%d %H:%M:%S')} UTC to {boundary_end.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-        logger.info(f"   ├─ Cleaned: {cleaned_count} outdated charts")
-        logger.info(f"   ├─ Duration: {duration:.1f}s")
-        logger.info(f"   └─ Status: ✅ Success")
+        logger.info(f"[STEP_0_SUMMARY] 🧹 STEP 0 COMPLETE: Chart Cleanup")
+        logger.info(f"[STEP_0_SUMMARY]    ├─ Timeframe: {self.timeframe}")
+        logger.info(f"[STEP_0_SUMMARY]    ├─ Boundary: {boundary.strftime('%Y-%m-%d %H:%M:%S')} UTC to {boundary_end.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        logger.info(f"[STEP_0_SUMMARY]    ├─ Cleaned: {cleaned_count} outdated charts")
+        logger.info(f"[STEP_0_SUMMARY]    ├─ Duration: {duration:.1f}s")
+        logger.info(f"[STEP_0_SUMMARY]    └─ Status: ✅ Success")
 
     def _print_step_1_summary(self, chart_count: int, chart_paths: Dict[str, str], duration: float) -> None:
         """Print summary for STEP 1: Capture Charts"""
@@ -327,36 +327,36 @@ class TradingCycle:
         boundary_end = boundary + timedelta(hours=int(self.timeframe.rstrip('h')))
         target_chart = self.config.tradingview.target_chart if self.config.tradingview else None
 
-        logger.info(f"\n📷 STEP 1 COMPLETE: Capturing Charts")
-        logger.info(f"   ├─ Timeframe: {self.timeframe}")
-        logger.info(f"   ├─ Boundary: {boundary.strftime('%Y-%m-%d %H:%M:%S')} UTC to {boundary_end.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-        logger.info(f"   ├─ Charts captured: {chart_count}")
-        logger.info(f"   ├─ Target chart: {target_chart or 'None (using default)'}")
+        logger.info(f"[STEP_1_SUMMARY] 📷 STEP 1 COMPLETE: Capturing Charts")
+        logger.info(f"[STEP_1_SUMMARY]    ├─ Timeframe: {self.timeframe}")
+        logger.info(f"[STEP_1_SUMMARY]    ├─ Boundary: {boundary.strftime('%Y-%m-%d %H:%M:%S')} UTC to {boundary_end.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        logger.info(f"[STEP_1_SUMMARY]    ├─ Charts captured: {chart_count}")
+        logger.info(f"[STEP_1_SUMMARY]    ├─ Target chart: {target_chart or 'None (using default)'}")
         if chart_paths:
             symbols_list = ', '.join(sorted(chart_paths.keys()))
-            logger.info(f"   ├─ Watchlist symbols: {symbols_list}")
-        logger.info(f"   ├─ Duration: {duration:.1f}s")
-        logger.info(f"   └─ Status: ✅ Success")
+            logger.info(f"[STEP_1_SUMMARY]    ├─ Watchlist symbols: {symbols_list}")
+        logger.info(f"[STEP_1_SUMMARY]    ├─ Duration: {duration:.1f}s")
+        logger.info(f"[STEP_1_SUMMARY]    └─ Status: ✅ Success")
 
     def _print_step_1_5_summary(self, total_symbols: int, symbols_needing_analysis: List[str], symbols_with_existing: List[str]) -> None:
         """Print summary for STEP 1.5: Check Existing Recommendations"""
-        logger.info(f"\n🔍 STEP 1.5 COMPLETE: Checking Existing Recommendations")
-        logger.info(f"   ├─ Total symbols: {total_symbols}")
-        logger.info(f"   ├─ Newly need analysis: {len(symbols_needing_analysis)}")
+        logger.info(f"[STEP_1.5_SUMMARY] 🔍 STEP 1.5 COMPLETE: Checking Existing Recommendations")
+        logger.info(f"[STEP_1.5_SUMMARY]    ├─ Total symbols: {total_symbols}")
+        logger.info(f"[STEP_1.5_SUMMARY]    ├─ Newly need analysis: {len(symbols_needing_analysis)}")
         if symbols_needing_analysis:
-            logger.info(f"   │  ├─ {', '.join(symbols_needing_analysis[:10])}{'...' if len(symbols_needing_analysis) > 10 else ''}")
-        logger.info(f"   ├─ Already have recommendations: {len(symbols_with_existing)}")
+            logger.info(f"[STEP_1.5_SUMMARY]    │  ├─ {', '.join(symbols_needing_analysis[:10])}{'...' if len(symbols_needing_analysis) > 10 else ''}")
+        logger.info(f"[STEP_1.5_SUMMARY]    ├─ Already have recommendations: {len(symbols_with_existing)}")
         if symbols_with_existing:
-            logger.info(f"   │  ├─ {', '.join(symbols_with_existing[:10])}{'...' if len(symbols_with_existing) > 10 else ''}")
-        logger.info(f"   └─ Status: ✅ Success")
+            logger.info(f"[STEP_1.5_SUMMARY]    │  ├─ {', '.join(symbols_with_existing[:10])}{'...' if len(symbols_with_existing) > 10 else ''}")
+        logger.info(f"[STEP_1.5_SUMMARY]    └─ Status: ✅ Success")
 
     def _print_step_2_summary(self, analyzed_count: int, successful_count: int, failed_count: int, duration: float, analysis_results: List[Dict[str, Any]]) -> None:
         """Print summary for STEP 2: Parallel Analysis"""
-        logger.info(f"\n🤖 STEP 2 COMPLETE: Parallel Analysis")
-        logger.info(f"   ├─ Analyzed: {analyzed_count} charts")
-        logger.info(f"   ├─ Successful: {successful_count}")
-        logger.info(f"   ├─ Failed: {failed_count}")
-        logger.info(f"   ├─ Analysis results:")
+        logger.info(f"[STEP_2_SUMMARY] 🤖 STEP 2 COMPLETE: Parallel Analysis")
+        logger.info(f"[STEP_2_SUMMARY]    ├─ Analyzed: {analyzed_count} charts")
+        logger.info(f"[STEP_2_SUMMARY]    ├─ Successful: {successful_count}")
+        logger.info(f"[STEP_2_SUMMARY]    ├─ Failed: {failed_count}")
+        logger.info(f"[STEP_2_SUMMARY]    ├─ Analysis results:")
 
         # Show top 5 results
         for result in analysis_results[:5]:
@@ -364,82 +364,82 @@ class TradingCycle:
                 rec = result.get("recommendation", "N/A")
                 conf = result.get("confidence", 0)
                 rr = result.get("risk_reward", 0)
-                logger.info(f"   │  ├─ {result['symbol']}: {rec} (conf: {conf:.2f}, RR: {rr:.2f})")
+                logger.info(f"[STEP_2_SUMMARY]    │  ├─ {result['symbol']}: {rec} (conf: {conf:.2f}, RR: {rr:.2f})")
 
         if len(analysis_results) > 5:
-            logger.info(f"   │  └─ ... ({len(analysis_results) - 5} more)")
+            logger.info(f"[STEP_2_SUMMARY]    │  └─ ... ({len(analysis_results) - 5} more)")
 
-        logger.info(f"   ├─ Duration: {duration:.1f}s")
-        logger.info(f"   └─ Status: ✅ Success")
+        logger.info(f"[STEP_2_SUMMARY]    ├─ Duration: {duration:.1f}s")
+        logger.info(f"[STEP_2_SUMMARY]    └─ Status: ✅ Success")
 
     def _print_step_3_summary(self, total_recommendations: int, actionable_count: int, buy_count: int, sell_count: int, hold_count: int) -> None:
         """Print summary for STEP 3: Collect Recommendations"""
-        logger.info(f"\n📊 STEP 3 COMPLETE: Collecting Recommendations")
-        logger.info(f"   ├─ Total recommendations: {total_recommendations}")
-        logger.info(f"   ├─ Actionable signals: {actionable_count}")
-        logger.info(f"   │  ├─ BUY: {buy_count}")
-        logger.info(f"   │  ├─ SELL: {sell_count}")
-        logger.info(f"   │  └─ HOLD: {hold_count}")
-        logger.info(f"   └─ Status: ✅ Success")
+        logger.info(f"[STEP_3_SUMMARY] 📊 STEP 3 COMPLETE: Collecting Recommendations")
+        logger.info(f"[STEP_3_SUMMARY]    ├─ Total recommendations: {total_recommendations}")
+        logger.info(f"[STEP_3_SUMMARY]    ├─ Actionable signals: {actionable_count}")
+        logger.info(f"[STEP_3_SUMMARY]    │  ├─ BUY: {buy_count}")
+        logger.info(f"[STEP_3_SUMMARY]    │  ├─ SELL: {sell_count}")
+        logger.info(f"[STEP_3_SUMMARY]    │  └─ HOLD: {hold_count}")
+        logger.info(f"[STEP_3_SUMMARY]    └─ Status: ✅ Success")
 
     def _print_step_4_summary(self, ranked_signals: List[Dict[str, Any]]) -> None:
         """Print summary for STEP 4: Rank Signals"""
-        logger.info(f"\n🏆 STEP 4 COMPLETE: Ranking Signals by Quality")
-        logger.info(f"   ├─ Total signals ranked: {len(ranked_signals)}")
-        logger.info(f"   ├─ Top ranked signals:")
+        logger.info(f"[STEP_4_SUMMARY] 🏆 STEP 4 COMPLETE: Ranking Signals by Quality")
+        logger.info(f"[STEP_4_SUMMARY]    ├─ Total signals ranked: {len(ranked_signals)}")
+        logger.info(f"[STEP_4_SUMMARY]    ├─ Top ranked signals:")
 
         for i, sig in enumerate(ranked_signals[:5]):
-            logger.info(f"   │  ├─ #{i+1}: {sig['symbol']} (score: {sig['ranking_score']:.3f}, conf: {sig['confidence']:.2f}, RR: {sig.get('risk_reward', 0):.2f})")
+            logger.info(f"[STEP_4_SUMMARY]    │  ├─ #{i+1}: {sig['symbol']} (score: {sig['ranking_score']:.3f}, conf: {sig['confidence']:.2f}, RR: {sig.get('risk_reward', 0):.2f})")
 
         if len(ranked_signals) > 5:
-            logger.info(f"   │  └─ ... ({len(ranked_signals) - 5} more)")
+            logger.info(f"[STEP_4_SUMMARY]    │  └─ ... ({len(ranked_signals) - 5} more)")
 
-        logger.info(f"   └─ Status: ✅ Success")
+        logger.info(f"[STEP_4_SUMMARY]    └─ Status: ✅ Success")
 
     def _print_step_5_summary(self, available_slots: int, max_trades: int) -> None:
         """Print summary for STEP 5: Check Available Slots"""
-        logger.info(f"\n📦 STEP 5 COMPLETE: Checking Available Slots")
-        logger.info(f"   ├─ Available slots: {available_slots}/{max_trades}")
-        logger.info(f"   └─ Status: ✅ Success")
+        logger.info(f"[STEP_5_SUMMARY] 📦 STEP 5 COMPLETE: Checking Available Slots")
+        logger.info(f"[STEP_5_SUMMARY]    ├─ Available slots: {available_slots}/{max_trades}")
+        logger.info(f"[STEP_5_SUMMARY]    └─ Status: ✅ Success")
 
     def _print_step_6_summary(self, selected_signals: List[Dict[str, Any]], available_slots: int) -> None:
         """Print summary for STEP 6: Select Best Signals"""
-        logger.info(f"\n🎯 STEP 6 COMPLETE: Selecting Best Signals")
-        logger.info(f"   ├─ Selected: {len(selected_signals)} signals")
-        logger.info(f"   ├─ Available slots: {available_slots}")
-        logger.info(f"   ├─ Selected signals:")
+        logger.info(f"[STEP_6_SUMMARY] 🎯 STEP 6 COMPLETE: Selecting Best Signals")
+        logger.info(f"[STEP_6_SUMMARY]    ├─ Selected: {len(selected_signals)} signals")
+        logger.info(f"[STEP_6_SUMMARY]    ├─ Available slots: {available_slots}")
+        logger.info(f"[STEP_6_SUMMARY]    ├─ Selected signals:")
 
         for sig in selected_signals:
             entry = sig.get('entry_price', 'N/A')
             sl = sig.get('stop_loss', 'N/A')
             tp = sig.get('take_profit', 'N/A')
-            logger.info(f"   │  ├─ {sig['symbol']}: {sig.get('recommendation', 'N/A')} @ {entry} (SL: {sl}, TP: {tp})")
+            logger.info(f"[STEP_6_SUMMARY]    │  ├─ {sig['symbol']}: {sig.get('recommendation', 'N/A')} @ {entry} (SL: {sl}, TP: {tp})")
 
-        logger.info(f"   └─ Status: ✅ Success")
+        logger.info(f"[STEP_6_SUMMARY]    └─ Status: ✅ Success")
 
     def _print_step_7_summary(self, trades_executed: List[Dict[str, Any]], selected_count: int) -> None:
         """Print summary for STEP 7: Execute Signals"""
         successful_trades = [t for t in trades_executed if t.get('status') != 'rejected']
         rejected_trades = [t for t in trades_executed if t.get('status') == 'rejected']
 
-        logger.info(f"\n🚀 STEP 7 COMPLETE: Executing Signals")
-        logger.info(f"   ├─ Selected for execution: {selected_count}")
-        logger.info(f"   ├─ Trades executed: {len(successful_trades)}")
+        logger.info(f"[STEP_7_SUMMARY] 🚀 STEP 7 COMPLETE: Executing Signals")
+        logger.info(f"[STEP_7_SUMMARY]    ├─ Selected for execution: {selected_count}")
+        logger.info(f"[STEP_7_SUMMARY]    ├─ Trades executed: {len(successful_trades)}")
 
         if successful_trades:
             for trade in successful_trades:
                 order_id = trade.get('id', 'N/A')
                 side = trade.get('side', 'N/A')
                 entry = trade.get('entry_price', 'N/A')
-                logger.info(f"   │  ├─ {trade.get('symbol', 'N/A')}: {side} @ {entry} (Order ID: {order_id}) ✅")
+                logger.info(f"[STEP_7_SUMMARY]    │  ├─ {trade.get('symbol', 'N/A')}: {side} @ {entry} (Order ID: {order_id}) ✅")
 
-        logger.info(f"   ├─ Rejected trades: {len(rejected_trades)}")
+        logger.info(f"[STEP_7_SUMMARY]    ├─ Rejected trades: {len(rejected_trades)}")
         if rejected_trades:
             for trade in rejected_trades:
                 error = trade.get('error', 'Unknown reason')
-                logger.info(f"   │  ├─ {trade.get('symbol', 'N/A')}: {error}")
+                logger.info(f"[STEP_7_SUMMARY]    │  ├─ {trade.get('symbol', 'N/A')}: {error}")
 
-        logger.info(f"   └─ Status: ✅ Success")
+        logger.info(f"[STEP_7_SUMMARY]    └─ Status: ✅ Success")
 
     async def run_cycle_async(self) -> Dict[str, Any]:
         """
