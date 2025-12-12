@@ -6,7 +6,6 @@ import { LoadingState, ErrorState, CycleSummaryCard } from '@/components/shared'
 import TradeChartModal from '@/components/shared/TradeChartModal'
 import StatsBar, { StatsScope } from '@/components/StatsBar'
 import { CycleStatusCard } from '@/components/instance/CycleStatusCard'
-import { BotStatsCard } from '@/components/instance/BotStatsCard'
 import { useBotState } from '@/lib/context/BotStateContext'
 import { useRealtime } from '@/hooks/useRealtime'
 import VncLoginModal from '@/components/VncLoginModal'
@@ -359,6 +358,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
           <StatsBar
             scope={statsScope}
             scopeId={instanceId}
+            instanceId={instanceId}
             onScopeChange={setStatsScope}
             showScopeSelector={true}
           />
@@ -407,69 +407,68 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         </div>
       </div>
 
-      {/* Row 2: Cycle Status + Bot Stats + Simulator Activity */}
+      {/* Row 2: Cycle Status + Cycle Summary */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Left column: Cycle Status & Simulator Activity */}
-        <div className="lg:col-span-1 flex flex-col gap-4">
-          <CycleStatusCard instanceId={instanceId} />
-          {/* Cycle Summary Card - Real-time updates */}
-          <CycleSummaryCard instanceId={instanceId} />
-          <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <RefreshCw className={`w-4 h-4 text-cyan-400 ${monitorStatus?.running ? 'animate-spin' : ''}`} />
-                Simulator Activity
-                {monitorStatus?.running && (
-                  <span className="text-xs bg-green-900/50 text-green-400 px-2 py-0.5 rounded animate-pulse">LIVE</span>
-                )}
-              </h3>
-              {monitorStatus?.last_check && (
-                <div className="text-sm text-slate-500">
-                  Last check: {new Date(monitorStatus.last_check).toLocaleTimeString()}
-                </div>
-              )}
-            </div>
-            <div className="bg-slate-900 rounded-lg p-3 font-mono text-xs max-h-48 overflow-y-auto">
-              {monitorStatus?.results && monitorStatus.results.length > 0 ? (
-                <div className="space-y-1">
-                  {monitorStatus.results.slice(-10).map((result, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <span className="text-slate-500">[{new Date(result.checked_at || Date.now()).toLocaleTimeString()}]</span>
-                      <span className={result.action === 'closed' ? 'text-yellow-400' : 'text-slate-400'}>
-                        {result.action === 'closed' ? '🔔 CLOSED' : '✓ Checked'}
-                      </span>
-                      <span className="text-white">{result.symbol}</span>
-                      <span className="text-blue-400">@ ${result.current_price.toFixed(4)}</span>
-                      {result.instance_name && (
-                        <span className="text-slate-400">• {result.instance_name}</span>
-                      )}
-                      {result.action === 'closed' && (
-                        <span className="text-yellow-300">→ Trade closed!</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-slate-500">
-                  {monitorStatus?.running ? 'Waiting for next check...' : 'Monitor not running'}
-                </div>
-              )}
-              {monitorStatus?.last_check && (
-                <div className="mt-2 pt-2 border-t border-slate-700 text-slate-500">
-                  Checked: {monitorStatus.trades_checked} | Closed: {monitorStatus.trades_closed}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        
-        {/* Right column: Bot Stats Card */}
+        {/* Left column: Cycle Status */}
         <div className="lg:col-span-1">
-          <BotStatsCard instanceId={instanceId} />
+          <CycleStatusCard instanceId={instanceId} />
+        </div>
+        {/* Right column: Cycle Summary */}
+        <div className="lg:col-span-1">
+          <CycleSummaryCard instanceId={instanceId} />
         </div>
       </div>
 
-      {/* Row 3: Bot Logs Preview */}
+      {/* Row 3: Simulator Activity */}
+      <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <RefreshCw className={`w-4 h-4 text-cyan-400 ${monitorStatus?.running ? 'animate-spin' : ''}`} />
+            Simulator Activity
+            {monitorStatus?.running && (
+              <span className="text-xs bg-green-900/50 text-green-400 px-2 py-0.5 rounded animate-pulse">LIVE</span>
+            )}
+          </h3>
+          {monitorStatus?.last_check && (
+            <div className="text-sm text-slate-500">
+              Last check: {new Date(monitorStatus.last_check).toLocaleTimeString()}
+            </div>
+          )}
+        </div>
+        <div className="bg-slate-900 rounded-lg p-3 font-mono text-xs max-h-48 overflow-y-auto">
+          {monitorStatus?.results && monitorStatus.results.length > 0 ? (
+            <div className="space-y-1">
+              {monitorStatus.results.slice(-10).map((result, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <span className="text-slate-500">[{new Date(result.checked_at || Date.now()).toLocaleTimeString()}]</span>
+                  <span className={result.action === 'closed' ? 'text-yellow-400' : 'text-slate-400'}>
+                    {result.action === 'closed' ? '🔔 CLOSED' : '✓ Checked'}
+                  </span>
+                  <span className="text-white">{result.symbol}</span>
+                  <span className="text-blue-400">@ ${result.current_price.toFixed(4)}</span>
+                  {result.instance_name && (
+                    <span className="text-slate-400">• {result.instance_name}</span>
+                  )}
+                  {result.action === 'closed' && (
+                    <span className="text-yellow-300">→ Trade closed!</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-slate-500">
+              {monitorStatus?.running ? 'Waiting for next check...' : 'Monitor not running'}
+            </div>
+          )}
+          {monitorStatus?.last_check && (
+            <div className="mt-2 pt-2 border-t border-slate-700 text-slate-500">
+              Checked: {monitorStatus.trades_checked} | Closed: {monitorStatus.trades_closed}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Row 4: Bot Logs Preview */}
       <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -503,7 +502,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         </div>
       </div>
 
-      {/* Row 4: Open Positions - Full Width */}
+      {/* Row 5: Open Positions - Full Width */}
       <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
