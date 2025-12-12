@@ -621,6 +621,27 @@ export async function POST() {
       }
 
       // STEP 2: Check for SL/TP hit starting from candle AFTER fill
+      // IMPORTANT: Only proceed if trade is actually filled
+      // A trade can only be closed if it was filled first
+      const isFilled = alreadyFilled || (trade.status === 'filled' && trade.filled_at);
+
+      if (!isFilled) {
+        // Trade was never filled - cannot close it
+        // This should not happen as unfilled trades are handled above, but safety check
+        console.log(`[Auto-Close] ${trade.symbol} SKIPPED - trade not filled, cannot close`);
+        results.push({
+          trade_id: trade.id,
+          symbol: trade.symbol,
+          action: 'checked',
+          current_price: await getCurrentPrice(trade.symbol),
+          instance_name: trade.instance_name,
+          candles_checked: candles.length,
+          bars_open: 0,
+          checked_at: new Date().toISOString()
+        });
+        continue;
+      }
+
       const exitResult = checkHistoricalSLTP(candles, isLong, stopLoss, takeProfit, fillCandleIndex);
 
       // Calculate bars since fill (for max_open_bars check)
