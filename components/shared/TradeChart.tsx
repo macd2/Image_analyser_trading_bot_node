@@ -49,6 +49,8 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
   const [wsEnabled, setWsEnabled] = useState(false)
   const [priceDecimals, setPriceDecimals] = useState<number>(4)
   const initialLoadRef = useRef(true)
+  const fetchInProgressRef = useRef(false)
+  const lastFetchKeyRef = useRef<string>('')
 
   // Show loading until data is rendered on chart (or there's an error)
   const loading = !dataRendered && !error
@@ -108,15 +110,20 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
 
   // WebSocket update handler
   const handleKlineUpdate = useCallback((kline: { start: number; open: string; high: string; low: string; close: string }) => {
-    if (!candleSeriesRef.current) return
-    const newCandle: CandlestickData<Time> = {
-      time: Math.floor(kline.start / 1000) as Time,
-      open: parseFloat(kline.open),
-      high: parseFloat(kline.high),
-      low: parseFloat(kline.low),
-      close: parseFloat(kline.close),
+    // Check if component is still mounted and chart/series still exist
+    if (!isMountedRef.current || !candleSeriesRef.current || !chartRef.current) return
+    try {
+      const newCandle: CandlestickData<Time> = {
+        time: Math.floor(kline.start / 1000) as Time,
+        open: parseFloat(kline.open),
+        high: parseFloat(kline.high),
+        low: parseFloat(kline.low),
+        close: parseFloat(kline.close),
+      }
+      candleSeriesRef.current.update(newCandle)
+    } catch (e) {
+      console.warn('[TradeChart] Error updating candle (chart may be disposed):', e)
     }
-    candleSeriesRef.current.update(newCandle)
   }, [])
 
   // Only enable WebSocket in live mode
@@ -137,13 +144,24 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
         return
       }
 
+      const timestamp = new Date(tradeTimestamp).getTime()
+      const timeframe = trade.timeframe || '1h'
+
+      // Create a unique key for this fetch request
+      const fetchKey = `${trade.symbol}|${timeframe}|${timestamp}`
+
+      // Skip if we're already fetching this exact request or already fetched it
+      if (fetchInProgressRef.current || lastFetchKeyRef.current === fetchKey) {
+        console.log('[TradeChart] Skipping duplicate fetch:', fetchKey)
+        return
+      }
+
       setDataRendered(false)
       setError(null)
+      fetchInProgressRef.current = true
+      lastFetchKeyRef.current = fetchKey
 
       try {
-        const timestamp = new Date(tradeTimestamp).getTime()
-        const timeframe = trade.timeframe || '1h'
-
         // For historical mode (closed trades), fetch candles up to closed_at
         const endTimestamp = mode === 'historical' && trade.closed_at
           ? new Date(trade.closed_at).getTime()
@@ -158,6 +176,11 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
         const res = await fetch(url)
         const data = await res.json()
         console.log('[TradeChart] Response:', data)
+
+        if (!isMountedRef.current) {
+          console.log('[TradeChart] Component unmounted, skipping state update')
+          return
+        }
 
         if (data.error) {
           console.error('[TradeChart] API error:', data.error)
@@ -176,13 +199,17 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
         }
       } catch (err) {
         console.error('[TradeChart] Fetch error:', err)
-        setError('Failed to fetch candles')
+        if (isMountedRef.current) {
+          setError('Failed to fetch candles')
+        }
+      } finally {
+        fetchInProgressRef.current = false
       }
     }
 
     fetchCandles()
     return () => setWsEnabled(false)
-  }, [trade.symbol, trade.submitted_at, trade.filled_at, trade.created_at, trade.closed_at, trade.timeframe, mode, tradePriceDecimals])
+  }, [trade.id])
 
   // Create chart - recreate when chartReady is false (after reset) or on mount
   useEffect(() => {
@@ -201,7 +228,7 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
         timeScale: { timeVisible: true, secondsVisible: false },
         rightPriceScale: {
           autoScale: true,
-          scaleMargins: { top: 0.1, bottom: 0.1 },
+          scaleMargins: { top: 0.1, bottom: 0.3 }, // Increased bottom margin for volume
           borderVisible: false,
           ticksVisible: true,
           mode: 0, // Normal mode - shows all prices
@@ -214,8 +241,12 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
 
       // Create and store resize handler for cleanup
       const handleResize = () => {
-        if (chartContainerRef.current && chartRef.current) {
-          chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth, height })
+        if (isMountedRef.current && chartContainerRef.current && chartRef.current) {
+          try {
+            chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth, height })
+          } catch (e) {
+            console.warn('[TradeChart] Error resizing chart (may be disposed):', e)
+          }
         }
       }
       resizeHandlerRef.current = handleResize
@@ -223,7 +254,7 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
     }, 100)
 
     return () => clearTimeout(timer)
-  }, [chartReady, height, priceDecimals])
+  }, [chartReady, height])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -241,6 +272,7 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
           console.warn('[TradeChart] Error removing chart on unmount:', e)
         }
         chartRef.current = null
+        candleSeriesRef.current = null
       }
     }
   }, [])
@@ -253,14 +285,14 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
     try {
       // Remove old series if it exists
       if (candleSeriesRef.current && chartRef.current) {
-        console.log('[TradeChart] Removing old series')
+        console.log('[TradeChart] Removing old candle series')
         chartRef.current.removeSeries(candleSeriesRef.current)
         candleSeriesRef.current = null
       }
 
       if (!chartRef.current) return // Chart may have been disposed
 
-      console.log('[TradeChart] Adding new series with', candles.length, 'candles')
+      console.log('[TradeChart] Adding new candle series with', candles.length, 'candles')
       const series = chartRef.current.addSeries(CandlestickSeries, {
         upColor: '#22c55e', downColor: '#ef4444',
         borderUpColor: '#22c55e', borderDownColor: '#ef4444',
@@ -268,7 +300,46 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
       })
       candleSeriesRef.current = series
       series.setData(candles)
-      console.log('[TradeChart] Data set on series')
+      console.log('[TradeChart] Candle data set on series')
+
+      // Add volume series - compute from candles
+      // TODO: Volume series temporarily disabled to debug chart rendering issue
+      // Will re-enable after confirming chart renders properly
+      /*
+      try {
+        const volumeData = candles.map((c: any) => ({
+          time: c.time,
+          value: c.volume || 0,
+          color: (c.close as number) >= (c.open as number) ? '#22c55e' : '#ef4444' // Green for up, red for down
+        }))
+
+        if (volumeData.length > 0 && chartRef.current) {
+          console.log('[TradeChart] Adding volume series with', volumeData.length, 'bars')
+          const volumeSeries = chartRef.current.addSeries(BarSeries, {
+            priceScaleId: 'volume',
+            priceFormat: { type: 'volume' },
+          })
+          volumeSeriesRef.current = volumeSeries
+          volumeSeries.setData(volumeData)
+
+          // Configure volume price scale
+          if (chartRef.current) {
+            chartRef.current.priceScale('volume').applyOptions({
+              scaleMargins: {
+                top: 0.7, // Volume takes bottom 30% of chart
+                bottom: 0,
+              },
+              borderVisible: false,
+              ticksVisible: false,
+            })
+          }
+          console.log('[TradeChart] Volume data set on series')
+        }
+      } catch (volumeErr) {
+        console.warn('[TradeChart] Error adding volume series (non-fatal):', volumeErr)
+        // Continue even if volume series fails
+      }
+      */
 
       const formatPrice = (p: number) => p.toFixed(priceDecimals)
 
@@ -353,9 +424,13 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
       createSeriesMarkers(series, markers as any)
     }
 
-      if (initialLoadRef.current && chartRef.current) {
-        chartRef.current.timeScale().fitContent()
-        initialLoadRef.current = false
+      if (initialLoadRef.current && chartRef.current && isMountedRef.current) {
+        try {
+          chartRef.current.timeScale().fitContent()
+          initialLoadRef.current = false
+        } catch (e) {
+          console.warn('[TradeChart] Error fitting content (chart may be disposed):', e)
+        }
       }
 
       // Wait for the chart to actually render before hiding loading spinner
