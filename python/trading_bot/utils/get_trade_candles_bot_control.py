@@ -285,13 +285,30 @@ def get_candles_for_trade(symbol: str, timeframe: str, timestamp_ms: int,
 
                 # Cache these candles for future use using centralized client
                 if fetched_candles:
+                    # IMPORTANT: Filter out incomplete candles (current timeframe still forming)
+                    # A candle is incomplete if it started within the current timeframe period
+                    import time
+                    now_ms = int(time.time() * 1000)
+                    timeframe_ms_map = {
+                        '1m': 60000, '3m': 180000, '5m': 300000, '15m': 900000, '30m': 1800000,
+                        '1h': 3600000, '2h': 7200000, '4h': 14400000, '6h': 21600000, '12h': 43200000,
+                        '1d': 86400000, '1w': 604800000, '1M': 2592000000
+                    }
+                    timeframe_ms_val = timeframe_ms_map.get(timeframe, 3600000)
+
+                    # Filter out candles that started within the current timeframe period
+                    filtered_candles = [c for c in fetched_candles if (now_ms - c['start_time']) >= timeframe_ms_val]
+
+                    if len(filtered_candles) < len(fetched_candles):
+                        sys.stderr.write(f"Filtered out {len(fetched_candles) - len(filtered_candles)} incomplete candle(s) before caching\n")
+
                     try:
                         category = 'linear'
-                        _insert_candles_to_db(fetched_candles, symbol, timeframe, category)
+                        _insert_candles_to_db(filtered_candles, symbol, timeframe, category)
                     except Exception as cache_err:
                         sys.stderr.write(f"Cache error (non-fatal): {cache_err}\n")
 
-                    # Merge fetched candles with cached ones (NEVER overwrite, only add new)
+                    # Merge filtered candles with cached ones (NEVER overwrite, only add new)
                     # Create a dict of cached candles by time
                     cached_by_time = {c['start_time']: c for c in candles}
 
@@ -307,7 +324,7 @@ def get_candles_for_trade(symbol: str, timeframe: str, timestamp_ms: int,
                     # Convert back to sorted list
                     candles = sorted(cached_by_time.values(), key=lambda x: x['start_time'])
                     fetch_status = 'fetched'
-                    sys.stderr.write(f"Fetched {len(fetched_candles)} candles from Bybit, added {new_candles_count} new, total now {len(cached_by_time)}\n")
+                    sys.stderr.write(f"Fetched {len(fetched_candles)} candles from Bybit, filtered to {len(filtered_candles)}, added {new_candles_count} new, total now {len(cached_by_time)}\n")
             else:
                 sys.stderr.write(f"Bybit API error: {response.get('retMsg', 'Unknown error')}\n")
                 fetch_status = 'error'
@@ -359,6 +376,24 @@ def get_candles_for_trade(symbol: str, timeframe: str, timestamp_ms: int,
 
     # Sort by time to ensure correct order
     formatted = sorted(candles_by_time.values(), key=lambda x: x['time'])
+
+    # Filter out incomplete candles (current candle still forming)
+    # A candle is incomplete if it started within the current timeframe period
+    import time
+    now_ms = int(time.time() * 1000)
+    timeframe_ms = {
+        '1m': 60000, '3m': 180000, '5m': 300000, '15m': 900000, '30m': 1800000,
+        '1h': 3600000, '2h': 7200000, '4h': 14400000, '6h': 21600000, '12h': 43200000,
+        '1d': 86400000, '1w': 604800000, '1M': 2592000000
+    }.get(timeframe, 3600000)
+
+    # Keep only candles that started more than one timeframe ago
+    formatted_filtered = [c for c in formatted if (now_ms - (c['time'] * 1000)) >= timeframe_ms]
+
+    if len(formatted_filtered) < len(formatted):
+        sys.stderr.write(f"Filtered out {len(formatted) - len(formatted_filtered)} incomplete candle(s) (still forming)\n")
+
+    formatted = formatted_filtered
 
     # Log candle data for debugging
     if formatted:

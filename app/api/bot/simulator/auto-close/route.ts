@@ -45,6 +45,8 @@ interface Candle {
   high: number;
   low: number;
   close: number;
+  volume?: number;
+  turnover?: number;
 }
 
 interface FillResult {
@@ -93,7 +95,7 @@ async function storeCandles(
         `INSERT INTO klines (symbol, timeframe, category, start_time, open_price, high_price, low_price, close_price, volume, turnover)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (symbol, timeframe, start_time) DO NOTHING`,
-        [normSymbol, timeframe, 'linear', c.timestamp, c.open, c.high, c.low, c.close, 0, 0]
+        [normSymbol, timeframe, 'linear', c.timestamp, c.open, c.high, c.low, c.close, c.volume || 0, c.turnover || 0]
       );
     } catch {
       // Ignore duplicate key errors
@@ -193,12 +195,15 @@ async function getHistoricalCandles(
     }
 
     // Parse candles - Bybit returns newest first, so reverse
+    // Bybit kline format: [timestamp, open, high, low, close, volume, turnover]
     const candles: Candle[] = data.result.list.map(c => ({
       timestamp: parseInt(c[0]),
       open: parseFloat(c[1]),
       high: parseFloat(c[2]),
       low: parseFloat(c[3]),
-      close: parseFloat(c[4])
+      close: parseFloat(c[4]),
+      volume: parseFloat(c[5] || '0'),
+      turnover: parseFloat(c[6] || '0')
     })).reverse(); // Oldest first for chronological checking
 
     console.log(`[Auto-Close] Bybit returned ${candles.length} candles for ${symbol} ${timeframe}`);
@@ -216,8 +221,22 @@ async function getHistoricalCandles(
     }
 
     // Store fetched candles to database for future use
-    await storeCandles(symbol, timeframe, candles);
-    console.log(`[Auto-Close] Stored ${candles.length} candles to database for ${symbol} ${timeframe}`);
+    // IMPORTANT: Filter out the current/incomplete candle (the most recent one)
+    // A candle is incomplete if its start_time is within the current timeframe period
+    const now = Date.now();
+    const timeframeMs = TIMEFRAME_MS[timeframe] || 3600000; // Default to 1h
+    const candlesToStore = candles.filter(c => {
+      const candleAge = now - c.timestamp;
+      // Keep candles that started more than one timeframe ago
+      return candleAge >= timeframeMs;
+    });
+
+    if (candlesToStore.length < candles.length) {
+      console.log(`[Auto-Close] Filtered out ${candles.length - candlesToStore.length} incomplete candle(s) (still forming)`);
+    }
+
+    await storeCandles(symbol, timeframe, candlesToStore);
+    console.log(`[Auto-Close] Stored ${candlesToStore.length} candles to database for ${symbol} ${timeframe}`);
 
     return candles;
   } catch (e) {
