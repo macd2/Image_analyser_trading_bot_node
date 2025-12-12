@@ -470,12 +470,30 @@ export async function POST() {
         continue;
       }
 
+      // CRITICAL FIX: Filter candles to only include those at or after trade creation
+      // A trade cannot be filled before it was created!
+      const candlesAfterCreation = candles.filter(c => c.timestamp >= createdAt);
+
+      if (candlesAfterCreation.length === 0) {
+        console.log(`[Auto-Close] No candles after trade creation (${new Date(createdAt).toISOString()}), skipping`);
+        results.push({
+          trade_id: trade.id,
+          symbol: trade.symbol,
+          action: 'checked',
+          current_price: 0,
+          instance_name: trade.instance_name,
+          candles_checked: 0,
+          checked_at: new Date().toISOString()
+        });
+        continue;
+      }
+
       // Log candle time range for debugging
       let firstCandleTime = 'unknown';
       let lastCandleTime = 'unknown';
       try {
-        const firstTs = candles[0].timestamp;
-        const lastTs = candles[candles.length - 1].timestamp;
+        const firstTs = candlesAfterCreation[0].timestamp;
+        const lastTs = candlesAfterCreation[candlesAfterCreation.length - 1].timestamp;
         // Validate timestamps are valid numbers
         if (typeof firstTs === 'number' && !isNaN(firstTs) && firstTs > 0) {
           firstCandleTime = new Date(firstTs).toISOString();
@@ -498,12 +516,13 @@ export async function POST() {
         const filledAtDate = new Date(trade.filled_at as string);
         if (!isNaN(filledAtDate.getTime())) {
           const filledAtMs = filledAtDate.getTime();
-          fillCandleIndex = candles.findIndex(c => c.timestamp >= filledAtMs);
+          fillCandleIndex = candlesAfterCreation.findIndex(c => c.timestamp >= filledAtMs);
           if (fillCandleIndex === -1) fillCandleIndex = 0;
         }
       } else {
         // Find fill candle (first candle where entry price was touched)
-        const fillResult = findFillCandle(candles, entryPrice);
+        // Only check candles at or after trade creation time
+        const fillResult = findFillCandle(candlesAfterCreation, entryPrice);
 
         if (!fillResult.filled) {
           // Trade not filled yet - check if it's pending_fill and been waiting too long
