@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { TrendingUp, AlertCircle, CheckCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react'
+import { TrendingUp, ChevronDown, ChevronUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useRealtime } from '@/hooks/useRealtime'
 import { useBotState } from '@/lib/context/BotStateContext'
@@ -31,7 +31,7 @@ interface CycleSummaryData {
 }
 
 export function CycleSummaryCard({ instanceId }: CycleSummaryCardProps) {
-  const { socket } = useRealtime()
+  useRealtime()
   const { logs } = useBotState()
   const [cycleSummary, setCycleSummary] = useState<CycleSummaryData | null>(null)
   const [expandedSections, setExpandedSections] = useState({

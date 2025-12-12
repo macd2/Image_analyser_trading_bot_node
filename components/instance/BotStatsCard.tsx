@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Activity, Clock, Cpu, BarChart3, TrendingUp, Target, DollarSign, User } from 'lucide-react'
+import { Activity, Clock, Cpu, User } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { LoadingState } from '@/components/shared'
 
@@ -105,119 +105,65 @@ export function BotStatsCard({ instanceId }: BotStatsCardProps) {
           <span className="text-slate-500">{instance_info.prompt_name}</span>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Runtime Stats */}
-        <div className="space-y-3">
-          <div className="text-xs text-slate-400">Runtime</div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-slate-700/30 rounded p-2">
-              <div className="flex items-center gap-2 mb-1">
-                <Clock className="w-3 h-3 text-blue-400" />
-                <span className="text-xs text-slate-400">Running</span>
-              </div>
-              <div className="text-white font-medium text-sm">
-                {formatDuration(runtime_stats.running_duration_hours)}
-              </div>
+      <CardContent className="space-y-2">
+        {/* Row 1: Running Duration + Cycles + Position Slots + Started */}
+        <div className="grid grid-cols-4 gap-3">
+          <div className="bg-slate-700/30 rounded p-2">
+            <div className="flex items-center gap-2 mb-1">
+              <Clock className="w-3 h-3 text-blue-400" />
+              <span className="text-xs text-slate-400">Running</span>
             </div>
-            <div className="bg-slate-700/30 rounded p-2">
-              <div className="flex items-center gap-2 mb-1">
-                <Cpu className="w-3 h-3 text-purple-400" />
-                <span className="text-xs text-slate-400">Cycles</span>
-              </div>
-              <div className="text-white font-medium text-sm">
-                {runtime_stats.cycle_count}
-              </div>
+            <div className="text-white font-medium text-sm">
+              {formatDuration(runtime_stats.running_duration_hours)}
             </div>
           </div>
-        </div>
-
-        {/* Performance Metrics */}
-        <div className="space-y-3">
-          <div className="text-xs text-slate-400">Performance</div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-slate-700/30 rounded p-2">
-              <div className="flex items-center gap-2 mb-1">
-                <Target className="w-3 h-3 text-green-400" />
-                <span className="text-xs text-slate-400">Win Rate</span>
-              </div>
-              <div className="text-white font-medium text-sm">
-                {runtime_stats.win_rate.toFixed(1)}%
-              </div>
+          <div className="bg-slate-700/30 rounded p-2">
+            <div className="flex items-center gap-2 mb-1">
+              <Cpu className="w-3 h-3 text-purple-400" />
+              <span className="text-xs text-slate-400">Cycles</span>
             </div>
-            <div className="bg-slate-700/30 rounded p-2">
-              <div className="flex items-center gap-2 mb-1">
-                <DollarSign className="w-3 h-3 text-amber-400" />
-                <span className="text-xs text-slate-400">Total P&L</span>
-              </div>
-              <div className={`font-medium text-sm ${runtime_stats.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {runtime_stats.total_pnl >= 0 ? '+' : ''}${runtime_stats.total_pnl.toFixed(2)}
-              </div>
+            <div className="text-white font-medium text-sm">
+              {runtime_stats.cycle_count}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-slate-700/30 rounded p-2">
-              <div className="flex items-center gap-2 mb-1">
-                <TrendingUp className="w-3 h-3 text-blue-400" />
-                <span className="text-xs text-slate-400">Avg Confidence</span>
-              </div>
-              <div className="text-white font-medium text-sm">
-                {(runtime_stats.avg_confidence * 100).toFixed(1)}%
-              </div>
+          <div className="bg-slate-700/30 rounded p-2">
+            <div className="flex justify-between text-xs mb-1">
+              <span className="text-slate-400">Position Slots</span>
             </div>
-            <div className="bg-slate-700/30 rounded p-2">
-              <div className="flex items-center gap-2 mb-1">
-                <BarChart3 className="w-3 h-3 text-purple-400" />
-                <span className="text-xs text-slate-400">Total Trades</span>
-              </div>
-              <div className="text-white font-medium text-sm">
-                {runtime_stats.total_trades}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Slot Usage */}
-        <div className="space-y-2">
-          <div className="flex justify-between text-xs">
-            <span className="text-slate-400">Position Slots</span>
-            <span className="text-white">
+            <div className="text-white font-medium text-sm mb-1">
               {performance_metrics.slots_used}/{performance_metrics.slots_available}
-            </span>
+            </div>
+            <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 ${slotUsagePercentage > 80 ? 'bg-red-500' : slotUsagePercentage > 50 ? 'bg-amber-500' : 'bg-green-500'}`}
+                style={{ width: `${slotUsagePercentage}%` }}
+              />
+            </div>
           </div>
-          <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-            <div 
-              className={`h-full transition-all duration-500 ${slotUsagePercentage > 80 ? 'bg-red-500' : slotUsagePercentage > 50 ? 'bg-amber-500' : 'bg-green-500'}`}
-              style={{ width: `${slotUsagePercentage}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Activity Metrics */}
-        <div className="border-t border-slate-700 pt-3">
-          <div className="text-xs text-slate-400 mb-2">Current Cycle Activity</div>
-          <div className="grid grid-cols-4 gap-2 text-center">
-            <div className="bg-blue-900/20 rounded p-1">
-              <div className="text-[10px] text-blue-400">Charts</div>
-              <div className="text-white font-medium text-sm">{performance_metrics.charts_captured}</div>
-            </div>
-            <div className="bg-purple-900/20 rounded p-1">
-              <div className="text-[10px] text-purple-400">Analyses</div>
-              <div className="text-white font-medium text-sm">{performance_metrics.analyses_completed}</div>
-            </div>
-            <div className="bg-amber-900/20 rounded p-1">
-              <div className="text-[10px] text-amber-400">Signals</div>
-              <div className="text-white font-medium text-sm">{performance_metrics.recommendations_generated}</div>
-            </div>
-            <div className="bg-green-900/20 rounded p-1">
-              <div className="text-[10px] text-green-400">Trades</div>
-              <div className="text-white font-medium text-sm">{performance_metrics.trades_executed}</div>
-            </div>
+          <div className="bg-slate-700/30 rounded p-2 text-center">
+            <div className="text-[10px] text-slate-400 mb-1">Started</div>
+            <div className="text-white font-medium text-sm">{new Date(runtime_stats.start_time).toLocaleDateString()}</div>
           </div>
         </div>
 
-        {/* Start Time */}
-        <div className="text-[10px] text-slate-500 text-center">
-          Started: {new Date(runtime_stats.start_time).toLocaleString()}
+        {/* Row 2: Charts + Analyses + Signals + Trades Executed */}
+        <div className="grid grid-cols-4 gap-3">
+          <div className="bg-blue-900/20 rounded p-2 text-center">
+            <div className="text-[10px] text-blue-400 mb-1">Charts</div>
+            <div className="text-white font-medium text-sm">{performance_metrics.charts_captured}</div>
+          </div>
+          <div className="bg-purple-900/20 rounded p-2 text-center">
+            <div className="text-[10px] text-purple-400 mb-1">Analyses</div>
+            <div className="text-white font-medium text-sm">{performance_metrics.analyses_completed}</div>
+          </div>
+          <div className="bg-amber-900/20 rounded p-2 text-center">
+            <div className="text-[10px] text-amber-400 mb-1">Signals</div>
+            <div className="text-white font-medium text-sm">{performance_metrics.recommendations_generated}</div>
+          </div>
+          <div className="bg-green-900/20 rounded p-2 text-center">
+            <div className="text-[10px] text-green-400 mb-1">Executed</div>
+            <div className="text-white font-medium text-sm">{performance_metrics.trades_executed}</div>
+          </div>
         </div>
       </CardContent>
     </Card>
