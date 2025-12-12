@@ -270,7 +270,9 @@ def get_candles_for_trade(symbol: str, timeframe: str, timestamp_ms: int,
 
             if response.get('retCode') == 0 and response.get('result', {}).get('list'):
                 fetched_candles = []
-                for kline in response['result']['list']:
+                # Bybit returns candles in reverse chronological order (newest first)
+                # We need to reverse them to get oldest first
+                for kline in reversed(response['result']['list']):
                     fetched_candles.append({
                         'start_time': int(kline[0]),
                         'open_price': float(kline[1]),
@@ -289,10 +291,23 @@ def get_candles_for_trade(symbol: str, timeframe: str, timestamp_ms: int,
                     except Exception as cache_err:
                         sys.stderr.write(f"Cache error (non-fatal): {cache_err}\n")
 
-                    # Use the fetched candles directly (sorted by time ascending)
-                    candles = sorted(fetched_candles, key=lambda x: x['start_time'])
+                    # Merge fetched candles with cached ones (NEVER overwrite, only add new)
+                    # Create a dict of cached candles by time
+                    cached_by_time = {c['start_time']: c for c in candles}
+
+                    # Count new candles added
+                    new_candles_count = 0
+                    for fc in fetched_candles:
+                        if fc['start_time'] not in cached_by_time:
+                            # Only add if this timestamp doesn't exist
+                            cached_by_time[fc['start_time']] = fc
+                            new_candles_count += 1
+                        # If timestamp exists, keep the cached version (never overwrite)
+
+                    # Convert back to sorted list
+                    candles = sorted(cached_by_time.values(), key=lambda x: x['start_time'])
                     fetch_status = 'fetched'
-                    sys.stderr.write(f"Fetched {len(candles)} candles from Bybit\n")
+                    sys.stderr.write(f"Fetched {len(fetched_candles)} candles from Bybit, added {new_candles_count} new, total now {len(cached_by_time)}\n")
             else:
                 sys.stderr.write(f"Bybit API error: {response.get('retMsg', 'Unknown error')}\n")
                 fetch_status = 'error'
@@ -301,17 +316,69 @@ def get_candles_for_trade(symbol: str, timeframe: str, timestamp_ms: int,
             fetch_status = 'error'
             sys.stderr.write(f"Warning: Failed to fetch candles: {e}\n")
 
-    # Format for lightweight-charts
-    formatted = []
+    # Format for lightweight-charts and deduplicate by time
+    # Use dict to deduplicate by time (keep first valid entry, never overwrite)
+    candles_by_time = {}
     for c in candles:
-        formatted.append({
-            'time': c['start_time'] // 1000,  # Convert to seconds for lightweight-charts
-            'open': float(c['open_price']),
-            'high': float(c['high_price']),
-            'low': float(c['low_price']),
-            'close': float(c['close_price']),
-            'volume': float(c.get('volume', 0))
-        })
+        time_key = c['start_time'] // 1000  # Convert to seconds for lightweight-charts
+
+        # Skip if we already have a candle for this time (never overwrite)
+        if time_key in candles_by_time:
+            sys.stderr.write(f"Warning: Duplicate candle at {time_key}, keeping existing\n")
+            continue
+
+        # Validate candle data
+        try:
+            open_price = float(c['open_price'])
+            high_price = float(c['high_price'])
+            low_price = float(c['low_price'])
+            close_price = float(c['close_price'])
+            volume = float(c.get('volume', 0))
+
+            # Check for invalid values
+            if not all(isinstance(p, float) and p > 0 for p in [open_price, high_price, low_price, close_price]):
+                sys.stderr.write(f"Warning: Invalid candle prices at {time_key}: O={open_price} H={high_price} L={low_price} C={close_price}\n")
+                continue
+
+            # Validate OHLC relationships
+            if not (low_price <= min(open_price, close_price) and max(open_price, close_price) <= high_price):
+                sys.stderr.write(f"Warning: Invalid OHLC relationship at {time_key}: O={open_price} H={high_price} L={low_price} C={close_price}\n")
+                continue
+
+            candles_by_time[time_key] = {
+                'time': time_key,
+                'open': open_price,
+                'high': high_price,
+                'low': low_price,
+                'close': close_price,
+                'volume': volume
+            }
+        except (ValueError, TypeError) as e:
+            sys.stderr.write(f"Warning: Failed to parse candle at {time_key}: {e}\n")
+            continue
+
+    # Sort by time to ensure correct order
+    formatted = sorted(candles_by_time.values(), key=lambda x: x['time'])
+
+    # Log candle data for debugging
+    if formatted:
+        sys.stderr.write(f"Formatted {len(formatted)} candles\n")
+        sys.stderr.write(f"First candle: time={formatted[0]['time']}, O={formatted[0]['open']}, H={formatted[0]['high']}, L={formatted[0]['low']}, C={formatted[0]['close']}\n")
+        sys.stderr.write(f"Last candle: time={formatted[-1]['time']}, O={formatted[-1]['open']}, H={formatted[-1]['high']}, L={formatted[-1]['low']}, C={formatted[-1]['close']}\n")
+
+        # Check for gaps in the time series
+        if len(formatted) > 1:
+            gaps = []
+            for i in range(1, len(formatted)):
+                time_diff = formatted[i]['time'] - formatted[i-1]['time']
+                expected_diff = timeframe_ms // 1000  # Expected time difference in seconds
+                if time_diff > expected_diff * 1.5:  # Allow 50% tolerance
+                    gaps.append((formatted[i-1]['time'], formatted[i]['time'], time_diff))
+
+            if gaps:
+                sys.stderr.write(f"Found {len(gaps)} gaps in candle data:\n")
+                for gap in gaps[:5]:  # Log first 5 gaps
+                    sys.stderr.write(f"  Gap between {gap[0]} and {gap[1]} ({gap[2]}s)\n")
 
     # Get symbol precision for price formatting
     precision = _get_symbol_precision(symbol)
