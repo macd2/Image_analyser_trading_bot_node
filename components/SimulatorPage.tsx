@@ -738,6 +738,9 @@ export function SimulatorPage() {
                     </span>
                     <span className="text-white">{result.symbol}</span>
                     <span className="text-blue-400">@ ${result.current_price.toFixed(4)}</span>
+                    {result.instance_name && (
+                      <span className="text-slate-400">• {result.instance_name}</span>
+                    )}
                     {result.bars_open !== undefined && (
                       <span className="text-slate-500">({result.bars_open} bars)</span>
                     )}

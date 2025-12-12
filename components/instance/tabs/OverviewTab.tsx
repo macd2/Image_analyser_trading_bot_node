@@ -99,6 +99,7 @@ interface MonitorStatus {
     symbol: string
     action: 'checked' | 'closed'
     current_price: number
+    instance_name?: string
     checked_at?: string
   }>
 }
@@ -437,6 +438,9 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
                       </span>
                       <span className="text-white">{result.symbol}</span>
                       <span className="text-blue-400">@ ${result.current_price.toFixed(4)}</span>
+                      {result.instance_name && (
+                        <span className="text-slate-400">• {result.instance_name}</span>
+                      )}
                       {result.action === 'closed' && (
                         <span className="text-yellow-300">→ Trade closed!</span>
                       )}

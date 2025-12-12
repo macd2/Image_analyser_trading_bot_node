@@ -203,8 +203,16 @@ async function getHistoricalCandles(
 
     console.log(`[Auto-Close] Bybit returned ${candles.length} candles for ${symbol} ${timeframe}`);
     if (candles.length > 0) {
-      console.log(`  First: ${new Date(candles[0].timestamp).toISOString()} [${candles[0].low}-${candles[0].high}]`);
-      console.log(`  Last: ${new Date(candles[candles.length - 1].timestamp).toISOString()} [${candles[candles.length - 1].low}-${candles[candles.length - 1].high}]`);
+      try {
+        const firstTs = candles[0].timestamp;
+        const lastTs = candles[candles.length - 1].timestamp;
+        const firstTime = (typeof firstTs === 'number' && !isNaN(firstTs) && firstTs > 0) ? new Date(firstTs).toISOString() : 'invalid';
+        const lastTime = (typeof lastTs === 'number' && !isNaN(lastTs) && lastTs > 0) ? new Date(lastTs).toISOString() : 'invalid';
+        console.log(`  First: ${firstTime} [${candles[0].low}-${candles[0].high}]`);
+        console.log(`  Last: ${lastTime} [${candles[candles.length - 1].low}-${candles[candles.length - 1].high}]`);
+      } catch (e) {
+        console.error(`[Auto-Close] Error logging candle times: ${e}`);
+      }
     }
 
     // Store fetched candles to database for future use
@@ -354,16 +362,19 @@ export async function POST() {
       );
     }
 
-    // Get all open paper trades
-    const openTrades = await dbQuery<TradeRow>(`
+    // Get all open paper trades with instance information
+    const openTrades = await dbQuery<TradeRow & { instance_name: string }>(`
       SELECT
         t.*,
         COALESCE(t.timeframe, rec.timeframe) as timeframe,
         COALESCE(t.entry_price, rec.entry_price) as entry_price,
         COALESCE(t.stop_loss, rec.stop_loss) as stop_loss,
-        COALESCE(t.take_profit, rec.take_profit) as take_profit
+        COALESCE(t.take_profit, rec.take_profit) as take_profit,
+        i.name as instance_name
       FROM trades t
       LEFT JOIN recommendations rec ON t.recommendation_id = rec.id
+      LEFT JOIN runs r ON t.run_id = r.id
+      LEFT JOIN instances i ON r.instance_id = i.id
       WHERE t.pnl IS NULL
         AND t.status IN ('paper_trade', 'pending_fill', 'filled')
       ORDER BY t.created_at DESC
@@ -376,6 +387,7 @@ export async function POST() {
       symbol: string;
       action: 'checked' | 'closed' | 'filled' | 'cancelled';
       current_price: number;
+      instance_name?: string;
       fill_timestamp?: string;
       exit_reason?: string;
       exit_timestamp?: string;
@@ -425,6 +437,7 @@ export async function POST() {
           symbol: trade.symbol,
           action: 'checked',
           current_price: currentPrice,
+          instance_name: trade.instance_name,
           candles_checked: 0,
           checked_at: new Date().toISOString()
         });
@@ -432,8 +445,21 @@ export async function POST() {
       }
 
       // Log candle time range for debugging
-      const firstCandleTime = new Date(candles[0].timestamp).toISOString();
-      const lastCandleTime = new Date(candles[candles.length - 1].timestamp).toISOString();
+      let firstCandleTime = 'unknown';
+      let lastCandleTime = 'unknown';
+      try {
+        const firstTs = candles[0].timestamp;
+        const lastTs = candles[candles.length - 1].timestamp;
+        // Validate timestamps are valid numbers
+        if (typeof firstTs === 'number' && !isNaN(firstTs) && firstTs > 0) {
+          firstCandleTime = new Date(firstTs).toISOString();
+        }
+        if (typeof lastTs === 'number' && !isNaN(lastTs) && lastTs > 0) {
+          lastCandleTime = new Date(lastTs).toISOString();
+        }
+      } catch (e) {
+        console.error(`[Auto-Close] Error parsing candle timestamps: ${e}`);
+      }
       const tradeCreatedTime = new Date(createdAt).toISOString();
       console.log(`[Auto-Close] Candle range: ${firstCandleTime} to ${lastCandleTime} (trade created: ${tradeCreatedTime})`);
 
@@ -462,8 +488,16 @@ export async function POST() {
           console.log(`[Auto-Close] ${trade.symbol} NOT FILLED: entry=${entryPrice}, checked ${candles.length} candles, current_price=${currentPrice}`);
           // Log first and last candle for debugging
           if (candles.length > 0) {
-            console.log(`  First candle: ${new Date(candles[0].timestamp).toISOString()} [${candles[0].low}-${candles[0].high}]`);
-            console.log(`  Last candle: ${new Date(candles[candles.length - 1].timestamp).toISOString()} [${candles[candles.length - 1].low}-${candles[candles.length - 1].high}]`);
+            try {
+              const firstTs = candles[0].timestamp;
+              const lastTs = candles[candles.length - 1].timestamp;
+              const firstTime = (typeof firstTs === 'number' && !isNaN(firstTs) && firstTs > 0) ? new Date(firstTs).toISOString() : 'invalid';
+              const lastTime = (typeof lastTs === 'number' && !isNaN(lastTs) && lastTs > 0) ? new Date(lastTs).toISOString() : 'invalid';
+              console.log(`  First candle: ${firstTime} [${candles[0].low}-${candles[0].high}]`);
+              console.log(`  Last candle: ${lastTime} [${candles[candles.length - 1].low}-${candles[candles.length - 1].high}]`);
+            } catch (e) {
+              console.error(`[Auto-Close] Error logging candle times: ${e}`);
+            }
           }
 
           // Apply max bars cancellation to pending_fill and paper_trade status
@@ -487,6 +521,7 @@ export async function POST() {
               symbol: trade.symbol,
               action: 'cancelled',
               current_price: currentPrice,
+              instance_name: trade.instance_name,
               exit_reason: 'max_bars_exceeded',
               candles_checked: candles.length,
               bars_open: barsPending,
@@ -501,6 +536,7 @@ export async function POST() {
             symbol: trade.symbol,
             action: 'checked',
             current_price: currentPrice,
+            instance_name: trade.instance_name,
             candles_checked: candles.length,
             bars_open: barsPending,
             checked_at: new Date().toISOString()
@@ -596,6 +632,7 @@ export async function POST() {
           symbol: trade.symbol,
           action: 'closed',
           current_price: exitResult.currentPrice,
+          instance_name: trade.instance_name,
           exit_reason: exitResult.reason,
           exit_timestamp: exitTime,
           pnl: Math.round(pnl * 100) / 100,
@@ -644,6 +681,7 @@ export async function POST() {
           symbol: trade.symbol,
           action: 'cancelled',
           current_price: currentPrice,
+          instance_name: trade.instance_name,
           exit_reason: 'max_bars_exceeded',
           exit_timestamp: cancelTime,
           pnl: Math.round(pnl * 100) / 100,
@@ -657,6 +695,7 @@ export async function POST() {
           symbol: trade.symbol,
           action: alreadyFilled ? 'checked' : 'filled',
           current_price: exitResult.currentPrice,
+          instance_name: trade.instance_name,
           candles_checked: candles.length,
           bars_open: barsOpen,
           checked_at: new Date().toISOString()
