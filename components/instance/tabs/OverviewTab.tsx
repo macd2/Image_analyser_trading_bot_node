@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Activity, Clock, Maximize2, AlertTriangle, CheckCircle, RefreshCw, X } from 'lucide-react'
-import { LoadingState, ErrorState } from '@/components/shared'
+import { LoadingState, ErrorState, CycleSummaryCard } from '@/components/shared'
 import TradeChartModal from '@/components/shared/TradeChartModal'
 import StatsBar, { StatsScope } from '@/components/StatsBar'
 import { CycleStatusCard } from '@/components/instance/CycleStatusCard'
@@ -412,6 +412,8 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         {/* Left column: Cycle Status & Simulator Activity */}
         <div className="lg:col-span-1 flex flex-col gap-4">
           <CycleStatusCard instanceId={instanceId} />
+          {/* Cycle Summary Card - Real-time updates */}
+          <CycleSummaryCard instanceId={instanceId} />
           <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">

@@ -26,13 +26,16 @@ export async function GET(request: NextRequest) {
     }
 
     // Check for recent OpenAI 429 error in error_logs
+    // Calculate 5 minutes ago instead of using database-specific datetime functions
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+
     const errors = await dbQuery<any>(`
       SELECT id, message, timestamp FROM error_logs
       WHERE message LIKE '%OpenAI API rate limit exceeded (429)%'
-        AND timestamp > datetime('now', '-5 minutes')
+        AND timestamp > ?
       ORDER BY timestamp DESC
       LIMIT 1
-    `);
+    `, [fiveMinutesAgo]);
 
     const isPaused = errors.length > 0;
     const pauseState: PauseState = {
