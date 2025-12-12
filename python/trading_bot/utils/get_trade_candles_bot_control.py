@@ -247,91 +247,96 @@ def get_candles_for_trade(symbol: str, timeframe: str, timestamp_ms: int,
             need_fetch = True
             sys.stderr.write(f"Candles are stale: {time_since_latest // 60000}min old\n")
 
-    # If we don't have enough candles, fetch them directly from Bybit API
+    # If we don't have enough candles, try to fetch them
     if need_fetch or len(candles) < 10:
-        try:
-            sys.stderr.write(f"Fetching candles for {symbol} {timeframe} directly from Bybit...\n")
-            fetch_status = 'fetching'
+        sys.stderr.write(f"Candles need refresh for {symbol} {timeframe} (have {len(candles)}, need ~{candles_before + candles_after})\n")
 
-            # Fetch candles directly using backward fetch to get data around the trade time
-            from pybit.unified_trading import HTTP
-            session = HTTP(testnet=False)
+        # Try to fetch missing candles (with timeout to avoid blocking)
+        # Fetch if: no candles, or less than 50% of what we need before signal
+        if len(candles) == 0 or len(candles_before_signal) < expected_candles_before * 0.5:
+            try:
+                sys.stderr.write(f"Fetching candles from Bybit for {symbol} {timeframe}...\n")
+                fetch_status = 'fetching'
 
-            # Fetch candles ending at end_ts (to get candles before the trade)
-            api_symbol = symbol if not symbol.endswith('.P') else symbol[:-2]
+                # Fetch candles directly using backward fetch to get data around the trade time
+                from pybit.unified_trading import HTTP
+                session = HTTP(testnet=False, recv_window=5000)  # 5 second timeout
 
-            response = session.get_kline(
-                category="linear",
-                symbol=api_symbol,
-                interval=_convert_timeframe_to_bybit(timeframe),
-                end=end_ts,
-                limit=candles_before + candles_after + 10
-            )
+                # Fetch candles ending at end_ts (to get candles before the trade)
+                api_symbol = symbol if not symbol.endswith('.P') else symbol[:-2]
 
-            if response.get('retCode') == 0 and response.get('result', {}).get('list'):
-                fetched_candles = []
-                # Bybit returns candles in reverse chronological order (newest first)
-                # We need to reverse them to get oldest first
-                for kline in reversed(response['result']['list']):
-                    fetched_candles.append({
-                        'start_time': int(kline[0]),
-                        'open_price': float(kline[1]),
-                        'high_price': float(kline[2]),
-                        'low_price': float(kline[3]),
-                        'close_price': float(kline[4]),
-                        'volume': float(kline[5]) if len(kline) > 5 else 0,
-                        'turnover': float(kline[6]) if len(kline) > 6 else 0
-                    })
+                response = session.get_kline(
+                    category="linear",
+                    symbol=api_symbol,
+                    interval=_convert_timeframe_to_bybit(timeframe),
+                    end=end_ts,
+                    limit=candles_before + candles_after + 10
+                )
 
-                # Cache these candles for future use using centralized client
-                if fetched_candles:
-                    # IMPORTANT: Filter out incomplete candles (current timeframe still forming)
-                    # A candle is incomplete if it started within the current timeframe period
-                    import time
-                    now_ms = int(time.time() * 1000)
-                    timeframe_ms_map = {
-                        '1m': 60000, '3m': 180000, '5m': 300000, '15m': 900000, '30m': 1800000,
-                        '1h': 3600000, '2h': 7200000, '4h': 14400000, '6h': 21600000, '12h': 43200000,
-                        '1d': 86400000, '1w': 604800000, '1M': 2592000000
-                    }
-                    timeframe_ms_val = timeframe_ms_map.get(timeframe, 3600000)
+                if response.get('retCode') == 0 and response.get('result', {}).get('list'):
+                    fetched_candles = []
+                    # Bybit returns candles in reverse chronological order (newest first)
+                    # We need to reverse them to get oldest first
+                    for kline in reversed(response['result']['list']):
+                        fetched_candles.append({
+                            'start_time': int(kline[0]),
+                            'open_price': float(kline[1]),
+                            'high_price': float(kline[2]),
+                            'low_price': float(kline[3]),
+                            'close_price': float(kline[4]),
+                            'volume': float(kline[5]) if len(kline) > 5 else 0,
+                            'turnover': float(kline[6]) if len(kline) > 6 else 0
+                        })
 
-                    # Filter out candles that started within the current timeframe period
-                    filtered_candles = [c for c in fetched_candles if (now_ms - c['start_time']) >= timeframe_ms_val]
+                    # Cache these candles for future use using centralized client
+                    if fetched_candles:
+                        # IMPORTANT: Filter out incomplete candles (current timeframe still forming)
+                        # A candle is incomplete if it started within the current timeframe period
+                        import time
+                        now_ms = int(time.time() * 1000)
+                        timeframe_ms_map = {
+                            '1m': 60000, '3m': 180000, '5m': 300000, '15m': 900000, '30m': 1800000,
+                            '1h': 3600000, '2h': 7200000, '4h': 14400000, '6h': 21600000, '12h': 43200000,
+                            '1d': 86400000, '1w': 604800000, '1M': 2592000000
+                        }
+                        timeframe_ms_val = timeframe_ms_map.get(timeframe, 3600000)
 
-                    if len(filtered_candles) < len(fetched_candles):
-                        sys.stderr.write(f"Filtered out {len(fetched_candles) - len(filtered_candles)} incomplete candle(s) before caching\n")
+                        # Filter out candles that started within the current timeframe period
+                        filtered_candles = [c for c in fetched_candles if (now_ms - c['start_time']) >= timeframe_ms_val]
 
-                    try:
-                        category = 'linear'
-                        _insert_candles_to_db(filtered_candles, symbol, timeframe, category)
-                    except Exception as cache_err:
-                        sys.stderr.write(f"Cache error (non-fatal): {cache_err}\n")
+                        if len(filtered_candles) < len(fetched_candles):
+                            sys.stderr.write(f"Filtered out {len(fetched_candles) - len(filtered_candles)} incomplete candle(s) before caching\n")
 
-                    # Merge filtered candles with cached ones (NEVER overwrite, only add new)
-                    # Create a dict of cached candles by time
-                    cached_by_time = {c['start_time']: c for c in candles}
+                        try:
+                            category = 'linear'
+                            _insert_candles_to_db(filtered_candles, symbol, timeframe, category)
+                        except Exception as cache_err:
+                            sys.stderr.write(f"Cache error (non-fatal): {cache_err}\n")
 
-                    # Count new candles added
-                    new_candles_count = 0
-                    for fc in fetched_candles:
-                        if fc['start_time'] not in cached_by_time:
-                            # Only add if this timestamp doesn't exist
-                            cached_by_time[fc['start_time']] = fc
-                            new_candles_count += 1
-                        # If timestamp exists, keep the cached version (never overwrite)
+                        # Merge filtered candles with cached ones (NEVER overwrite, only add new)
+                        # Create a dict of cached candles by time
+                        cached_by_time = {c['start_time']: c for c in candles}
 
-                    # Convert back to sorted list
-                    candles = sorted(cached_by_time.values(), key=lambda x: x['start_time'])
-                    fetch_status = 'fetched'
-                    sys.stderr.write(f"Fetched {len(fetched_candles)} candles from Bybit, filtered to {len(filtered_candles)}, added {new_candles_count} new, total now {len(cached_by_time)}\n")
-            else:
-                sys.stderr.write(f"Bybit API error: {response.get('retMsg', 'Unknown error')}\n")
+                        # Count new candles added
+                        new_candles_count = 0
+                        for fc in fetched_candles:
+                            if fc['start_time'] not in cached_by_time:
+                                # Only add if this timestamp doesn't exist
+                                cached_by_time[fc['start_time']] = fc
+                                new_candles_count += 1
+                            # If timestamp exists, keep the cached version (never overwrite)
+
+                        # Convert back to sorted list
+                        candles = sorted(cached_by_time.values(), key=lambda x: x['start_time'])
+                        fetch_status = 'fetched'
+                        sys.stderr.write(f"Fetched {len(fetched_candles)} candles from Bybit, filtered to {len(filtered_candles)}, added {new_candles_count} new, total now {len(cached_by_time)}\n")
+                else:
+                    sys.stderr.write(f"Bybit API error: {response.get('retMsg', 'Unknown error')}\n")
+                    fetch_status = 'error'
+            except Exception as e:
+                # Log error but continue with what we have
                 fetch_status = 'error'
-        except Exception as e:
-            # Log error but continue with what we have
-            fetch_status = 'error'
-            sys.stderr.write(f"Warning: Failed to fetch candles: {e}\n")
+                sys.stderr.write(f"Warning: Failed to fetch candles (timeout or error): {e}\n")
 
     # Format for lightweight-charts and deduplicate by time
     # Use dict to deduplicate by time (keep first valid entry, never overwrite)
