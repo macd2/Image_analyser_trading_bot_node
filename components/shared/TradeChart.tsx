@@ -108,13 +108,16 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
     getDecimalsFromPrice(trade.exit_price)
   )
 
+
+
   // WebSocket update handler
   const handleKlineUpdate = useCallback((kline: { start: number; open: string; high: string; low: string; close: string }) => {
     // Check if component is still mounted and chart/series still exist
     if (!isMountedRef.current || !candleSeriesRef.current || !chartRef.current) return
     try {
+      const timeUtc = Math.floor(kline.start / 1000)
       const newCandle: CandlestickData<Time> = {
-        time: Math.floor(kline.start / 1000) as Time,
+        time: timeUtc as Time,
         open: parseFloat(kline.open),
         high: parseFloat(kline.high),
         low: parseFloat(kline.low),
@@ -137,7 +140,9 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
   // Fetch candles
   useEffect(() => {
     const fetchCandles = async () => {
-      const tradeTimestamp = trade.submitted_at || trade.filled_at || trade.created_at
+      // Always use created_at for the signal marker position
+      // This is when the trade signal was generated, not when it was filled
+      const tradeTimestamp = trade.submitted_at || trade.created_at
       if (!tradeTimestamp) {
         console.error('[TradeChart] No timestamp available')
         setError('No timestamp available')
@@ -187,6 +192,7 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
           setError(data.error)
         } else if (data.candles && data.candles.length > 0) {
           console.log('[TradeChart] Setting candles:', data.candles.length)
+          // Candles are already in UTC seconds - lightweight-charts handles timezone display automatically
           setCandles(data.candles)
           // Use max of API precision and trade price precision
           const apiDecimals = data.precision?.priceDecimals ?? 4
@@ -363,22 +369,41 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
     const sideUpper = trade.side?.toUpperCase() || ''
     const isLong = sideUpper === 'BUY' || sideUpper === 'LONG'
 
-    // Helper to find closest candle
-    const findClosestCandle = (timestamp: number) =>
-      candles.reduce((c, candle) =>
-        Math.abs((candle.time as number) - timestamp) < Math.abs((c.time as number) - timestamp) ? candle : c
-      , candles[0])
+    // Helper to find the candle that started at the given timestamp
+    // For a 1h candle at 09:15, we need the candle that started at 09:00
+    const findCandleAtTime = (timestamp: number) => {
+      // First try exact match
+      const exactMatch = candles.find(c => (c.time as number) === timestamp);
+      if (exactMatch) return exactMatch;
+
+      // If no exact match, find the candle that started at or before this timestamp
+      // This handles cases where timestamp is mid-candle (e.g., 09:15 should map to 09:00 candle)
+      let bestCandle = candles[0];
+      for (const candle of candles) {
+        const candleTime = candle.time as number;
+        if (candleTime <= timestamp && candleTime > (bestCandle.time as number)) {
+          bestCandle = candle;
+        }
+      }
+      return bestCandle;
+    }
 
     // 1. Signal marker - when the trade signal was created
     const signalTs = trade.created_at
     if (signalTs) {
-      const signalTime = Math.floor(new Date(signalTs).getTime() / 1000)
-      const closestSignal = findClosestCandle(signalTime)
-      if (closestSignal) {
+      const signalTimeUtc = Math.floor(new Date(signalTs).getTime() / 1000)
+      const signalCandle = findCandleAtTime(signalTimeUtc)
+      console.log('[TradeChart] Signal marker debug:', {
+        created_at: signalTs,
+        signalTimeUtc,
+        signalCandleTime: signalCandle?.time,
+        allCandleTimes: candles.slice(0, 5).map(c => c.time)
+      })
+      if (signalCandle) {
         // Position signal marker above/below based on side
         const signalPosition = isLong ? 'belowBar' : 'aboveBar'
         markers.push({
-          time: closestSignal.time,
+          time: signalCandle.time,
           position: signalPosition,
           color: '#3b82f6',
           shape: 'circle',
@@ -390,11 +415,18 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
     // 2. Fill marker - when entry price was touched (simulated fill)
     const fillTs = trade.fill_time || trade.filled_at
     if (fillTs) {
-      const fillTime = Math.floor(new Date(fillTs).getTime() / 1000)
-      const closestFill = findClosestCandle(fillTime)
-      if (closestFill) {
+      const fillTimeUtc = Math.floor(new Date(fillTs).getTime() / 1000)
+      const fillCandle = findCandleAtTime(fillTimeUtc)
+      console.log('[TradeChart] Fill marker debug:', {
+        fill_time: trade.fill_time,
+        filled_at: trade.filled_at,
+        fillTs,
+        fillTimeUtc,
+        fillCandleTime: fillCandle?.time
+      })
+      if (fillCandle) {
         markers.push({
-          time: closestFill.time,
+          time: fillCandle.time,
           position: isLong ? 'belowBar' : 'aboveBar',
           color: '#f59e0b',
           shape: isLong ? 'arrowUp' : 'arrowDown',
@@ -405,12 +437,12 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
 
     // 3. Exit marker - when trade was closed (SL/TP hit)
     if (trade.closed_at && trade.exit_price) {
-      const closedTime = Math.floor(new Date(trade.closed_at).getTime() / 1000)
-      const closestExit = findClosestCandle(closedTime)
-      if (closestExit) {
+      const closedTimeUtc = Math.floor(new Date(trade.closed_at).getTime() / 1000)
+      const exitCandle = findCandleAtTime(closedTimeUtc)
+      if (exitCandle) {
         const isWin = trade.exit_reason === 'tp_hit'
         markers.push({
-          time: closestExit.time,
+          time: exitCandle.time,
           position: isLong ? 'aboveBar' : 'belowBar',
           color: isWin ? '#22c55e' : '#ef4444',
           shape: isLong ? 'arrowDown' : 'arrowUp',
