@@ -268,14 +268,13 @@ async function getHistoricalCandles(
 
   // STEP 1: Check if the klines table has up-to-date data for this symbol/timeframe
   // Get the latest candle timestamp in the database
-  const latestCandleResult = await dbQuery<{ max_ts: number | string | null }>(
+  const latestCandleResult = await dbQuery<{ max_ts: number | null }>(
     `SELECT MAX(start_time) as max_ts FROM klines WHERE symbol = ? AND timeframe = ?`,
     [normSymbol, timeframe]
   );
 
-  // PostgreSQL bigint can be returned as string - ensure it's a number
-  const rawMaxTs = latestCandleResult[0]?.max_ts;
-  const latestCandleTs = rawMaxTs ? (typeof rawMaxTs === 'string' ? parseInt(rawMaxTs, 10) : rawMaxTs) : 0;
+  // PostgreSQL bigint is now configured to return as number (see lib/db/client.ts)
+  const latestCandleTs = latestCandleResult[0]?.max_ts || 0;
   const latestCompleteCandle = Math.max(0, now - (now % tfMs) - tfMs); // Timestamp of the latest COMPLETE candle (ensure >= 0)
 
   // Validate timestamps before converting to Date (prevent Invalid time value errors)
