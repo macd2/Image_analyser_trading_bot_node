@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Activity, Clock, Maximize2, AlertTriangle, CheckCircle, RefreshCw, X } from 'lucide-react'
-import { LoadingState, ErrorState, CycleSummaryCard } from '@/components/shared'
+import { LoadingState, ErrorState } from '@/components/shared'
 import TradeChartModal from '@/components/shared/TradeChartModal'
 import StatsBar, { StatsScope } from '@/components/StatsBar'
-import { CycleStatusCard } from '@/components/instance/CycleStatusCard'
+import { UnifiedCycleCard } from '@/components/instance/UnifiedCycleCard'
 import { useBotState } from '@/lib/context/BotStateContext'
 import { useRealtime } from '@/hooks/useRealtime'
 import VncLoginModal from '@/components/VncLoginModal'
@@ -394,16 +394,9 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         </div>
       </div>
 
-      {/* Row 2: Cycle Status + Cycle Summary */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Left column: Cycle Status */}
-        <div className="lg:col-span-1">
-          <CycleStatusCard instanceId={instanceId} />
-        </div>
-        {/* Right column: Cycle Summary */}
-        <div className="lg:col-span-1">
-          <CycleSummaryCard instanceId={instanceId} />
-        </div>
+      {/* Row 2: Unified Cycle Card */}
+      <div>
+        <UnifiedCycleCard instanceId={instanceId} />
       </div>
 
       {/* Row 3: Simulator Activity */}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Camera, Lightbulb, Zap, TrendingUp, DollarSign, ChevronDown, Clock, Cpu, Loader2 } from 'lucide-react'
+import { Camera, Lightbulb, Zap, TrendingUp, DollarSign, ChevronDown, ChevronUp, Clock, Cpu, Loader2, Gauge, BarChart3 } from 'lucide-react'
 
 export type StatsScope = 'cycle' | 'run' | 'instance' | 'global'
 
@@ -63,6 +63,7 @@ export default function StatsBar({
   const [aggregateStats, setAggregateStats] = useState<AggregateStats | null>(null)
   const [scopeOpen, setScopeOpen] = useState(false)
   const [loadingSection2, setLoadingSection2] = useState(false)
+  const [detailedBreakdownOpen, setDetailedBreakdownOpen] = useState(false)
 
   const fetchScopedStats = async () => {
     setLoadingSection2(true)
@@ -232,17 +233,20 @@ export default function StatsBar({
       </div>
       <div className="space-y-6">
         {/* SECTION 1: INSTANCE LIFETIME */}
-        {instanceId && aggregateStats ? (
+        {instanceId ? (
           <div>
-            <div className="text-xs text-slate-400 mb-2 font-semibold">Instance Lifetime</div>
+            <div className="flex items-center gap-2 text-xs text-slate-400 mb-2 font-semibold">
+              <Gauge className="w-3 h-3" />
+              Instance Lifetime
+            </div>
             <div className="grid grid-cols-4 gap-3">
               <div className="bg-slate-700/30 rounded p-2">
                 <div className="flex items-center gap-2 mb-1">
                   <DollarSign className="w-3 h-3 text-amber-400" />
                   <span className="text-xs text-slate-400">P&L Total</span>
                 </div>
-                <div className={`font-medium text-sm ${aggregateStats.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  ${aggregateStats.total_pnl.toFixed(2)}
+                <div className={`font-medium text-sm ${aggregateStats && aggregateStats.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {aggregateStats ? `$${aggregateStats.total_pnl.toFixed(2)}` : <span className="text-slate-500 text-xs italic">Waiting for data...</span>}
                 </div>
               </div>
               <div className="bg-slate-700/30 rounded p-2">
@@ -250,21 +254,27 @@ export default function StatsBar({
                   <TrendingUp className="w-3 h-3 text-green-400" />
                   <span className="text-xs text-slate-400">Win Rate</span>
                 </div>
-                <div className="text-white font-medium text-sm">{aggregateStats.win_rate}%</div>
+                <div className="text-white font-medium text-sm">
+                  {aggregateStats ? `${aggregateStats.win_rate}%` : <span className="text-slate-500 text-xs italic">Waiting for data...</span>}
+                </div>
               </div>
               <div className="bg-slate-700/30 rounded p-2">
                 <div className="flex items-center gap-2 mb-1">
                   <TrendingUp className="w-3 h-3 text-cyan-400" />
                   <span className="text-xs text-slate-400">Trades</span>
                 </div>
-                <div className="text-white font-medium text-sm">{aggregateStats.total_trades}</div>
+                <div className="text-white font-medium text-sm">
+                  {aggregateStats ? aggregateStats.total_trades : <span className="text-slate-500 text-xs italic">Waiting for data...</span>}
+                </div>
               </div>
               <div className="bg-slate-700/30 rounded p-2">
                 <div className="flex items-center gap-2 mb-1">
                   <Clock className="w-3 h-3 text-blue-400" />
                   <span className="text-xs text-slate-400">Since</span>
                 </div>
-                <div className="text-white font-medium text-sm">{formatDaysAgo(aggregateStats.running_since)}</div>
+                <div className="text-white font-medium text-sm">
+                  {aggregateStats ? formatDaysAgo(aggregateStats.running_since) : <span className="text-slate-500 text-xs italic">Waiting for data...</span>}
+                </div>
               </div>
             </div>
           </div>
@@ -274,7 +284,14 @@ export default function StatsBar({
         {instanceId ? (
           <div>
             <div className="flex items-center justify-between mb-2">
-              <div className="text-xs text-slate-400 font-semibold">Detailed Breakdown</div>
+              <button
+                onClick={() => setDetailedBreakdownOpen(!detailedBreakdownOpen)}
+                className="flex items-center gap-2 text-xs text-slate-400 font-semibold hover:text-slate-300 transition"
+              >
+                <BarChart3 className="w-3 h-3" />
+                Detailed Breakdown
+                {detailedBreakdownOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
               {showScopeSelector && onScopeChange && (
                 <div className="relative">
                   <button
@@ -306,12 +323,14 @@ export default function StatsBar({
               )}
             </div>
 
-            {loadingSection2 ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-5 h-5 text-slate-400 animate-spin" />
-              </div>
-            ) : instanceStats && stats ? (
-              <div className="space-y-2">
+            {detailedBreakdownOpen && (
+              <>
+                {loadingSection2 ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-5 h-5 text-slate-400 animate-spin" />
+                  </div>
+                ) : instanceStats && stats ? (
+                  <div className="space-y-2">
                 <div className="grid grid-cols-4 gap-3">
                   <div className="bg-slate-700/30 rounded p-2">
                     <div className="flex items-center gap-2 mb-1">
@@ -412,8 +431,10 @@ export default function StatsBar({
                     <div className="text-white font-medium text-sm">{(stats.actionable_percent || 0).toFixed(1)}%</div>
                   </div>
                 </div>
-              </div>
-            ) : null}
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
         ) : null}
       </div>
