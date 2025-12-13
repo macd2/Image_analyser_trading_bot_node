@@ -19,6 +19,7 @@ Usage:
 
 import os
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any, List, Tuple, Optional, Union
 from collections.abc import Mapping
@@ -180,41 +181,86 @@ def _get_pg_pool():
                     raise ValueError("DATABASE_URL not set for PostgreSQL mode")
 
                 # Create a threaded connection pool
-                # minconn=2, maxconn=20 allows multiple instances to hold connections
-                # Each instance (TradingEngine + TradingCycle) holds 2 connections
-                # So 20 connections supports ~10 instances running in parallel
+                # Pool sizing for multi-instance support:
+                # - Each instance (TradingEngine + TradingCycle + EnhancedPositionMonitor) = 3 connections
+                # - ErrorLogger gets 1 connection per error/warning logged
+                # - minconn=5: Keep 5 connections ready for fast access
+                # - maxconn=100: Support up to 30+ instances with logging overhead
+                # Previous: maxconn=20 was too small (only supported ~6 instances)
                 _pg_pool = pool.ThreadedConnectionPool(
-                    minconn=2,
-                    maxconn=20,
+                    minconn=5,
+                    maxconn=100,
                     dsn=DATABASE_URL
                 )
 
     return _pg_pool
 
 
-def get_connection():
+def _get_pg_connection_with_timeout(timeout_seconds: float = 10.0):
+    """
+    Get a PostgreSQL connection from the pool with timeout.
+
+    If pool is exhausted, waits up to timeout_seconds for a connection to become available.
+    Raises TimeoutError if no connection available within timeout.
+
+    Args:
+        timeout_seconds: Maximum seconds to wait for a connection (default: 10)
+
+    Returns:
+        psycopg2.connection
+
+    Raises:
+        TimeoutError: If no connection available within timeout
+        ValueError: If DATABASE_URL not set
+    """
+    import psycopg2.extras
+
+    pool = _get_pg_pool()
+    start_time = time.time()
+
+    # Try to get connection with timeout
+    while True:
+        try:
+            # Try non-blocking first
+            conn = pool.getconn()
+            conn.cursor_factory = psycopg2.extras.RealDictCursor
+            return conn
+        except pool.PoolError:
+            # Pool exhausted, check if we've exceeded timeout
+            elapsed = time.time() - start_time
+            if elapsed >= timeout_seconds:
+                raise TimeoutError(
+                    f"Connection pool exhausted: Could not get connection within {timeout_seconds}s. "
+                    f"Pool size: {pool.minconn}-{pool.maxconn}. "
+                    f"Consider increasing maxconn in database configuration."
+                )
+            # Wait a bit before retrying
+            time.sleep(0.1)
+
+
+def get_connection(timeout_seconds: float = 10.0):
     """
     Get a database connection.
     Auto-detects SQLite or PostgreSQL based on DB_TYPE env var.
 
-    For PostgreSQL: Returns a connection from the connection pool
+    For PostgreSQL: Returns a connection from the connection pool with timeout
     For SQLite: Returns a new connection (SQLite handles concurrency internally)
+
+    Args:
+        timeout_seconds: For PostgreSQL, max seconds to wait for a connection (default: 10)
 
     Returns:
         sqlite3.Connection or psycopg2.connection
 
-    IMPORTANT: For PostgreSQL, you MUST call putconn() when done to return
+    Raises:
+        TimeoutError: For PostgreSQL if no connection available within timeout
+
+    IMPORTANT: For PostgreSQL, you MUST call release_connection() when done to return
     the connection to the pool. Use the context manager pattern or try/finally.
     """
     if DB_TYPE == 'postgres':
-        import psycopg2.extras
-
-        pool = _get_pg_pool()
-        conn = pool.getconn()
-
-        # Use RealDictCursor for dict-like row access (similar to sqlite3.Row)
-        conn.cursor_factory = psycopg2.extras.RealDictCursor
-        return conn
+        # Use timeout wrapper to prevent indefinite blocking
+        return _get_pg_connection_with_timeout(timeout_seconds)
     else:
         conn = sqlite3.connect(str(get_db_path()))
         conn.row_factory = sqlite3.Row

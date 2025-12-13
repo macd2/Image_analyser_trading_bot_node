@@ -433,6 +433,7 @@ class TradingBot:
         Check if recent error logs contain OpenAI 429 rate limit error.
         Returns True if found and not yet acknowledged.
         """
+        conn = None
         try:
             from trading_bot.db import get_connection, query_one, release_connection
 
@@ -449,12 +450,15 @@ class TradingBot:
                 LIMIT 1
             """, (datetime.now(timezone.utc).isoformat(),))
 
-            release_connection(conn)
             return error is not None
 
         except Exception as e:
             logger.error(f"Failed to check for OpenAI rate limit error: {e}")
             return False
+        finally:
+            # Always release connection back to pool (PostgreSQL) or close (SQLite)
+            if conn is not None:
+                release_connection(conn)
 
     async def _wait_for_user_confirmation(self, timeout_seconds: int = 3600) -> None:
         """

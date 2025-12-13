@@ -47,7 +47,7 @@ class DatabaseErrorHandler(logging.Handler):
         self.db_path = Path(db_path)
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Store error log to database."""
+        """Store error log to database with defensive error handling."""
         conn = None
         try:
             # Extract context if provided via extra
@@ -72,7 +72,18 @@ class DatabaseErrorHandler(logging.Handler):
             context_json = json.dumps(context) if context else None
 
             # Use centralized database client (auto-handles SQLite/PostgreSQL)
-            conn = get_connection()
+            # Use shorter timeout for logging to fail fast if pool exhausted
+            try:
+                conn = get_connection(timeout_seconds=5.0)
+            except TimeoutError as timeout_err:
+                # Pool exhausted - log to stderr instead of database
+                # This prevents cascade failure where logging errors prevent visibility
+                import sys
+                print(f"[ErrorLogger] ⚠️  Connection pool exhausted, logging to stderr instead", file=sys.stderr)
+                print(f"[ErrorLogger] {record.levelname}: {message}", file=sys.stderr)
+                if stack_trace:
+                    print(f"[ErrorLogger] Stack trace:\n{stack_trace}", file=sys.stderr)
+                return
 
             execute(conn, """
                 INSERT INTO error_logs (
@@ -102,10 +113,12 @@ class DatabaseErrorHandler(logging.Handler):
 
         except Exception as e:
             # Don't let logging errors break the app
-            # But print to stderr for debugging
+            # Print to stderr for debugging (fallback when database unavailable)
             import sys
             print(f"[ErrorLogger] ❌ Failed to log error: {e}", file=sys.stderr)
             print(f"[ErrorLogger] Original message: {record.getMessage()[:100]}", file=sys.stderr)
+            if hasattr(e, '__traceback__'):
+                print(f"[ErrorLogger] Error traceback: {traceback.format_exc()}", file=sys.stderr)
         finally:
             if conn:
                 release_connection(conn)

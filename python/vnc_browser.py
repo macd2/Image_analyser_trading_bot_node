@@ -42,10 +42,15 @@ class InteractiveBrowser:
         from playwright.async_api import async_playwright
 
         # Get first active instance
-        conn = get_connection()
-        is_active_check = get_boolean_comparison('is_active', True)
-        first_instance = query_one(conn, f"SELECT id FROM instances WHERE {is_active_check} LIMIT 1", ())
-        conn.close()
+        conn = None
+        try:
+            conn = get_connection()
+            is_active_check = get_boolean_comparison('is_active', True)
+            first_instance = query_one(conn, f"SELECT id FROM instances WHERE {is_active_check} LIMIT 1", ())
+        finally:
+            # Always release connection back to pool (PostgreSQL) or close (SQLite)
+            if conn is not None:
+                release_connection(conn)
 
         if not first_instance:
             raise Exception("No active instance found. Please create and activate an instance in the dashboard.")

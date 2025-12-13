@@ -364,6 +364,7 @@ class SlotManager:
             self.logger.warning("No instance_id provided - cannot query database positions")
             return []
 
+        conn = None
         try:
             conn = get_connection()
 
@@ -386,12 +387,15 @@ class SlotManager:
             positions = [dict(row.items()) for row in results]
             self.logger.debug(f"[DB Query] Found {len(positions)} open positions for instance {self.instance_id}")
 
-            release_connection(conn)
             return positions
 
         except Exception as e:
             self.logger.error(f"Error querying database for open positions: {e}")
             return []
+        finally:
+            # Always release connection back to pool (PostgreSQL) or close (SQLite)
+            if conn is not None:
+                release_connection(conn)
 
     def _get_db_open_positions_count(self) -> int:
         """
@@ -415,6 +419,7 @@ class SlotManager:
             self.logger.warning("No instance_id provided - cannot query database pending orders")
             return 0
 
+        conn = None
         try:
             conn = get_connection()
 
@@ -436,10 +441,13 @@ class SlotManager:
             count = results[0]['count'] if results else 0
             self.logger.debug(f"[DB Query] Found {count} pending orders for instance {self.instance_id}")
 
-            release_connection(conn)
             return count
 
         except Exception as e:
             self.logger.error(f"Error querying database for pending orders count: {e}")
             return 0
+        finally:
+            # Always release connection back to pool (PostgreSQL) or close (SQLite)
+            if conn is not None:
+                release_connection(conn)
 
