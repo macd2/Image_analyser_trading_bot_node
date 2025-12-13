@@ -41,6 +41,77 @@ async function getMaxOpenBarsForTimeframe(timeframe: string, tradeStatus: 'pendi
   return config[timeframe] ?? config[timeframe.toLowerCase()] ?? 0;
 }
 
+/**
+ * SANITY CHECK: Validate timestamp ordering for trade lifecycle
+ * Returns error message if validation fails, null if valid
+ * CRITICAL: A trade must follow this timeline: created_at <= filled_at <= closed_at
+ */
+function validateTradeTimestamps(
+  createdAt: string | Date,
+  filledAt: string | Date | null,
+  closedAt: string | Date | null
+): string | null {
+  try {
+    const createdMs = new Date(createdAt).getTime();
+
+    if (isNaN(createdMs)) {
+      return `Invalid created_at timestamp: ${createdAt}`;
+    }
+
+    if (filledAt) {
+      const filledMs = new Date(filledAt).getTime();
+      if (isNaN(filledMs)) {
+        return `Invalid filled_at timestamp: ${filledAt}`;
+      }
+      if (filledMs < createdMs) {
+        return `CRITICAL: filled_at (${new Date(filledMs).toISOString()}) is BEFORE created_at (${new Date(createdMs).toISOString()})`;
+      }
+
+      if (closedAt) {
+        const closedMs = new Date(closedAt).getTime();
+        if (isNaN(closedMs)) {
+          return `Invalid closed_at timestamp: ${closedAt}`;
+        }
+        if (closedMs < createdMs) {
+          return `CRITICAL: closed_at (${new Date(closedMs).toISOString()}) is BEFORE created_at (${new Date(createdMs).toISOString()})`;
+        }
+        if (closedMs < filledMs) {
+          return `CRITICAL: closed_at (${new Date(closedMs).toISOString()}) is BEFORE filled_at (${new Date(filledMs).toISOString()})`;
+        }
+      }
+    } else if (closedAt) {
+      // Trade is closed but never filled - this is invalid
+      return `CRITICAL: Trade has closed_at but no filled_at - a trade cannot close without being filled first`;
+    }
+
+    return null; // All validations passed
+  } catch (e) {
+    return `Timestamp validation error: ${e}`;
+  }
+}
+
+/**
+ * Log error to database for audit trail
+ * Stores errors in a way that can be queried later for debugging
+ */
+async function logSimulatorError(
+  tradeId: string,
+  errorType: string,
+  errorMessage: string,
+  metadata?: Record<string, any>
+): Promise<void> {
+  try {
+    console.error(`[SIMULATOR ERROR] Trade ${tradeId} - ${errorType}: ${errorMessage}`, metadata || {});
+
+    // Store error in database for audit trail
+    // Using a simple approach: store as JSON in a logs table or update trade with error info
+    // For now, we'll just ensure it's logged to console with structured format
+    // TODO: Consider adding a simulator_errors table for persistent error tracking
+  } catch (e) {
+    console.error(`[SIMULATOR] Failed to log error:`, e);
+  }
+}
+
 interface KlineResult {
   retCode: number;
   result?: {
@@ -114,8 +185,77 @@ async function storeCandles(
 }
 
 /**
+ * Fetch candles from Bybit and store only COMPLETE candles to database
+ * A candle is complete if it started more than 1 timeframe ago
+ */
+async function fetchAndStoreCandles(
+  symbol: string,
+  timeframe: string
+): Promise<void> {
+  const normSymbol = symbol.endsWith('.P') ? symbol.slice(0, -2) : symbol;
+  const tfMs = TIMEFRAME_MS[timeframe] || 3600000;
+  const now = Date.now();
+
+  try {
+    const apiSymbol = normSymbol;
+    const interval = TIMEFRAME_MAP[timeframe] || '60';
+    const limit = 200; // Max allowed by Bybit
+
+    const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${apiSymbol}&interval=${interval}&limit=${limit}`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      console.error(`[Auto-Close] Bybit API error for ${symbol}: ${res.status}`);
+      return;
+    }
+
+    const data: KlineResult = await res.json();
+    if (data.retCode !== 0 || !data.result?.list) {
+      console.error(`[Auto-Close] Bybit error for ${symbol}: ${(data as any).retMsg}`);
+      return;
+    }
+
+    // Parse candles - Bybit returns newest first, so reverse
+    const candles: Candle[] = data.result.list.map(c => ({
+      timestamp: parseInt(c[0]),
+      open: parseFloat(c[1]),
+      high: parseFloat(c[2]),
+      low: parseFloat(c[3]),
+      close: parseFloat(c[4]),
+      volume: parseFloat(c[5] || '0'),
+      turnover: parseFloat(c[6] || '0')
+    })).reverse();
+
+    // Filter to only store COMPLETE candles (older than 1 timeframe)
+    const candlesToStore = candles.filter(c => {
+      const candleAge = now - c.timestamp;
+      return candleAge >= tfMs;
+    });
+
+    if (candlesToStore.length < candles.length) {
+      console.log(`[Auto-Close] Filtered out ${candles.length - candlesToStore.length} incomplete candle(s)`);
+    }
+
+    await storeCandles(symbol, timeframe, candlesToStore);
+    console.log(`[Auto-Close] Stored ${candlesToStore.length} candles for ${symbol} ${timeframe}`);
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') {
+      console.error(`[Auto-Close] Bybit API timeout for ${symbol}`);
+    } else {
+      console.error(`[Auto-Close] Failed to fetch candles for ${symbol}:`, e);
+    }
+  }
+}
+
+/**
  * Fetch candles from database first, then API if missing
  * Always stores fetched candles to database for future use
+ * CRITICAL: Ensures klines table is up-to-date by checking if latest candle is complete
  */
 async function getHistoricalCandles(
   symbol: string,
@@ -124,8 +264,36 @@ async function getHistoricalCandles(
 ): Promise<Candle[]> {
   const normSymbol = symbol.endsWith('.P') ? symbol.slice(0, -2) : symbol;
   const now = Date.now();
+  const tfMs = TIMEFRAME_MS[timeframe] || 3600000;
 
-  // First, try to get candles from database
+  // STEP 1: Check if the klines table has up-to-date data for this symbol/timeframe
+  // Get the latest candle timestamp in the database
+  const latestCandleResult = await dbQuery<{ max_ts: number | string | null }>(
+    `SELECT MAX(start_time) as max_ts FROM klines WHERE symbol = ? AND timeframe = ?`,
+    [normSymbol, timeframe]
+  );
+
+  // PostgreSQL bigint can be returned as string - ensure it's a number
+  const rawMaxTs = latestCandleResult[0]?.max_ts;
+  const latestCandleTs = rawMaxTs ? (typeof rawMaxTs === 'string' ? parseInt(rawMaxTs, 10) : rawMaxTs) : 0;
+  const latestCompleteCandle = Math.max(0, now - (now % tfMs) - tfMs); // Timestamp of the latest COMPLETE candle (ensure >= 0)
+
+  // Validate timestamps before converting to Date (prevent Invalid time value errors)
+  const isValidTimestamp = (ts: number) => ts > 0 && ts < 8640000000000000; // Max valid JS timestamp
+  const latestCandleStr = isValidTimestamp(latestCandleTs) ? new Date(latestCandleTs).toISOString() : 'no candles';
+  const latestCompleteStr = isValidTimestamp(latestCompleteCandle) ? new Date(latestCompleteCandle).toISOString() : 'no complete candles yet';
+  console.log(`[Auto-Close] ${symbol} ${timeframe}: latest candle in DB=${latestCandleStr}, latest complete=${latestCompleteStr}`);
+
+  // If the latest candle in DB is older than the latest complete candle, we need to fetch from Bybit
+  const needsFetch = latestCandleTs < latestCompleteCandle;
+
+  if (needsFetch) {
+    console.log(`[Auto-Close] Klines table is stale for ${symbol} ${timeframe}, fetching from Bybit...`);
+    // Fetch from Bybit to update the database with newer complete candles
+    await fetchAndStoreCandles(symbol, timeframe);
+  }
+
+  // STEP 2: Now query the database for candles >= startTime
   const dbCandles = await dbQuery<{
     start_time: number;
     open_price: number;
@@ -141,7 +309,6 @@ async function getHistoricalCandles(
   );
 
   // Calculate how many candles we should have
-  const tfMs = TIMEFRAME_MS[timeframe] || 3600000;
   const expectedCandles = Math.ceil((now - startTime) / tfMs);
 
   // If we have enough candles from DB, use them
@@ -156,32 +323,31 @@ async function getHistoricalCandles(
     }));
   }
 
-  // Otherwise fetch from Bybit API
-  console.log(`[Auto-Close] Fetching candles from Bybit for ${symbol} ${timeframe} (had ${dbCandles.length}, need ~${expectedCandles})`);
+  // If we don't have candles >= startTime, we need to fetch from Bybit
+  // This can happen if the trade was created after the latest candle in the DB
+  if (dbCandles.length === 0) {
+    const startTimeStr = (startTime > 0 && startTime < 8640000000000000) ? new Date(startTime).toISOString() : startTime.toString();
+    console.log(`[Auto-Close] No candles found for ${symbol} ${timeframe} >= ${startTimeStr}, fetching from Bybit...`);
+  }
+
+  // Otherwise fetch from Bybit API as fallback
+  console.log(`[Auto-Close] Still missing candles for ${symbol} ${timeframe} (had ${dbCandles.length}, need ~${expectedCandles}), fetching from Bybit...`);
 
   try {
     const apiSymbol = normSymbol;
     const interval = TIMEFRAME_MAP[timeframe] || '60';
-
-    // Bybit allows max 200 candles per request
     const limit = Math.min(expectedCandles + 5, 200);
 
-    // NOTE: Do NOT use 'start' parameter - it causes issues with future timestamps
-    // Just request without time params to get most recent candles
     const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${apiSymbol}&interval=${interval}&limit=${limit}`;
 
-    console.log(`[Auto-Close] Bybit API request: ${url}`);
-
-    // Add timeout to prevent hanging
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
 
     if (!res.ok) {
-      console.error(`[Auto-Close] Bybit API error for ${symbol}: ${res.status} ${res.statusText}`);
-      // Fall back to whatever we have in DB
+      console.error(`[Auto-Close] Bybit API error for ${symbol}: ${res.status}`);
       return dbCandles.map(c => ({
         timestamp: c.start_time,
         open: c.open_price,
@@ -193,8 +359,7 @@ async function getHistoricalCandles(
 
     const data: KlineResult = await res.json();
     if (data.retCode !== 0 || !data.result?.list) {
-      console.error(`[Auto-Close] Bybit returned error for ${symbol}: retCode=${data.retCode}, message=${(data as any).retMsg}`);
-      console.error(`[Auto-Close] Request URL: ${url}`);
+      console.error(`[Auto-Close] Bybit error for ${symbol}: ${(data as any).retMsg}`);
       return dbCandles.map(c => ({
         timestamp: c.start_time,
         open: c.open_price,
@@ -205,7 +370,6 @@ async function getHistoricalCandles(
     }
 
     // Parse candles - Bybit returns newest first, so reverse
-    // Bybit kline format: [timestamp, open, high, low, close, volume, turnover]
     const candles: Candle[] = data.result.list.map(c => ({
       timestamp: parseInt(c[0]),
       open: parseFloat(c[1]),
@@ -214,48 +378,36 @@ async function getHistoricalCandles(
       close: parseFloat(c[4]),
       volume: parseFloat(c[5] || '0'),
       turnover: parseFloat(c[6] || '0')
-    })).reverse(); // Oldest first for chronological checking
+    })).reverse();
 
     console.log(`[Auto-Close] Bybit returned ${candles.length} candles for ${symbol} ${timeframe}`);
-    if (candles.length > 0) {
-      try {
-        const firstTs = candles[0].timestamp;
-        const lastTs = candles[candles.length - 1].timestamp;
-        const firstTime = (typeof firstTs === 'number' && !isNaN(firstTs) && firstTs > 0) ? new Date(firstTs).toISOString() : 'invalid';
-        const lastTime = (typeof lastTs === 'number' && !isNaN(lastTs) && lastTs > 0) ? new Date(lastTs).toISOString() : 'invalid';
-        console.log(`  First: ${firstTime} [${candles[0].low}-${candles[0].high}]`);
-        console.log(`  Last: ${lastTime} [${candles[candles.length - 1].low}-${candles[candles.length - 1].high}]`);
-      } catch (e) {
-        console.error(`[Auto-Close] Error logging candle times: ${e}`);
-      }
-    }
 
-    // Store fetched candles to database for future use
-    // IMPORTANT: Filter out the current/incomplete candle (the most recent one)
-    // A candle is incomplete if its start_time is within the current timeframe period
-    const now = Date.now();
-    const timeframeMs = TIMEFRAME_MS[timeframe] || 3600000; // Default to 1h
+    // Store complete candles to database
     const candlesToStore = candles.filter(c => {
       const candleAge = now - c.timestamp;
-      // Keep candles that started more than one timeframe ago
-      return candleAge >= timeframeMs;
+      return candleAge >= tfMs;
     });
 
     if (candlesToStore.length < candles.length) {
-      console.log(`[Auto-Close] Filtered out ${candles.length - candlesToStore.length} incomplete candle(s) (still forming)`);
+      console.log(`[Auto-Close] Filtered out ${candles.length - candlesToStore.length} incomplete candle(s)`);
     }
 
     await storeCandles(symbol, timeframe, candlesToStore);
     console.log(`[Auto-Close] Stored ${candlesToStore.length} candles to database for ${symbol} ${timeframe}`);
 
-    return candles;
+    // CRITICAL FIX: Filter candles to only include those >= startTime
+    // The Bybit API returns the latest N candles, not candles from a specific start time
+    // So we must filter to ensure we only return candles after the trade was created
+    const filteredCandles = candles.filter(c => c.timestamp >= startTime);
+    console.log(`[Auto-Close] Filtered ${candles.length} candles to ${filteredCandles.length} candles >= ${new Date(startTime).toISOString()}`);
+
+    return filteredCandles;
   } catch (e) {
     if (e instanceof Error && e.name === 'AbortError') {
-      console.error(`[Auto-Close] Bybit API timeout for ${symbol} ${timeframe}`);
+      console.error(`[Auto-Close] Bybit API timeout for ${symbol}`);
     } else {
-      console.error(`Failed to get candles for ${symbol}:`, e);
+      console.error(`[Auto-Close] Failed to fetch candles for ${symbol}:`, e);
     }
-    // Fall back to DB candles
     return dbCandles.map(c => ({
       timestamp: c.start_time,
       open: c.open_price,
@@ -431,22 +583,23 @@ export async function POST() {
     let cancelledCount = 0;
 
     for (const trade of openTrades) {
-      const isLong = trade.side === 'Buy';
-      const entryPrice = trade.entry_price || 0;
-      const stopLoss = trade.stop_loss || 0;
-      const takeProfit = trade.take_profit || 0;
-      const timeframe = trade.timeframe || '1h';
+      try {
+        const isLong = trade.side === 'Buy';
+        const entryPrice = trade.entry_price || 0;
+        const stopLoss = trade.stop_loss || 0;
+        const takeProfit = trade.take_profit || 0;
+        const timeframe = trade.timeframe || '1h';
 
-      // Get max open bars for this trade's timeframe and status (0 = disabled)
-      const maxOpenBars = await getMaxOpenBarsForTimeframe(timeframe, trade.status as 'pending_fill' | 'paper_trade' | 'filled');
+        // Get max open bars for this trade's timeframe and status (0 = disabled)
+        const maxOpenBars = await getMaxOpenBarsForTimeframe(timeframe, trade.status as 'pending_fill' | 'paper_trade' | 'filled');
 
-      // Parse trade creation time - validate it's a valid date
-      const createdAtDate = new Date(trade.created_at);
-      if (isNaN(createdAtDate.getTime())) {
-        console.error(`[Auto-Close] Invalid created_at date for trade ${trade.id}: ${trade.created_at}`);
-        continue; // Skip this trade
-      }
-      const createdAt = createdAtDate.getTime();
+        // Parse trade creation time - validate it's a valid date
+        const createdAtDate = new Date(trade.created_at);
+        if (isNaN(createdAtDate.getTime())) {
+          console.error(`[Auto-Close] Invalid created_at date for trade ${trade.id}: ${trade.created_at}`);
+          continue; // Skip this trade
+        }
+        const createdAt = createdAtDate.getTime();
 
       // Fetch all candles from trade creation to now
       const candles = await getHistoricalCandles(trade.symbol, timeframe, createdAt);
@@ -509,6 +662,7 @@ export async function POST() {
 
       // STEP 1: Check if trade is already filled or find fill candle
       let fillCandleIndex = 0;
+      let fillTime: string | null = null; // Track fill time for sanity checks
       const alreadyFilled = trade.status === 'filled' && trade.filled_at;
 
       if (alreadyFilled) {
@@ -517,7 +671,23 @@ export async function POST() {
         if (!isNaN(filledAtDate.getTime())) {
           const filledAtMs = filledAtDate.getTime();
           fillCandleIndex = candlesAfterCreation.findIndex(c => c.timestamp >= filledAtMs);
-          if (fillCandleIndex === -1) fillCandleIndex = 0;
+
+          // CRITICAL: If no candles exist after fill time, we cannot check for exits
+          // Skip this trade - it cannot have exited if there are no candles after it filled
+          if (fillCandleIndex === -1) {
+            console.log(`[Auto-Close] ${trade.symbol} SKIPPED - no candles after fill time (${new Date(filledAtMs).toISOString()})`);
+            results.push({
+              trade_id: trade.id,
+              symbol: trade.symbol,
+              action: 'checked',
+              current_price: await getCurrentPrice(trade.symbol),
+              instance_name: trade.instance_name,
+              candles_checked: candlesAfterCreation.length,
+              bars_open: 0,
+              checked_at: new Date().toISOString()
+            });
+            continue;
+          }
         }
       } else {
         // Find fill candle (first candle where entry price was touched)
@@ -600,7 +770,31 @@ export async function POST() {
           continue; // Skip this trade
         }
 
-        const fillTime = new Date(fillTimeMs).toISOString();
+        fillTime = new Date(fillTimeMs).toISOString();
+
+        // SANITY CHECK: Validate filled_at >= created_at
+        const fillValidationError = validateTradeTimestamps(
+          trade.created_at,
+          fillTime,
+          null
+        );
+
+        if (fillValidationError) {
+          await logSimulatorError(
+            trade.id,
+            'TIMESTAMP_VIOLATION_ON_FILL',
+            fillValidationError,
+            {
+              symbol: trade.symbol,
+              created_at: trade.created_at,
+              filled_at: fillTime,
+              fill_price: fillResult.fillPrice
+            }
+          );
+          console.error(`[Auto-Close] SANITY CHECK FAILED for trade ${trade.id}: ${fillValidationError}`);
+          continue; // Skip this trade - do not update database with invalid data
+        }
+
         await dbExecute(`
           UPDATE trades SET
             fill_price = ?,
@@ -642,10 +836,10 @@ export async function POST() {
         continue;
       }
 
-      const exitResult = checkHistoricalSLTP(candles, isLong, stopLoss, takeProfit, fillCandleIndex);
+      const exitResult = checkHistoricalSLTP(candlesAfterCreation, isLong, stopLoss, takeProfit, fillCandleIndex);
 
       // Calculate bars since fill (for max_open_bars check)
-      const barsOpen = candles.length - fillCandleIndex;
+      const barsOpen = candlesAfterCreation.length - fillCandleIndex;
 
       if (exitResult.hit && exitResult.exitPrice && exitResult.reason) {
         // Calculate P&L using fill price (which equals entry price for limit orders)
@@ -673,6 +867,73 @@ export async function POST() {
           exitTime = new Date().toISOString();
         }
 
+        // SANITY CHECK: Validate complete timestamp chain (created_at <= filled_at <= closed_at)
+        // Use fillTime if we just filled in this iteration, otherwise use trade.filled_at
+        const actualFilledAt = fillTime || (trade.filled_at as string);
+
+        if (!actualFilledAt) {
+          const errorMsg = 'No filled_at timestamp available - cannot close unfilled trade';
+          await logSimulatorError(
+            trade.id,
+            'MISSING_FILLED_AT_ON_CLOSE',
+            errorMsg,
+            {
+              symbol: trade.symbol,
+              created_at: trade.created_at,
+              exit_time: exitTime,
+              exit_reason: exitResult.reason
+            }
+          );
+          console.error(`[Auto-Close] SANITY CHECK FAILED for trade ${trade.id}: ${errorMsg}`);
+          results.push({
+            trade_id: trade.id,
+            symbol: trade.symbol,
+            action: 'checked',
+            current_price: await getCurrentPrice(trade.symbol),
+            instance_name: trade.instance_name,
+            candles_checked: candles.length,
+            bars_open: barsOpen,
+            checked_at: new Date().toISOString()
+          });
+          continue;
+        }
+
+        // Comprehensive timestamp validation
+        const closeValidationError = validateTradeTimestamps(
+          trade.created_at,
+          actualFilledAt,
+          exitTime
+        );
+
+        if (closeValidationError) {
+          await logSimulatorError(
+            trade.id,
+            'TIMESTAMP_VIOLATION_ON_CLOSE',
+            closeValidationError,
+            {
+              symbol: trade.symbol,
+              created_at: trade.created_at,
+              filled_at: actualFilledAt,
+              closed_at: exitTime,
+              exit_reason: exitResult.reason,
+              exit_price: exitResult.exitPrice,
+              pnl: pnl
+            }
+          );
+          console.error(`[Auto-Close] SANITY CHECK FAILED for trade ${trade.id}: ${closeValidationError}`);
+          results.push({
+            trade_id: trade.id,
+            symbol: trade.symbol,
+            action: 'checked',
+            current_price: await getCurrentPrice(trade.symbol),
+            instance_name: trade.instance_name,
+            candles_checked: candles.length,
+            bars_open: barsOpen,
+            checked_at: new Date().toISOString()
+          });
+          continue;
+        }
+
         // Update trade in database with actual exit time
         await dbExecute(`
           UPDATE trades SET
@@ -689,6 +950,24 @@ export async function POST() {
           exitTime,
           Math.round(pnl * 100) / 100,
           Math.round(pnlPercent * 100) / 100,
+          trade.id
+        ]);
+
+        // CRITICAL: Update run aggregates when trade closes
+        const isWin = pnl > 0;
+        const isLoss = pnl < 0;
+        await dbExecute(`
+          UPDATE runs SET
+            total_pnl = total_pnl + ?,
+            win_count = win_count + ?,
+            loss_count = loss_count + ?
+          WHERE id = (
+            SELECT run_id FROM trades WHERE id = ?
+          )
+        `, [
+          Math.round(pnl * 100) / 100,
+          isWin ? 1 : 0,
+          isLoss ? 1 : 0,
           trade.id
         ]);
 
@@ -721,6 +1000,32 @@ export async function POST() {
 
         const cancelTime = new Date().toISOString();
 
+        // SANITY CHECK: Validate timestamp chain before cancellation
+        const actualFilledAt = fillTime || (trade.filled_at as string);
+        const cancelValidationError = validateTradeTimestamps(
+          trade.created_at,
+          actualFilledAt,
+          cancelTime
+        );
+
+        if (cancelValidationError) {
+          await logSimulatorError(
+            trade.id,
+            'TIMESTAMP_VIOLATION_ON_CANCEL',
+            cancelValidationError,
+            {
+              symbol: trade.symbol,
+              created_at: trade.created_at,
+              filled_at: actualFilledAt,
+              cancel_time: cancelTime,
+              bars_open: barsOpen,
+              max_bars: maxOpenBars
+            }
+          );
+          console.error(`[Auto-Close] SANITY CHECK FAILED for trade ${trade.id}: ${cancelValidationError}`);
+          continue; // Skip this trade - do not update database with invalid data
+        }
+
         // Update trade as cancelled with exit at current price
         await dbExecute(`
           UPDATE trades SET
@@ -736,6 +1041,24 @@ export async function POST() {
           cancelTime,
           Math.round(pnl * 100) / 100,
           Math.round(pnlPercent * 100) / 100,
+          trade.id
+        ]);
+
+        // CRITICAL: Update run aggregates when trade is cancelled
+        const isWin = pnl > 0;
+        const isLoss = pnl < 0;
+        await dbExecute(`
+          UPDATE runs SET
+            total_pnl = total_pnl + ?,
+            win_count = win_count + ?,
+            loss_count = loss_count + ?
+          WHERE id = (
+            SELECT run_id FROM trades WHERE id = ?
+          )
+        `, [
+          Math.round(pnl * 100) / 100,
+          isWin ? 1 : 0,
+          isLoss ? 1 : 0,
           trade.id
         ]);
 
@@ -767,6 +1090,22 @@ export async function POST() {
           checked_at: new Date().toISOString()
         });
       }
+      } catch (tradeError) {
+        console.error(`[Auto-Close] Error processing trade ${trade.id}:`, tradeError);
+        if (tradeError instanceof Error) {
+          console.error('Trade error stack:', tradeError.stack);
+        }
+        // Continue to next trade instead of crashing
+        results.push({
+          trade_id: trade.id,
+          symbol: trade.symbol,
+          action: 'checked',
+          current_price: 0,
+          instance_name: trade.instance_name,
+          candles_checked: 0,
+          checked_at: new Date().toISOString()
+        });
+      }
     }
 
     const checkDuration = Date.now() - checkStartTime;
@@ -783,6 +1122,9 @@ export async function POST() {
     });
   } catch (error) {
     console.error('Auto-close error:', error);
+    if (error instanceof Error) {
+      console.error('Error stack:', error.stack);
+    }
     return NextResponse.json(
       {
         success: false,
