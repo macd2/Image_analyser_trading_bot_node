@@ -83,8 +83,15 @@ class ChartCleaner:
 
         return (len(reasons) > 0, ", ".join(reasons) if reasons else "")
 
-    def scan_files(self, folder_path: str) -> List[Dict[str, Any]]:
-        """Scan folder for chart files and check their status (respects STORAGE_TYPE)."""
+    def scan_files(self, folder_path: str, timeframe_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Scan folder for chart files and check their status (respects STORAGE_TYPE).
+
+        Args:
+            folder_path: Path to scan
+            timeframe_filter: Optional timeframe to filter by (e.g., '1h', '4h').
+                            If provided, only files matching this timeframe are included.
+        """
         current_time = datetime.now(timezone.utc)
         storage_type = get_storage_type()
 
@@ -118,6 +125,10 @@ class ChartCleaner:
                 if not timeframe or not timestamp_str:
                     continue
 
+                # Filter by timeframe if specified (for multi-instance isolation)
+                if timeframe_filter and timeframe != timeframe_filter:
+                    continue
+
                 file_timestamp = self.timestamp_validator.parse_timestamp(timestamp_str)
                 age_minutes = int((current_time - file_timestamp).total_seconds() / 60)
 
@@ -142,12 +153,23 @@ class ChartCleaner:
 
         return results
 
-    def clean_outdated_files(self, folder_path: str, dry_run: bool = True, cycle_id: Optional[str] = None) -> List[str]:
-        """Clean outdated files by moving them to .backup folder (respects STORAGE_TYPE)."""
-        storage_type = get_storage_type()
-        self.logger.info(f"🧹 Starting cleanup for: {folder_path} (dry_run={dry_run}, storage={storage_type})")
+    def clean_outdated_files(self, folder_path: str, dry_run: bool = True, cycle_id: Optional[str] = None, timeframe_filter: Optional[str] = None) -> List[str]:
+        """
+        Clean outdated files by moving them to .backup folder (respects STORAGE_TYPE).
 
-        scan_results = self.scan_files(folder_path)
+        Args:
+            folder_path: Path to clean
+            dry_run: If True, only log what would be deleted
+            cycle_id: Optional cycle ID for audit logging
+            timeframe_filter: Optional timeframe to filter by (e.g., '1h', '4h').
+                            If provided, only files matching this timeframe are cleaned.
+                            This prevents multi-instance interference.
+        """
+        storage_type = get_storage_type()
+        filter_msg = f" (timeframe={timeframe_filter})" if timeframe_filter else ""
+        self.logger.info(f"🧹 Starting cleanup for: {folder_path} (dry_run={dry_run}, storage={storage_type}){filter_msg}")
+
+        scan_results = self.scan_files(folder_path, timeframe_filter=timeframe_filter)
         outdated = [r for r in scan_results if r['is_outdated']]
 
         self.logger.info(f"📊 Found {len(outdated)}/{len(scan_results)} outdated files")

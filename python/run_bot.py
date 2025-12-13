@@ -18,7 +18,7 @@ import signal
 import sys
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 # Add project root to path
@@ -224,7 +224,16 @@ class TradingBot:
     def _end_run(self, status: str = "stopped", reason: str = None) -> None:
         """Mark run as ended."""
         try:
-            execute(self._db, """
+            # If self._db is None, get a fresh connection
+            db = self._db
+            if db is None:
+                from trading_bot.db import get_connection
+                db = get_connection()
+                should_release = True
+            else:
+                should_release = False
+
+            execute(db, """
                 UPDATE runs
                 SET ended_at = ?, status = ?, stop_reason = ?
                 WHERE id = ?
@@ -234,8 +243,12 @@ class TradingBot:
                 reason,
                 self.run_id,
             ))
-            self._db.commit()
+            db.commit()
             logger.info(f"📦 Run {self.run_id} ended: {status}")
+
+            # Release the connection if we got a fresh one
+            if should_release:
+                release_connection(db)
         except Exception as e:
             logger.error(f"Failed to end run: {e}")
 
@@ -435,22 +448,37 @@ class TradingBot:
         """
         conn = None
         try:
-            from trading_bot.db import get_connection, query_one, release_connection
+            from trading_bot.db import get_connection, query, release_connection
 
             conn = get_connection()
             # Check for recent OpenAI 429 error (last 5 minutes)
-            error = query_one(conn, """
-                SELECT id, message FROM error_logs
-                WHERE message LIKE '%OpenAI API rate limit exceeded (429)%'
-                  AND timestamp > datetime('now', '-5 minutes')
-                  AND (SELECT COUNT(*) FROM error_logs el2
-                       WHERE el2.message LIKE '%OpenAI rate limit acknowledged%'
-                       AND el2.timestamp > ?) = 0
-                ORDER BY timestamp DESC
-                LIMIT 1
-            """, (datetime.now(timezone.utc).isoformat(),))
+            # Use database-agnostic approach: fetch recent errors and filter in Python
+            five_minutes_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
 
-            return error is not None
+            errors = query(conn, """
+                SELECT id, message, timestamp FROM error_logs
+                WHERE message LIKE '%OpenAI API rate limit exceeded (429)%'
+                  AND timestamp > ?
+                ORDER BY timestamp DESC
+                LIMIT 10
+            """, (five_minutes_ago,))
+
+            if not errors:
+                return False
+
+            # Check if any of these errors have NOT been acknowledged
+            for error in errors:
+                # Check if this error has been acknowledged
+                acknowledged = query(conn, """
+                    SELECT COUNT(*) as count FROM error_logs
+                    WHERE message LIKE '%OpenAI rate limit acknowledged%'
+                      AND timestamp > ?
+                """, (error.get('timestamp') or error[2],))
+
+                if acknowledged and acknowledged[0].get('count', 0) == 0:
+                    return True
+
+            return False
 
         except Exception as e:
             logger.error(f"Failed to check for OpenAI rate limit error: {e}")

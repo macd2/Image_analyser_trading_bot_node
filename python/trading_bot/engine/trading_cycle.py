@@ -490,7 +490,13 @@ class TradingCycle:
             step_0_start = datetime.now(timezone.utc)
             cleaned_count = 0
             try:
-                moved = self.cleaner.clean_outdated_files(charts_dir, dry_run=False)
+                # Pass timeframe filter to prevent multi-instance interference
+                # Only clean files matching this instance's timeframe
+                moved = self.cleaner.clean_outdated_files(
+                    charts_dir,
+                    dry_run=False,
+                    timeframe_filter=self.timeframe
+                )
                 cleaned_count = len(moved) if moved else 0
             except Exception as e:
                 logger.warning(f"Chart cleanup failed (non-fatal): {e}")
