@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { RefreshCw, TrendingUp, TrendingDown, Clock, CheckCircle, Target, BarChart2 } from 'lucide-react'
+import { RefreshCw, Clock, CheckCircle, Target, BarChart2, Copy, ChevronDown } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -13,8 +13,13 @@ interface SimulatorStats {
   pending_fill: number
   filled: number
   closed: number
+  cancelled: number
   total_pnl: number
   win_rate: number
+  win_count: number
+  loss_count: number
+  total_trades: number
+  avg_bars_open: number
   by_instance: Record<string, {
     total: number
     closed: number
@@ -109,6 +114,7 @@ interface ClosedTrade {
   timeframe: string | null
   instance_name: string
   run_id: string
+  bars_open?: number
   dry_run?: number | null
 }
 
@@ -172,6 +178,7 @@ export function SimulatorPage() {
 
   const [savingMaxBars, setSavingMaxBars] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [maxBarsConfigOpen, setMaxBarsConfigOpen] = useState(false)
 
   // Check if any max bars settings have changed
   const hasMaxBarsChanges = useMemo(() => {
@@ -560,11 +567,14 @@ export function SimulatorPage() {
       </div>
 
       {/* Main Stats Grid */}
-      <div className="grid grid-cols-5 gap-4">
+      <div>
+        <h2 className="text-sm font-semibold text-slate-300 mb-3">Current State</h2>
+        <div className="grid grid-cols-5 gap-4">
         <Card className="bg-slate-800 border-slate-700">
           <CardContent className="pt-6">
             <div className="text-slate-400 text-sm mb-2">Total Paper Trades</div>
             <div className="text-3xl font-bold text-white">{stats.total_paper_trades}</div>
+            <div className="text-xs text-slate-500 mt-2">Open trades</div>
           </CardContent>
         </Card>
 
@@ -574,6 +584,7 @@ export function SimulatorPage() {
               <Clock className="w-4 h-4" /> Pending Fill
             </div>
             <div className="text-3xl font-bold text-yellow-400">{stats.pending_fill}</div>
+            <div className="text-xs text-slate-500 mt-2">Awaiting entry</div>
           </CardContent>
         </Card>
 
@@ -583,6 +594,7 @@ export function SimulatorPage() {
               <CheckCircle className="w-4 h-4" /> Filled
             </div>
             <div className="text-3xl font-bold text-blue-400">{stats.filled}</div>
+            <div className="text-xs text-slate-500 mt-2">Awaiting exit</div>
           </CardContent>
         </Card>
 
@@ -590,41 +602,165 @@ export function SimulatorPage() {
           <CardContent className="pt-6">
             <div className="text-slate-400 text-sm mb-2">Closed</div>
             <div className="text-3xl font-bold text-slate-300">{stats.closed}</div>
+            <div className="text-xs text-slate-500 mt-2">TP/SL hit only</div>
           </CardContent>
         </Card>
 
         <Card className="bg-slate-800 border-slate-700">
           <CardContent className="pt-6">
-            <div className="text-slate-400 text-sm mb-2">Win Rate</div>
-            <div className="text-3xl font-bold text-green-400">{stats.win_rate.toFixed(1)}%</div>
+            <div className="text-slate-400 text-sm mb-2">Cancelled</div>
+            <div className="text-3xl font-bold text-orange-400">{stats.cancelled}</div>
+            <div className="text-xs text-slate-500 mt-2">Max bars exceeded</div>
+          </CardContent>
+        </Card>
+        </div>
+      </div>
+
+      {/* P&L Card */}
+      <div>
+        <h2 className="text-sm font-semibold text-slate-300 mb-3">Historical Performance</h2>
+        <Card className="bg-slate-800 border-slate-700">
+          <CardContent className="py-4">
+            {(() => {
+              const avgPnlPerTrade = stats.total_trades > 0 ? stats.total_pnl / stats.total_trades : 0
+              const totalWinsPnl = stats.win_count > 0 ? stats.total_pnl * (stats.win_count / (stats.win_count + stats.loss_count)) : 0
+              const totalLossesPnl = stats.loss_count > 0 ? Math.abs(stats.total_pnl - totalWinsPnl) : 0
+              const profitFactor = totalLossesPnl > 0 ? totalWinsPnl / totalLossesPnl : (totalWinsPnl > 0 ? Infinity : 0)
+              return (
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-6">
+                    <div className="text-center">
+                      <div className={`text-3xl font-bold ${stats.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {stats.total_pnl >= 0 ? '+' : ''}${stats.total_pnl.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-slate-400">Total P&L</div>
+                    </div>
+                    <div className="h-12 w-px bg-slate-700" />
+                    <div className="text-center">
+                      <div className={`text-2xl font-bold ${avgPnlPerTrade >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {avgPnlPerTrade >= 0 ? '+' : ''}${avgPnlPerTrade.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-slate-400">Avg P&L/Trade</div>
+                    </div>
+                    <div className="text-center">
+                      <div className={`text-2xl font-bold ${profitFactor >= 1 ? 'text-green-400' : 'text-red-400'}`}>
+                        {profitFactor === Infinity ? '∞' : profitFactor.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-slate-400">Profit Factor</div>
+                    </div>
+                    <div className="h-12 w-px bg-slate-700" />
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-white">{stats.total_trades}</div>
+                      <div className="text-xs text-slate-400">Total Trades</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-400">{stats.win_count}</div>
+                      <div className="text-xs text-slate-400">Wins</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-red-400">{stats.loss_count}</div>
+                      <div className="text-xs text-slate-400">Losses</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-white">{stats.avg_bars_open.toFixed(1)}</div>
+                      <div className="text-xs text-slate-400">Avg Bars Open</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-blue-400">{stats.win_rate.toFixed(0)}%</div>
+                      <div className="text-xs text-slate-400">Win Rate</div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
           </CardContent>
         </Card>
       </div>
 
-      {/* P&L Card */}
-      <Card className={`border-2 ${stats.total_pnl >= 0 ? 'bg-green-900/20 border-green-500' : 'bg-red-900/20 border-red-500'}`}>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            {stats.total_pnl >= 0 ? <TrendingUp className="text-green-400" /> : <TrendingDown className="text-red-400" />}
-            Total P&L
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className={`text-4xl font-bold ${stats.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            ${stats.total_pnl.toFixed(2)}
-          </div>
-        </CardContent>
-      </Card>
+      {/* Closed Trades Summary Stats */}
+      {closedTrades.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-slate-300 mb-3">Closed Trades Summary</h2>
+          <Card className="bg-slate-800 border-slate-700">
+          <CardContent className="py-4">
+            {(() => {
+              const wins = closedTrades.filter(t => t.pnl > 0).length
+              const losses = closedTrades.filter(t => t.pnl < 0).length
+              const totalPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0)
+              const avgPnlPerTrade = closedTrades.length > 0 ? totalPnl / closedTrades.length : 0
+              const totalWinsPnl = closedTrades.filter(t => t.pnl > 0).reduce((sum, t) => sum + (t.pnl || 0), 0)
+              const totalLossesPnl = Math.abs(closedTrades.filter(t => t.pnl < 0).reduce((sum, t) => sum + (t.pnl || 0), 0))
+              const profitFactor = totalLossesPnl > 0 ? totalWinsPnl / totalLossesPnl : (totalWinsPnl > 0 ? Infinity : 0)
+              const avgBarsOpen = closedTrades.length > 0 ? closedTrades.reduce((sum, t) => sum + (t.bars_open || 0), 0) / closedTrades.length : 0
+              const winRate = closedTrades.length > 0 ? (wins / closedTrades.length * 100) : 0
+              return (
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-6">
+                    <div className="text-center">
+                      <div className={`text-3xl font-bold ${totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-slate-400">Total P&L</div>
+                    </div>
+                    <div className="h-12 w-px bg-slate-700" />
+                    <div className="text-center">
+                      <div className={`text-2xl font-bold ${avgPnlPerTrade >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {avgPnlPerTrade >= 0 ? '+' : ''}${avgPnlPerTrade.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-slate-400">Avg P&L/Trade</div>
+                    </div>
+                    <div className="text-center">
+                      <div className={`text-2xl font-bold ${profitFactor >= 1 ? 'text-green-400' : 'text-red-400'}`}>
+                        {profitFactor === Infinity ? '∞' : profitFactor.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-slate-400">Profit Factor</div>
+                    </div>
+                    <div className="h-12 w-px bg-slate-700" />
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-white">{closedTrades.length}</div>
+                      <div className="text-xs text-slate-400">Total Trades</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-400">{wins}</div>
+                      <div className="text-xs text-slate-400">Wins</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-red-400">{losses}</div>
+                      <div className="text-xs text-slate-400">Losses</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-white">{avgBarsOpen.toFixed(1)}</div>
+                      <div className="text-xs text-slate-400">Avg Bars Open</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-blue-400">{winRate.toFixed(0)}%</div>
+                      <div className="text-xs text-slate-400">Win Rate</div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+          </CardContent>
+        </Card>
+        </div>
+      )}
 
       {/* Simulator Settings - Per-Timeframe Max Open Bars */}
       <Card className="bg-slate-800 border-slate-700">
-        <CardHeader className="pb-2">
+        <CardHeader
+          className="pb-2 cursor-pointer hover:bg-slate-700/50 transition-colors"
+          onClick={() => setMaxBarsConfigOpen(!maxBarsConfigOpen)}
+        >
           <CardTitle className="text-sm flex items-center gap-2">
+            <ChevronDown
+              className={`w-4 h-4 text-orange-400 transition-transform ${maxBarsConfigOpen ? 'rotate-180' : ''}`}
+            />
             <Clock className="w-4 h-4 text-orange-400" />
             Max Open Bars Configuration
             <span className="text-slate-500 text-xs font-normal">(0 = no cancellation)</span>
           </CardTitle>
         </CardHeader>
+        {maxBarsConfigOpen && (
         <CardContent>
           {/* Table View */}
           <div className="overflow-x-auto mb-6">
@@ -764,6 +900,7 @@ export function SimulatorPage() {
             )}
           </div>
         </CardContent>
+        )}
       </Card>
 
       {/* By Instance Stats */}
@@ -1028,50 +1165,6 @@ export function SimulatorPage() {
           )}
         </CardContent>
       </Card>
-      
-      {/* Closed Trades Summary Stats */}
-      {closedTrades.length > 0 && (
-        <Card className="bg-slate-800 border-slate-700">
-          <CardContent className="py-4">
-            {(() => {
-              const wins = closedTrades.filter(t => t.pnl > 0).length
-              const losses = closedTrades.filter(t => t.pnl < 0).length
-              const totalPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0)
-              const winRate = closedTrades.length > 0 ? (wins / closedTrades.length * 100) : 0
-              return (
-                <div className="flex items-center justify-between flex-wrap gap-4">
-                  <div className="flex items-center gap-6">
-                    <div className="text-center">
-                      <div className={`text-3xl font-bold ${totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}
-                      </div>
-                      <div className="text-xs text-slate-400">Total P&L</div>
-                    </div>
-                    <div className="h-12 w-px bg-slate-700" />
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-white">{closedTrades.length}</div>
-                      <div className="text-xs text-slate-400">Total Trades</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-green-400">{wins}</div>
-                      <div className="text-xs text-slate-400">Wins</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-red-400">{losses}</div>
-                      <div className="text-xs text-slate-400">Losses</div>
-                    </div>
-                    <div className="text-center">
-                      <div className={`text-2xl font-bold ${winRate >= 50 ? 'text-green-400' : 'text-yellow-400'}`}>{winRate.toFixed(0)}%</div>
-                      <div className="text-xs text-slate-400">Win Rate</div>
-                    </div>
-                  </div>
-                </div>
-              )
-            })()}
-          </CardContent>
-        </Card>
-      )}
-
 
       {/* Closed Trades Section */}
       <Card className="bg-slate-800 border-slate-700">
@@ -1294,16 +1387,37 @@ export function SimulatorPage() {
                         </div>
                         <div className="flex items-center gap-1">
                           <span className="text-orange-400">⏱️ Cancelled:</span>
-                          <span className="text-slate-300">{new Date(trade.closed_at).toLocaleString()}</span>
+                          <span className={trade.closed_at ? "text-slate-300" : "text-orange-500 font-semibold"}>
+                            {trade.closed_at ? new Date(trade.closed_at).toLocaleString() : "--"}
+                          </span>
+                          {!trade.closed_at && (
+                            <span className="text-orange-500 text-xs ml-1">(before fill)</span>
+                          )}
                         </div>
                       </div>
 
                       {/* Row 3: Prices */}
-                      <div className="flex items-center gap-6 text-sm">
+                      <div className="flex items-center gap-6 text-sm mb-3">
                         <div><span className="text-slate-400">Entry:</span> <span className="text-white font-mono">${trade.entry_price?.toFixed(4)}</span></div>
                         <div><span className="text-slate-400">Exit:</span> <span className={`font-mono ${isWin ? 'text-green-400' : 'text-red-400'}`}>${trade.exit_price?.toFixed(4)}</span></div>
                         <div><span className="text-slate-500">TP:</span> <span className="text-slate-400 font-mono">${trade.take_profit?.toFixed(4)}</span></div>
                         <div><span className="text-slate-500">SL:</span> <span className="text-slate-400 font-mono">${trade.stop_loss?.toFixed(4)}</span></div>
+                      </div>
+
+                      {/* Row 4: Trade ID with Copy Button */}
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-orange-600/30">
+                        <span className="text-xs text-slate-500">Trade ID:</span>
+                        <span className="text-xs font-mono text-slate-400">{trade.id.substring(0, 12)}...</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            navigator.clipboard.writeText(trade.id)
+                          }}
+                          className="p-1 hover:bg-orange-600/30 rounded transition-colors"
+                          title="Copy full trade ID"
+                        >
+                          <Copy className="w-3 h-3 text-orange-400 hover:text-orange-300" />
+                        </button>
                       </div>
                     </div>
                   )

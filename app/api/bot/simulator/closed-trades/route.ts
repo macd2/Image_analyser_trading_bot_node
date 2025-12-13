@@ -21,6 +21,7 @@ interface ClosedTrade {
   timeframe: string;
   instance_name: string;
   run_id: string;
+  bars_open?: number;
 }
 
 export async function GET() {
@@ -59,27 +60,53 @@ export async function GET() {
       LIMIT 50
     `);
 
+    // Calculate bars open for each trade
+    const tradesWithBars = closedTrades.map((t) => {
+      let barsOpen = 0
+      // Use filled_at if available, otherwise use fill_time
+      const fillTimestamp = t.filled_at || t.fill_time
+      if (fillTimestamp && t.closed_at && t.timeframe) {
+        const filledTime = new Date(fillTimestamp).getTime()
+        const closedTime = new Date(t.closed_at).getTime()
+        const timeframeMins: Record<string, number> = {
+          '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
+          '1h': 60, '2h': 120, '4h': 240, '6h': 360, '12h': 720, '1d': 1440, '1D': 1440
+        }
+        const minutesPerBar = timeframeMins[t.timeframe] || 1
+        const timeDiff = closedTime - filledTime
+        // Only calculate if closed_at is after filled_at
+        if (timeDiff > 0) {
+          barsOpen = Math.ceil(timeDiff / (minutesPerBar * 60 * 1000))
+        }
+      }
+      return { ...t, bars_open: barsOpen }
+    })
+
     // Calculate summary stats
-    const wins = closedTrades.filter((t) => t.pnl > 0).length
-    const losses = closedTrades.filter((t) => t.pnl < 0).length
-    const totalPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0)
+    const wins = tradesWithBars.filter((t) => t.pnl > 0).length
+    const losses = tradesWithBars.filter((t) => t.pnl < 0).length
+    const totalPnl = tradesWithBars.reduce((sum, t) => sum + (t.pnl || 0), 0)
+    const avgBarsOpen = tradesWithBars.length > 0
+      ? tradesWithBars.reduce((sum, t) => sum + (t.bars_open || 0), 0) / tradesWithBars.length
+      : 0
     const avgWin = wins > 0
-      ? closedTrades.filter((t) => t.pnl > 0).reduce((sum, t) => sum + t.pnl, 0) / wins
+      ? tradesWithBars.filter((t) => t.pnl > 0).reduce((sum, t) => sum + t.pnl, 0) / wins
       : 0
     const avgLoss = losses > 0
-      ? closedTrades.filter((t) => t.pnl < 0).reduce((sum, t) => sum + t.pnl, 0) / losses
+      ? tradesWithBars.filter((t) => t.pnl < 0).reduce((sum, t) => sum + t.pnl, 0) / losses
       : 0
 
     return NextResponse.json({
-      trades: closedTrades,
+      trades: tradesWithBars,
       stats: {
-        total: closedTrades.length,
+        total: tradesWithBars.length,
         wins,
         losses,
-        win_rate: closedTrades.length > 0 ? (wins / closedTrades.length * 100) : 0,
+        win_rate: tradesWithBars.length > 0 ? (wins / tradesWithBars.length * 100) : 0,
         total_pnl: Math.round(totalPnl * 100) / 100,
         avg_win: Math.round(avgWin * 100) / 100,
         avg_loss: Math.round(avgLoss * 100) / 100,
+        avg_bars_open: Math.round(avgBarsOpen * 100) / 100,
         profit_factor: avgLoss !== 0 ? Math.abs(avgWin / avgLoss) : 0
       }
     })

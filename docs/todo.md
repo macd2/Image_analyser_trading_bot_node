@@ -133,3 +133,13 @@ cd /home/slicks/projects/^^Python/Analyse_Chart_Screenshot_Node && npm run dev 2
 2025-12-12 11:06:28 | INFO | __main__ | 
 
 also the banner is blocking the ui it should be less highs yes promitnetn but not makingg the dashboard unusalble 
+
+
+-- 
+[ ] do not delte these trades just reset them to paper-trade so they get picked up agian by the simulator
+psql "postgresql://postgres.kixxrxrnzxhtloizglpm:3fiw9Bm7Q%257XdxD3T%5EVv%2AD%238%26A%25c5FShaYtN@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres" -c "DELETE FROM trades WHERE dry_run = true AND filled_at > closed_at;"
+
+
+-------
+
+kelly crition bet size 

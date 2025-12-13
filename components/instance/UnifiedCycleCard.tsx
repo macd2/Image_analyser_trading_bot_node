@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Camera, Eye, Shield, Zap, Coffee, Circle, CheckCircle, TrendingUp, BarChart3, Power, ChevronDown, ChevronUp, Clock } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { LoadingState } from '@/components/shared'
 import { useBotState } from '@/lib/context/BotStateContext'
 import { useRealtime } from '@/hooks/useRealtime'
 
@@ -76,8 +75,8 @@ export function UnifiedCycleCard({ instanceId }: UnifiedCycleCardProps) {
   useRealtime()
   const { logs } = useBotState()
   const [status, setStatus] = useState<CycleStatus | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [, setLoading] = useState(true)
+  const [, setError] = useState<string | null>(null)
   const [sectionLogs, setSectionLogs] = useState<SectionLogs>({
     step0: [], step1: [], step1_5: [], step2: [], step3: [], step4: [], step5: [], step6: [], step7: [], cycleSummary: []
   })
