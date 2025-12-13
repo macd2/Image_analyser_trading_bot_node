@@ -6,8 +6,13 @@
  */
 
 import Database from 'better-sqlite3';
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
 import path from 'path';
+
+// Configure PostgreSQL to return BIGINT as number instead of string
+// Type ID 20 = BIGINT | BIGSERIAL
+// This prevents "Invalid time value" errors when converting timestamps
+types.setTypeParser(20, (val: string) => parseInt(val, 10));
 
 export type DbType = 'sqlite' | 'postgres';
 
