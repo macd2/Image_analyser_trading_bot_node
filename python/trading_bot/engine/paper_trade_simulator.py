@@ -47,6 +47,57 @@ class PaperTradeSimulator:
         # We now use centralized database client
         self.logger = logger
 
+    def _validate_trade_timestamps(
+        self,
+        trade_id: str,
+        created_at: str,
+        filled_at: Optional[str],
+        closed_at: Optional[str]
+    ) -> Optional[str]:
+        """
+        SANITY CHECK: Validate timestamp ordering for trade lifecycle
+        Returns error message if validation fails, None if valid
+        CRITICAL: A trade must follow this timeline: created_at <= filled_at <= closed_at
+        """
+        try:
+            created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+
+            if filled_at:
+                filled_dt = datetime.fromisoformat(filled_at.replace('Z', '+00:00'))
+                if filled_dt < created_dt:
+                    return f"CRITICAL: filled_at ({filled_at}) is BEFORE created_at ({created_at})"
+
+                if closed_at:
+                    closed_dt = datetime.fromisoformat(closed_at.replace('Z', '+00:00'))
+                    if closed_dt < created_dt:
+                        return f"CRITICAL: closed_at ({closed_at}) is BEFORE created_at ({created_at})"
+                    if closed_dt < filled_dt:
+                        return f"CRITICAL: closed_at ({closed_at}) is BEFORE filled_at ({filled_at})"
+            elif closed_at:
+                # Trade is closed but never filled - this is invalid
+                return "CRITICAL: Trade has closed_at but no filled_at - a trade cannot close without being filled first"
+
+            return None  # All validations passed
+        except Exception as e:
+            return f"Timestamp validation error: {e}"
+
+    def _log_simulator_error(
+        self,
+        trade_id: str,
+        error_type: str,
+        error_message: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Log error to database for audit trail
+        Stores errors in a way that can be queried later for debugging
+        """
+        self.logger.error(
+            f"[SIMULATOR ERROR] Trade {trade_id} - {error_type}: {error_message}",
+            extra={"metadata": metadata or {}}
+        )
+        # TODO: Consider adding a simulator_errors table for persistent error tracking
+
     def get_connection(self):
         """Get database connection using centralized client"""
         return get_connection()
@@ -76,6 +127,44 @@ class PaperTradeSimulator:
         conn = self.get_connection()
 
         try:
+            # SANITY CHECK: Validate timestamps before updating database
+            # Get current trade data to check created_at
+            current_trade = query(conn, "SELECT created_at, filled_at, closed_at FROM trades WHERE id = ?", (trade_id,))
+            if current_trade:
+                current_trade = dict(current_trade[0])
+                created_at = current_trade.get('created_at')
+                filled_at = updates.get('filled_at') or current_trade.get('filled_at')
+                closed_at = updates.get('closed_at') or current_trade.get('closed_at')
+
+                # Convert to string if datetime objects
+                if created_at and not isinstance(created_at, str):
+                    created_at = created_at.isoformat()
+                if filled_at and not isinstance(filled_at, str):
+                    filled_at = filled_at.isoformat()
+                if closed_at and not isinstance(closed_at, str):
+                    closed_at = closed_at.isoformat()
+
+                validation_error = self._validate_trade_timestamps(
+                    trade_id,
+                    created_at,
+                    filled_at,
+                    closed_at
+                )
+
+                if validation_error:
+                    self._log_simulator_error(
+                        trade_id,
+                        'TIMESTAMP_VIOLATION_ON_UPDATE',
+                        validation_error,
+                        {
+                            'updates': updates,
+                            'current_trade': current_trade
+                        }
+                    )
+                    self.logger.error(f"SANITY CHECK FAILED for trade {trade_id}: {validation_error}")
+                    release_connection(conn)
+                    return False  # Do not update database with invalid data
+
             set_clauses = []
             values = []
 
@@ -88,11 +177,11 @@ class PaperTradeSimulator:
 
             # Use centralized db_execute to handle SQLite/PostgreSQL placeholder conversion
             rows_affected = db_execute(conn, query_str, tuple(values))
-            
+
             # If trade is being closed (status = 'closed' and pnl is set), update run aggregates
             if updates.get('status') == 'closed' and updates.get('pnl') is not None:
                 self._update_run_aggregates_on_trade_close(conn, trade_id, updates['pnl'])
-            
+
             conn.commit()
 
             return rows_affected > 0
@@ -125,27 +214,49 @@ class PaperTradeSimulator:
         """
         if not candles:
             return None
-        
+
+        # CRITICAL: Filter candles to only include those at or after trade creation time
+        # A trade cannot be filled before it was created!
+        created_at_str = trade.get('created_at')
+        if created_at_str:
+            # Parse created_at timestamp (could be ISO string or datetime object)
+            if isinstance(created_at_str, str):
+                created_at_dt = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+            else:
+                created_at_dt = created_at_str
+
+            created_at_ms = int(created_at_dt.timestamp() * 1000)
+
+            # Filter to only candles at or after creation time
+            candles_after_creation = [c for c in candles if c.timestamp >= created_at_ms]
+
+            if not candles_after_creation:
+                # No candles after trade creation - cannot simulate
+                logger.debug(f"No candles after trade creation for {trade.get('symbol', 'unknown')}")
+                return None
+
+            candles = candles_after_creation
+
         # Check if trade was filled
         entry_price = trade['entry_price']
         side = trade['side']
-        
+
         # Find fill candle (first candle where price touches entry)
         fill_candle = None
         fill_price = None
         fill_time = None
-        
+
         for candle in candles:
             if self._price_touched(candle, entry_price, side):
                 fill_candle = candle
                 fill_price = entry_price
-                fill_time = datetime.fromtimestamp(candle.timestamp, tz=timezone.utc).isoformat()
+                fill_time = datetime.fromtimestamp(candle.timestamp / 1000, tz=timezone.utc).isoformat()
                 break
-        
+
         if not fill_candle:
             # Trade not filled yet
             return None
-        
+
         # Trade was filled, now check for exit (TP/SL)
         candle_idx = candles.index(fill_candle)
         remaining_candles = candles[candle_idx + 1:]
@@ -161,14 +272,14 @@ class PaperTradeSimulator:
             if self._price_touched(candle, trade['stop_loss'], side):
                 exit_price = trade['stop_loss']
                 exit_reason = 'sl_hit'
-                exit_time = datetime.fromtimestamp(candle.timestamp, tz=timezone.utc).isoformat()
+                exit_time = datetime.fromtimestamp(candle.timestamp / 1000, tz=timezone.utc).isoformat()
                 break
-            
+
             # Check TP
             if self._price_touched(candle, trade['take_profit'], side):
                 exit_price = trade['take_profit']
                 exit_reason = 'tp_hit'
-                exit_time = datetime.fromtimestamp(candle.timestamp, tz=timezone.utc).isoformat()
+                exit_time = datetime.fromtimestamp(candle.timestamp / 1000, tz=timezone.utc).isoformat()
                 break
         
         # Calculate P&L if trade closed
