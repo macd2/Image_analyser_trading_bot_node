@@ -229,18 +229,18 @@ export default function TradeChartModal({ isOpen, onClose, trade, mode = 'live' 
             </div>
           </div>
 
+          {/* Filled Date/Time */}
+          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+            <div className="text-xs text-slate-400 mb-1">Filled Date/Time</div>
+            <div className="text-xs text-slate-300 font-mono">{trade.filled_at ? new Date(trade.filled_at).toISOString().replace('T', ' ').slice(0, 19) : '—'}</div>
+          </div>
+
           {/* Fill to Close Bars */}
           <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
             <div className="text-xs text-slate-400 mb-1">Fill to Close</div>
             <div className="text-xs text-slate-300 font-mono">
               {trade.filled_at && trade.closed_at ? `${Math.round((new Date(trade.closed_at).getTime() - new Date(trade.filled_at).getTime()) / (1000 * 60 * (trade.timeframe === '1h' ? 60 : trade.timeframe === '2h' ? 120 : trade.timeframe === '4h' ? 240 : 60)))} bars` : '—'}
             </div>
-          </div>
-
-          {/* Filled Date/Time */}
-          <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
-            <div className="text-xs text-slate-400 mb-1">Filled Date/Time</div>
-            <div className="text-xs text-slate-300 font-mono">{trade.filled_at ? new Date(trade.filled_at).toISOString().replace('T', ' ').slice(0, 19) : '—'}</div>
           </div>
         </div>
       </div>
