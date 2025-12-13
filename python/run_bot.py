@@ -468,20 +468,32 @@ class TradingBot:
 
             # Check if any of these errors have NOT been acknowledged
             for error in errors:
+                # Get timestamp safely - prefer dict access, fallback to index
+                error_timestamp = error.get('timestamp')
+                if error_timestamp is None:
+                    try:
+                        error_timestamp = error[2]  # timestamp is 3rd column
+                    except (IndexError, TypeError):
+                        logger.warning(f"Could not extract timestamp from error row: {error}")
+                        continue
+
                 # Check if this error has been acknowledged
                 acknowledged = query(conn, """
                     SELECT COUNT(*) as count FROM error_logs
                     WHERE message LIKE '%OpenAI rate limit acknowledged%'
                       AND timestamp > ?
-                """, (error.get('timestamp') or error[2],))
+                """, (error_timestamp,))
 
-                if acknowledged and acknowledged[0].get('count', 0) == 0:
-                    return True
+                # Check if count is 0 (no acknowledgments found)
+                if acknowledged and len(acknowledged) > 0:
+                    count = acknowledged[0].get('count', 0)
+                    if count == 0:
+                        return True
 
             return False
 
         except Exception as e:
-            logger.error(f"Failed to check for OpenAI rate limit error: {e}")
+            logger.error(f"Failed to check for OpenAI rate limit error: {e}", exc_info=True)
             return False
         finally:
             # Always release connection back to pool (PostgreSQL) or close (SQLite)

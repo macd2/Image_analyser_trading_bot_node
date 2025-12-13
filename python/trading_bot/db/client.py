@@ -61,7 +61,8 @@ class UnifiedRow:
         if hasattr(row, 'keys') and callable(row.keys):
             # sqlite3.Row or dict-like object
             self._dict = {key: row[key] for key in row.keys()}
-            self._tuple = tuple(row)
+            # Convert values to tuple (not keys!) for index access
+            self._tuple = tuple(row[key] for key in row.keys())
         elif isinstance(row, Mapping):
             self._dict = dict(row)
             self._tuple = tuple(row.values())
