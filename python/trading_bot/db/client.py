@@ -317,6 +317,12 @@ def convert_placeholders(sql: str, params: Tuple) -> Tuple[str, Tuple]:
     """
     Convert SQLite placeholders (?) to PostgreSQL placeholders (%s).
 
+    IMPORTANT:
+    1. Only replaces ? that are actual parameter placeholders, not wildcards in LIKE clauses.
+    2. Escapes % characters in LIKE clauses as %% for PostgreSQL (psycopg2 requirement).
+
+    Parameter placeholders are ? characters that appear outside of string literals.
+
     Args:
         sql: SQL query with ? placeholders
         params: Query parameters
@@ -331,8 +337,37 @@ def convert_placeholders(sql: str, params: Tuple) -> Tuple[str, Tuple]:
         raise TypeError(f"params must be a tuple or list, got {type(params).__name__}: {params}")
 
     if DB_TYPE == 'postgres':
-        # Replace ? with %s for PostgreSQL
-        converted_sql = sql.replace('?', '%s')
+        # Replace ? with %s for PostgreSQL, but only for parameter placeholders
+        # Parameter placeholders are ? outside of string literals
+        # Also escape % in string literals as %% for psycopg2
+        converted_sql = ""
+        in_string = False
+        string_char = None
+        i = 0
+
+        while i < len(sql):
+            char = sql[i]
+
+            # Track if we're inside a string literal
+            if char in ("'", '"') and (i == 0 or sql[i-1] != '\\'):
+                if not in_string:
+                    in_string = True
+                    string_char = char
+                elif char == string_char:
+                    in_string = False
+                    string_char = None
+
+            # Replace ? with %s only if we're not in a string literal
+            if char == '?' and not in_string:
+                converted_sql += '%s'
+            # Escape % as %% only if we're inside a string literal (for LIKE clauses)
+            elif char == '%' and in_string:
+                converted_sql += '%%'
+            else:
+                converted_sql += char
+
+            i += 1
+
         return (converted_sql, params)
     else:
         return (sql, params)
