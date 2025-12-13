@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { RefreshCw, Clock, CheckCircle, Target, BarChart2, Copy, ChevronDown } from 'lucide-react'
+import { RefreshCw, Clock, CheckCircle, Target, BarChart2, Copy, ChevronDown, Check } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -113,6 +113,7 @@ interface ClosedTrade {
   closed_at: string
   timeframe: string | null
   instance_name: string
+  instance_id: string
   run_id: string
   bars_open?: number
   dry_run?: number | null
@@ -200,6 +201,8 @@ export function SimulatorPage() {
   // Modal state for trade chart
   const [selectedTrade, setSelectedTrade] = useState<TradeData | null>(null)
   const [chartMode, setChartMode] = useState<'live' | 'historical'>('live')
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [copiedType, setCopiedType] = useState<'trade' | 'run' | 'rec' | null>(null)
 
   // Connect to real-time updates
   const { tickers } = useRealtime()
@@ -1012,6 +1015,7 @@ export function SimulatorPage() {
                       cycle.trades.map(trade => ({
                         trade,
                         instance_name: instance.instance_name,
+                        instance_id: run.instance_id,
                         run_id: run.run_id,
                         boundary_time: cycle.boundary_time
                       }))
@@ -1019,7 +1023,7 @@ export function SimulatorPage() {
                   )
                 )
                 .sort((a, b) => new Date(b.trade.created_at).getTime() - new Date(a.trade.created_at).getTime())
-                .map(({ trade, instance_name, run_id, boundary_time: _boundaryTime }) => {
+                .map(({ trade, instance_name, instance_id, run_id, boundary_time: _boundaryTime }) => {
                   const { pnl, pnlPercent, currentPrice } = calculateUnrealizedPnL(trade)
                   // Check if trade is filled before checking for SL/TP
                   const isFilled = trade.status === 'filled' || trade.fill_time !== null || trade.filled_at !== null
@@ -1062,9 +1066,53 @@ export function SimulatorPage() {
                       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                            <span className="bg-slate-700 px-1.5 py-0.5 rounded">{instance_name}</span>
+                            <div className="flex items-center gap-1">
+                              <span className="bg-slate-700 px-1.5 py-0.5 rounded" title="Instance Name">{instance_name}</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  navigator.clipboard.writeText(instance_id)
+                                  setCopiedId(instance_id)
+                                  setCopiedType('rec')
+                                  setTimeout(() => {
+                                    setCopiedId(null)
+                                    setCopiedType(null)
+                                  }, 2000)
+                                }}
+                                className={`p-0.5 rounded transition-all ${
+                                  copiedId === instance_id && copiedType === 'rec'
+                                    ? 'bg-purple-600/50 text-purple-300'
+                                    : 'hover:bg-purple-600/30 text-slate-500 hover:text-purple-400'
+                                }`}
+                                title="Copy Instance ID"
+                              >
+                                {copiedId === instance_id && copiedType === 'rec' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                              </button>
+                            </div>
                             <span>›</span>
-                            <span className="bg-slate-700/50 px-1 py-0.5 rounded font-mono">{run_id.slice(0, 6)}</span>
+                            <div className="flex items-center gap-1">
+                              <span className="bg-slate-700/50 px-1 py-0.5 rounded font-mono" title="Run ID">{run_id.slice(0, 6)}</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  navigator.clipboard.writeText(run_id)
+                                  setCopiedId(run_id)
+                                  setCopiedType('run')
+                                  setTimeout(() => {
+                                    setCopiedId(null)
+                                    setCopiedType(null)
+                                  }, 2000)
+                                }}
+                                className={`p-0.5 rounded transition-all ${
+                                  copiedId === run_id && copiedType === 'run'
+                                    ? 'bg-blue-600/50 text-blue-300'
+                                    : 'hover:bg-blue-600/30 text-slate-500 hover:text-blue-400'
+                                }`}
+                                title="Copy Run ID"
+                              >
+                                {copiedId === run_id && copiedType === 'run' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                              </button>
+                            </div>
                           </div>
                           <span className="font-bold text-white text-xl">{trade.symbol}</span>
                           <span className={`text-xs px-2 py-1 rounded font-semibold ${isLong ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
@@ -1156,7 +1204,30 @@ export function SimulatorPage() {
                           </div>
                         )}
 
-                        <span className="text-[10px] text-slate-600 font-mono ml-auto">{trade.id.slice(0, 8)}</span>
+                        {/* Trade ID with Copy Button */}
+                        <div className="flex items-center gap-2 ml-auto">
+                          <span className="text-[10px] text-slate-600 font-mono" title="Trade ID">{trade.id.slice(0, 8)}...</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              navigator.clipboard.writeText(trade.id)
+                              setCopiedId(trade.id)
+                              setCopiedType('trade')
+                              setTimeout(() => {
+                                setCopiedId(null)
+                                setCopiedType(null)
+                              }, 2000)
+                            }}
+                            className={`p-1 rounded transition-all ${
+                              copiedId === trade.id && copiedType === 'trade'
+                                ? 'bg-blue-600/50 text-blue-300'
+                                : 'hover:bg-blue-600/30 text-slate-500 hover:text-blue-400'
+                            }`}
+                            title="Copy Trade ID"
+                          >
+                            {copiedId === trade.id && copiedType === 'trade' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )
@@ -1219,9 +1290,57 @@ export function SimulatorPage() {
                       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                            <span className="bg-slate-700 px-1.5 py-0.5 rounded">{trade.instance_name}</span>
+                            <div className="flex items-center gap-1">
+                              <span className="bg-slate-700 px-1.5 py-0.5 rounded" title="Instance Name">{trade.instance_name}</span>
+                              {trade.instance_id && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    navigator.clipboard.writeText(trade.instance_id)
+                                    setCopiedId(trade.instance_id)
+                                    setCopiedType('rec')
+                                    setTimeout(() => {
+                                      setCopiedId(null)
+                                      setCopiedType(null)
+                                    }, 2000)
+                                  }}
+                                  className={`p-0.5 rounded transition-all ${
+                                    copiedId === trade.instance_id && copiedType === 'rec'
+                                      ? 'bg-purple-600/50 text-purple-300'
+                                      : 'hover:bg-purple-600/30 text-slate-500 hover:text-purple-400'
+                                  }`}
+                                  title="Copy Instance ID"
+                                >
+                                  {copiedId === trade.instance_id && copiedType === 'rec' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                                </button>
+                              )}
+                            </div>
                             <span>›</span>
-                            <span className="bg-slate-700/50 px-1 py-0.5 rounded font-mono">{trade.run_id?.slice(0, 6)}</span>
+                            <div className="flex items-center gap-1">
+                              <span className="bg-slate-700/50 px-1 py-0.5 rounded font-mono" title="Run ID">{trade.run_id?.slice(0, 6)}</span>
+                              {trade.run_id && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    navigator.clipboard.writeText(trade.run_id)
+                                    setCopiedId(trade.run_id)
+                                    setCopiedType('run')
+                                    setTimeout(() => {
+                                      setCopiedId(null)
+                                      setCopiedType(null)
+                                    }, 2000)
+                                  }}
+                                  className={`p-0.5 rounded transition-all ${
+                                    copiedId === trade.run_id && copiedType === 'run'
+                                      ? 'bg-green-600/50 text-green-300'
+                                      : 'hover:bg-green-600/30 text-slate-500 hover:text-green-400'
+                                  }`}
+                                  title="Copy Run ID"
+                                >
+                                  {copiedId === trade.run_id && copiedType === 'run' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                                </button>
+                              )}
+                            </div>
                           </div>
                           <span className="font-bold text-white text-xl">{trade.symbol}</span>
                           <span className={`text-xs px-2 py-1 rounded font-semibold ${isLong ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
@@ -1299,7 +1418,30 @@ export function SimulatorPage() {
                         <div><span className="text-slate-400">Exit:</span> <span className={`font-mono ${isWin ? 'text-green-400' : 'text-red-400'}`}>${trade.exit_price?.toFixed(4)}</span></div>
                         <div><span className="text-slate-500">TP:</span> <span className="text-slate-400 font-mono">${trade.take_profit?.toFixed(4)}</span></div>
                         <div><span className="text-slate-500">SL:</span> <span className="text-slate-400 font-mono">${trade.stop_loss?.toFixed(4)}</span></div>
-                        <span className="text-[10px] text-slate-600 font-mono ml-auto">{trade.id.slice(0, 8)}</span>
+                        {/* Trade ID with Copy Button */}
+                        <div className="flex items-center gap-2 ml-auto">
+                          <span className="text-[10px] text-slate-600 font-mono" title="Trade ID">{trade.id.slice(0, 8)}...</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              navigator.clipboard.writeText(trade.id)
+                              setCopiedId(trade.id)
+                              setCopiedType('trade')
+                              setTimeout(() => {
+                                setCopiedId(null)
+                                setCopiedType(null)
+                              }, 2000)
+                            }}
+                            className={`p-1 rounded transition-all ${
+                              copiedId === trade.id && copiedType === 'trade'
+                                ? 'bg-green-600/50 text-green-300'
+                                : 'hover:bg-green-600/30 text-slate-500 hover:text-green-400'
+                            }`}
+                            title="Copy Trade ID"
+                          >
+                            {copiedId === trade.id && copiedType === 'trade' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )
@@ -1353,6 +1495,61 @@ export function SimulatorPage() {
                         setChartMode('historical')
                       }}
                     >
+                      {/* Row 0: Instance Info */}
+                      <div className="flex items-center gap-1 text-[10px] text-slate-500 mb-2">
+                        <div className="flex items-center gap-1">
+                          <span className="bg-slate-700 px-1.5 py-0.5 rounded" title="Instance Name">{trade.instance_name}</span>
+                          {trade.instance_id && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.instance_id)
+                                setCopiedId(trade.instance_id)
+                                setCopiedType('rec')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`p-0.5 rounded transition-all ${
+                                copiedId === trade.instance_id && copiedType === 'rec'
+                                  ? 'bg-purple-600/50 text-purple-300'
+                                  : 'hover:bg-purple-600/30 text-slate-500 hover:text-purple-400'
+                              }`}
+                              title="Copy Instance ID"
+                            >
+                              {copiedId === trade.instance_id && copiedType === 'rec' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          )}
+                        </div>
+                        <span>›</span>
+                        <div className="flex items-center gap-1">
+                          <span className="bg-slate-700/50 px-1 py-0.5 rounded font-mono" title="Run ID">{trade.run_id?.slice(0, 6)}</span>
+                          {trade.run_id && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.run_id)
+                                setCopiedId(trade.run_id)
+                                setCopiedType('run')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`p-0.5 rounded transition-all ${
+                                copiedId === trade.run_id && copiedType === 'run'
+                                  ? 'bg-orange-600/50 text-orange-300'
+                                  : 'hover:bg-orange-600/30 text-slate-500 hover:text-orange-400'
+                              }`}
+                              title="Copy Run ID"
+                            >
+                              {copiedId === trade.run_id && copiedType === 'run' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
                       {/* Row 1: Symbol + Side + Cancelled Badge + P&L */}
                       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
                         <div className="flex items-center gap-3">
@@ -1407,16 +1604,26 @@ export function SimulatorPage() {
                       {/* Row 4: Trade ID with Copy Button */}
                       <div className="flex items-center justify-end gap-2 pt-2 border-t border-orange-600/30">
                         <span className="text-xs text-slate-500">Trade ID:</span>
-                        <span className="text-xs font-mono text-slate-400">{trade.id.substring(0, 12)}...</span>
+                        <span className="text-xs font-mono text-slate-400" title="Trade ID">{trade.id.substring(0, 12)}...</span>
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
                             navigator.clipboard.writeText(trade.id)
+                            setCopiedId(trade.id)
+                            setCopiedType('trade')
+                            setTimeout(() => {
+                              setCopiedId(null)
+                              setCopiedType(null)
+                            }, 2000)
                           }}
-                          className="p-1 hover:bg-orange-600/30 rounded transition-colors"
-                          title="Copy full trade ID"
+                          className={`p-1 rounded transition-all ${
+                            copiedId === trade.id && copiedType === 'trade'
+                              ? 'bg-orange-600/50 text-orange-300'
+                              : 'hover:bg-orange-600/30 text-orange-400 hover:text-orange-300'
+                          }`}
+                          title="Copy Trade ID"
                         >
-                          <Copy className="w-3 h-3 text-orange-400 hover:text-orange-300" />
+                          {copiedId === trade.id && copiedType === 'trade' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                         </button>
                       </div>
                     </div>
