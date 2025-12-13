@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Activity, RefreshCw, Clock, TrendingUp, AlertCircle, CheckCircle,
-  ChevronDown, ChevronRight, Search, Zap, Package, Play, Square, Eye, Image, Server
+  ChevronDown, ChevronRight, Search, Zap, Package, Play, Square, Eye, Image, Server, Copy, Check
 } from 'lucide-react'
 
 // ============================================================
@@ -132,6 +132,13 @@ export default function LogTrail() {
   const [expandedTrades, setExpandedTrades] = useState<Set<string>>(new Set())
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [selectedRec, setSelectedRec] = useState<Recommendation | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  const handleCopyId = useCallback((id: string) => {
+    navigator.clipboard.writeText(id)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 2000)
+  }, [])
 
   const fetchData = useCallback(async () => {
     try {
@@ -311,6 +318,8 @@ export default function LogTrail() {
         <RecommendationModal
           rec={selectedRec}
           onClose={() => setSelectedRec(null)}
+          copiedId={copiedId}
+          onCopyId={handleCopyId}
         />
       )}
     </div>
@@ -773,9 +782,11 @@ function TradeCard({ trade, expanded, onToggle }: TradeCardProps) {
 interface RecommendationModalProps {
   rec: Recommendation
   onClose: () => void
+  copiedId: string | null
+  onCopyId: (id: string) => void
 }
 
-function RecommendationModal({ rec, onClose }: RecommendationModalProps) {
+function RecommendationModal({ rec, onClose, copiedId, onCopyId }: RecommendationModalProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'prompt' | 'response' | 'chart'>('overview')
 
   let rawData: Record<string, unknown> = {}
@@ -830,8 +841,8 @@ function RecommendationModal({ rec, onClose }: RecommendationModalProps) {
         <div className="p-4 overflow-y-auto max-h-[60vh]">
           {activeTab === 'overview' && (
             <div className="grid grid-cols-2 gap-4">
-              <InfoRow label="ID" value={rec.id} />
-              <InfoRow label="Cycle ID" value={rec.cycle_id} />
+              <InfoRow label="ID" value={rec.id} isCopyable onCopy={() => onCopyId(rec.id)} isCopied={copiedId === rec.id} />
+              <InfoRow label="Cycle ID" value={rec.cycle_id} isCopyable onCopy={() => onCopyId(rec.cycle_id)} isCopied={copiedId === rec.cycle_id} />
               <InfoRow label="Symbol" value={rec.symbol} />
               <InfoRow label="Recommendation" value={rec.recommendation} />
               <InfoRow label="Confidence" value={`${(rec.confidence * 100).toFixed(1)}%`} />
@@ -903,11 +914,26 @@ function RecommendationModal({ rec, onClose }: RecommendationModalProps) {
   )
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value, isCopyable, onCopy, isCopied }: { label: string; value: string; isCopyable?: boolean; onCopy?: () => void; isCopied?: boolean }) {
   return (
     <div className="bg-slate-800/30 rounded p-2">
       <div className="text-xs text-slate-500">{label}</div>
-      <div className="text-sm text-white font-mono truncate">{value}</div>
+      <div className="flex items-center gap-2">
+        <div className="text-sm text-white font-mono truncate flex-1">{value}</div>
+        {isCopyable && onCopy && (
+          <button
+            onClick={onCopy}
+            className={`p-1 rounded transition-all shrink-0 ${
+              isCopied
+                ? 'bg-blue-600/50 text-blue-300'
+                : 'hover:bg-blue-600/30 text-slate-500 hover:text-blue-400'
+            }`}
+            title="Copy ID"
+          >
+            {isCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
