@@ -196,6 +196,26 @@ CREATE TABLE IF NOT EXISTS error_logs (
 CREATE INDEX IF NOT EXISTS idx_error_run ON error_logs(run_id);
 CREATE INDEX IF NOT EXISTS idx_error_level ON error_logs(level);
 
+CREATE TABLE IF NOT EXISTS sl_adjustments (
+    id TEXT PRIMARY KEY,
+    recommendation_id TEXT NOT NULL REFERENCES recommendations(id),
+
+    -- Original values from recommendation
+    original_stop_loss REAL,
+
+    -- Adjusted value
+    adjusted_stop_loss REAL NOT NULL,
+
+    -- Adjustment details
+    adjustment_type TEXT NOT NULL,
+    adjustment_value REAL NOT NULL,
+    reason TEXT,
+
+    -- Timestamps
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sl_adj_rec ON sl_adjustments(recommendation_id);
+
 CREATE TABLE IF NOT EXISTS analysis_results (
     id TEXT PRIMARY KEY,
     symbol TEXT NOT NULL,

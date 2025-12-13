@@ -30,6 +30,7 @@ from trading_bot.core.utils import (  # type: ignore
 )
 from trading_bot.core.prompts.prompt_registry import get_prompt_function
 from trading_bot.db.client import get_connection, execute, query
+from trading_bot.services.sl_adjuster import StopLossAdjuster
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,9 @@ class TradingCycle:
             max_file_age_hours=24,
             enable_cycle_based_cleaning=True,
         )
+
+        # SL Adjuster for pre-execution adjustments
+        self.sl_adjuster = StopLossAdjuster(self._db)
 
         # Cycle state
         self._running = False
@@ -975,6 +979,54 @@ class TradingCycle:
 
         # Check if actionable signal
         if recommendation in ("BUY", "SELL", "LONG", "SHORT"):
+            # Apply SL adjustment if configured
+            result_for_adjustment = result.copy()
+            result_for_adjustment['recommendation_id'] = rec_id
+            result_for_adjustment['symbol'] = normalized_symbol
+
+            # Get instance settings for adjustment config
+            # Load both settings JSON and config defaults
+            instance_settings = {}
+            if self.instance_id:
+                try:
+                    # Get settings JSON from instances table
+                    instances = query(self._db, "SELECT settings FROM instances WHERE id = ?", [self.instance_id])
+                    if instances:
+                        import json
+                        settings_json = instances[0][0]
+                        instance_settings = json.loads(settings_json) if isinstance(settings_json, str) else settings_json or {}
+
+                    # Also load config defaults from config table
+                    config_rows = query(self._db, """
+                        SELECT key, value FROM config
+                        WHERE instance_id = ? AND key LIKE 'trading.sl_adjustment%'
+                    """, [self.instance_id])
+
+                    for row in config_rows:
+                        key, value = row[0], row[1]
+                        # Convert string values to appropriate types
+                        if value.lower() in ('true', 'false'):
+                            instance_settings[key] = value.lower() == 'true'
+                        else:
+                            try:
+                                instance_settings[key] = float(value)
+                            except (ValueError, TypeError):
+                                instance_settings[key] = value
+                except Exception as e:
+                    logger.warning(f"Failed to load instance settings for SL adjustment: {e}")
+
+            # Apply adjustment
+            adjusted_result, adjustment_record = self.sl_adjuster.adjust_recommendation(
+                result_for_adjustment,
+                instance_settings
+            )
+
+            # Update analysis with adjusted SL if adjustment was applied
+            if adjustment_record:
+                analysis['stop_loss'] = adjusted_result['stop_loss']
+                result['adjustment_applied'] = True
+                result['adjustment_id'] = adjustment_record['id']
+
             # Build signal for trading engine
             signal = self._build_signal(analysis, recommendation, confidence)
 

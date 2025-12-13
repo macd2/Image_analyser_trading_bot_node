@@ -87,6 +87,27 @@ export const DEFAULT_CONFIG: ConfigDefault[] = [
     category: "trading",
     description: "Maximum number of concurrent positions/orders"
   },
+  {
+    key: "trading.sl_adjustment_enabled",
+    value: false,
+    type: "boolean",
+    category: "trading",
+    description: "Enable pre-execution stop-loss adjustment"
+  },
+  {
+    key: "trading.sl_adjustment_long_pct",
+    value: 1.5,
+    type: "number",
+    category: "trading",
+    description: "SL widening percentage for LONG trades (e.g., 1.5 = 1.5% wider)"
+  },
+  {
+    key: "trading.sl_adjustment_short_pct",
+    value: 1.5,
+    type: "number",
+    category: "trading",
+    description: "SL widening percentage for SHORT trades (e.g., 1.5 = 1.5% wider)"
+  },
 
   // Tightening (3 settings)
   {

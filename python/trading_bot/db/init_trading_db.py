@@ -282,6 +282,28 @@ CREATE INDEX IF NOT EXISTS idx_error_run ON error_logs(run_id);
 CREATE INDEX IF NOT EXISTS idx_error_cycle ON error_logs(cycle_id);
 CREATE INDEX IF NOT EXISTS idx_error_level ON error_logs(level);
 CREATE INDEX IF NOT EXISTS idx_error_timestamp ON error_logs(timestamp);
+
+-- 7. Stop Loss Adjustments (pre-execution SL adjustments)
+CREATE TABLE IF NOT EXISTS sl_adjustments (
+    id TEXT PRIMARY KEY,
+    recommendation_id TEXT NOT NULL REFERENCES recommendations(id),
+
+    -- Original values from recommendation
+    original_stop_loss REAL,
+
+    -- Adjusted value
+    adjusted_stop_loss REAL NOT NULL,
+
+    -- Adjustment details
+    adjustment_type TEXT NOT NULL,  -- 'percentage'
+    adjustment_value REAL NOT NULL,  -- e.g., 1.5 for 1.5%
+    reason TEXT,  -- 'config_adjustment', 'manual_override', etc.
+
+    -- Timestamps
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sl_adj_rec ON sl_adjustments(recommendation_id);
 """
 
 

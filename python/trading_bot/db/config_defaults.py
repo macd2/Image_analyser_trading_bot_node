@@ -35,6 +35,12 @@ DEFAULT_CONFIG: List[Tuple[str, Any, str, str, str]] = [
      "Trading leverage multiplier"),
     ("trading.max_concurrent_trades", 3, "number", "trading",
      "Maximum number of concurrent positions/orders"),
+    ("trading.sl_adjustment_enabled", False, "boolean", "trading",
+     "Enable pre-execution stop-loss adjustment"),
+    ("trading.sl_adjustment_long_pct", 1.5, "number", "trading",
+     "SL widening percentage for LONG trades (e.g., 1.5 = 1.5% wider)"),
+    ("trading.sl_adjustment_short_pct", 1.5, "number", "trading",
+     "SL widening percentage for SHORT trades (e.g., 1.5 = 1.5% wider)"),
 
     # Tightening (3 settings)
     ("trading.enable_position_tightening", True, "boolean", "tightening",

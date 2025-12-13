@@ -740,6 +740,23 @@ export async function updateInstanceSettings(instanceId: string, updates: Array<
 // Groups with "├─" or "└─" are displayed as child groups (indented)
 type ConfigMeta = { type: 'string' | 'number' | 'boolean' | 'json'; category: string; description: string; tooltip?: string; group?: string; order?: number };
 const CONFIG_METADATA: Record<string, ConfigMeta> = {
+  // Trading Settings - Core
+  'trading.paper_trading': { type: 'boolean', category: 'trading', group: '1. Core Settings', description: 'Enable paper trading mode (no real trades)', tooltip: 'When enabled, trades are simulated without real execution', order: 1 },
+  'trading.auto_approve_trades': { type: 'boolean', category: 'trading', group: '1. Core Settings', description: 'Skip Telegram confirmation for trades', tooltip: 'Automatically execute trades without manual approval', order: 2 },
+  'trading.min_confidence_threshold': { type: 'number', category: 'trading', group: '1. Core Settings', description: 'Minimum confidence score required for trades (0.0-1.0)', tooltip: 'Only execute trades with confidence >= this value', order: 3 },
+  'trading.min_rr': { type: 'number', category: 'trading', group: '1. Core Settings', description: 'Minimum risk-reward ratio required for trades', tooltip: 'Only execute trades with RR >= this value', order: 4 },
+
+  // Trading Settings - Risk Management
+  'trading.risk_percentage': { type: 'number', category: 'trading', group: '2. Risk Management', description: 'Risk per trade as decimal (0.01 = 1% of account)', tooltip: 'Percentage of account balance to risk per trade', order: 10 },
+  'trading.max_loss_usd': { type: 'number', category: 'trading', group: '2. Risk Management', description: 'Maximum USD risk per trade', tooltip: 'Hard cap on USD amount risked per trade', order: 11 },
+  'trading.leverage': { type: 'number', category: 'trading', group: '2. Risk Management', description: 'Trading leverage multiplier', tooltip: 'Leverage to use for position sizing', order: 12 },
+  'trading.max_concurrent_trades': { type: 'number', category: 'trading', group: '2. Risk Management', description: 'Maximum number of concurrent positions/orders', tooltip: 'Limit on open positions at any time', order: 13 },
+
+  // Trading Settings - Stop Loss Adjustment
+  'trading.sl_adjustment_enabled': { type: 'boolean', category: 'trading', group: '3. Stop Loss Adjustment', description: 'Enable pre-execution stop-loss adjustment', tooltip: 'Automatically widen stop loss before trade execution', order: 20 },
+  'trading.sl_adjustment_long_pct': { type: 'number', category: 'trading', group: '3. Stop Loss Adjustment', description: 'SL widening percentage for LONG trades (e.g., 1.5 = 1.5% wider)', tooltip: 'Percentage to widen SL for LONG positions', order: 21 },
+  'trading.sl_adjustment_short_pct': { type: 'number', category: 'trading', group: '3. Stop Loss Adjustment', description: 'SL widening percentage for SHORT trades (e.g., 1.5 = 1.5% wider)', tooltip: 'Percentage to widen SL for SHORT positions', order: 22 },
+
   // AI Settings
   'openai.assistant_id': { type: 'string', category: 'ai', group: '1. Model Configuration', description: 'OpenAI Assistant ID', tooltip: 'The unique identifier for your OpenAI Assistant', order: 1 },
   'openai.model': { type: 'string', category: 'ai', group: '1. Model Configuration', description: 'OpenAI Model', tooltip: 'AI model to use for analysis (e.g., gpt-4, gpt-3.5-turbo)', order: 2 },
@@ -749,25 +766,13 @@ const CONFIG_METADATA: Record<string, ConfigMeta> = {
   'bybit.max_retries': { type: 'number', category: 'exchange', group: '2. API Settings', description: 'Max retries for API calls', tooltip: 'Number of times to retry failed API requests', order: 10 },
   'bybit.recv_window': { type: 'number', category: 'exchange', group: '2. API Settings', description: 'Receive window in ms', tooltip: 'Time window for API request validity (milliseconds)', order: 11 },
 
-  // Trading - Core
-  'trading.paper_trading': { type: 'boolean', category: 'trading', group: '1. Core', description: 'Paper trading mode', tooltip: 'Simulate trades without real money (dry run mode for testing strategies)', order: 1 },
-  'trading.auto_approve_trades': { type: 'boolean', category: 'trading', group: '1. Core', description: 'Auto-approve trades', tooltip: 'Automatically execute trades without manual approval (use with caution in live trading)', order: 2 },
-  'trading.max_concurrent_trades': { type: 'number', category: 'trading', group: '1. Core', description: 'Max concurrent trades', tooltip: 'Maximum number of positions/orders that can be open at the same time', order: 4 },
-
-  // Trading - Risk Management
-  'trading.leverage': { type: 'number', category: 'trading', group: '2. Risk Management', description: 'Trading leverage', tooltip: 'Leverage multiplier for positions (e.g., 2 = 2x leverage). Higher leverage = higher risk', order: 10 },
-  'trading.risk_percentage': { type: 'number', category: 'trading', group: '2. Risk Management', description: 'Risk percentage per trade', tooltip: 'Percentage of account balance to risk per trade (e.g., 0.01 = 1% of balance)', order: 11 },
-  'trading.max_loss_usd': { type: 'number', category: 'trading', group: '2. Risk Management', description: 'Max loss per trade in USD', tooltip: 'Maximum dollar amount to risk on a single trade (hard cap on position size)', order: 12 },
-  'trading.min_rr': { type: 'number', category: 'trading', group: '2. Risk Management', description: 'Minimum risk:reward ratio', tooltip: 'Minimum Risk:Reward ratio required for a trade (e.g., 1.7 = must have at least 1.7R potential profit)', order: 13 },
-  'trading.min_confidence_threshold': { type: 'number', category: 'trading', group: '2. Risk Management', description: 'Min confidence threshold', tooltip: 'Minimum AI confidence score required to take a trade (0.0-1.0, e.g., 0.75 = 75% confidence)', order: 14 },
-
   // Trading - Position Sizing
-  'trading.use_enhanced_position_sizing': { type: 'boolean', category: 'trading', group: '3. Position Sizing', description: 'Use enhanced position sizing', tooltip: 'Use confidence-weighted position sizing instead of fixed risk percentage', order: 20 },
-  'trading.min_position_value_usd': { type: 'number', category: 'trading', group: '3. Position Sizing', description: 'Minimum position value in USD', tooltip: 'Minimum USD value for any position to prevent dust trades', order: 21 },
+  'trading.use_enhanced_position_sizing': { type: 'boolean', category: 'trading', group: '4. Position Sizing', description: 'Use enhanced position sizing', tooltip: 'Use confidence-weighted position sizing instead of fixed risk percentage', order: 30 },
+  'trading.min_position_value_usd': { type: 'number', category: 'trading', group: '4. Position Sizing', description: 'Minimum position value in USD', tooltip: 'Minimum USD value for any position to prevent dust trades', order: 31 },
 
   // Trading - Order Replacement
-  'trading.enable_intelligent_replacement': { type: 'boolean', category: 'trading', group: '4. Order Replacement', description: 'Enable intelligent order replacement', tooltip: 'Replace existing orders with better opportunities based on AI score improvement', order: 30 },
-  'trading.min_score_improvement_threshold': { type: 'number', category: 'trading', group: '4. Order Replacement', description: 'Min score improvement for replacement', tooltip: 'Minimum AI confidence score improvement required to replace an existing order (0.0-1.0)', order: 31 },
+  'trading.enable_intelligent_replacement': { type: 'boolean', category: 'trading', group: '5. Order Replacement', description: 'Enable intelligent order replacement', tooltip: 'Replace existing orders with better opportunities based on AI score improvement', order: 40 },
+  'trading.min_score_improvement_threshold': { type: 'number', category: 'trading', group: '5. Order Replacement', description: 'Min score improvement for replacement', tooltip: 'Minimum AI confidence score improvement required to replace an existing order (0.0-1.0)', order: 41 },
 
   // Trade Monitor - Master Control (Level 1)
   'trading.enable_position_tightening': { type: 'boolean', category: 'trade monitor', group: '1. Master Control', description: 'Master tightening switch', tooltip: '🔴 MASTER SWITCH: Disables ALL tightening mechanisms below when OFF (RR, TP proximity, age-based, ADX)', order: 1 },

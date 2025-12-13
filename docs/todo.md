@@ -127,3 +127,9 @@ Again, exit_price is set to currentPrice (line 544). So indeed, the simulator se
 cd /home/slicks/projects/^^Python/Analyse_Chart_Screenshot_Node && npm run dev 2>&1 | grep -E "\[Auto-Close\]|Bybit API request" | head -50
 
 [ ] the cleaner step from trade cycle must be a microservice calle by rhe innstance and maage duplicated calles, since it can be used by multiple istance if that happens than the one that was launched second thors error becuase it cant find the imagease already  cleaned up by the first instance 
+
+[ ] 2025-12-12 11:06:25 | ERROR | __main__ | Failed to check for OpenAI rate limit error: tuple index out of range
+[ErrorLogger] ✅ Stored ERROR to DB: Failed to check for OpenAI rate limit error: tuple index out of range
+2025-12-12 11:06:28 | INFO | __main__ | 
+
+also the banner is blocking the ui it should be less highs yes promitnetn but not makingg the dashboard unusalble 
