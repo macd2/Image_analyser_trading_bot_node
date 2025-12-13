@@ -81,7 +81,7 @@ async function resetTrades() {
   } catch (error) {
     console.error('❌ Error:', error);
   } finally {
-    await client.end();
+    client.release();
     await pool.end();
   }
 }
