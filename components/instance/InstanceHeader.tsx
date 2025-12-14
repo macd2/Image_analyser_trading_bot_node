@@ -391,7 +391,13 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
           {/* Action Buttons - Always show all buttons */}
           <Button
             size="sm"
-            onClick={() => handleBotAction('start')}
+            onClick={() => {
+              if (!dryRun) {
+                // Show warning but don't wait for confirmation
+                console.warn('⚠️ WARNING: You are about to start LIVE TRADING on MAINNET!\nThis will use REAL MONEY.')
+              }
+              handleBotAction('start')
+            }}
             disabled={actionLoading || isRunning}
             className={dryRun ? 'bg-amber-600 hover:bg-amber-700 disabled:opacity-50' : 'bg-green-600 hover:bg-green-700 disabled:opacity-50'}
           >
