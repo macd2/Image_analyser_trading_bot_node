@@ -215,8 +215,17 @@ class BybitAPIManager:
                 kwargs['recv_window'] = self._get_current_recv_window()
                 response = func(session_http, *args, **kwargs) # Use the casted session_http
 
+                # Ensure response is a dict
+                if not isinstance(response, dict):
+                    logger.error(f"❌ Unexpected response type: {type(response)}, expected dict. Response: {response}")
+                    return {
+                        "retCode": -1,
+                        "retMsg": f"Unexpected response type: {type(response).__name__}",
+                        "error": f"API returned {type(response).__name__} instead of dict"
+                    }
+
                 # Check for API errors (retCode != 0)
-                if isinstance(response, dict) and response.get("retCode") != 0:
+                if response.get("retCode") != 0:
                     ret_code = response.get("retCode")
                     ret_msg = response.get("retMsg", "Unknown error")
                     error_message = f"API Error: retCode={ret_code}, retMsg={ret_msg}"
@@ -249,7 +258,11 @@ class BybitAPIManager:
                         logger.error(f"❌ Non-timestamp API error: {error_message}")
                         self._consecutive_errors = 0 # Reset consecutive errors on non-timestamp error
                         self._circuit_breaker_state = CircuitBreakerState.CLOSED # Close circuit if non-timestamp error
-                        return {"error": error_message}
+                        return {
+                            "retCode": ret_code,
+                            "retMsg": ret_msg,
+                            "error": error_message
+                        }
 
                 # Success: Reset circuit breaker and error counts
                 self._circuit_breaker_state = CircuitBreakerState.CLOSED
