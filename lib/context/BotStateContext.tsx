@@ -52,8 +52,8 @@ export function BotStateProvider({ children }: { children: ReactNode }) {
     setLogsState(prev => {
       const instanceLogs = prev[key] || []
       const newLogs = [...instanceLogs, log]
-      // Keep last 1000 logs per instance to prevent memory issues
-      const updated = { ...prev, [key]: newLogs.slice(-1000) }
+      // Keep last 2000 logs per instance to prevent memory issues (supports 500 fetched logs + buffer)
+      const updated = { ...prev, [key]: newLogs.slice(-2000) }
       return updated
     })
   }, [])
@@ -63,7 +63,7 @@ export function BotStateProvider({ children }: { children: ReactNode }) {
     setStderrLogsState(prev => {
       const instanceLogs = prev[key] || []
       const newLogs = [...instanceLogs, log]
-      return { ...prev, [key]: newLogs.slice(-1000) }
+      return { ...prev, [key]: newLogs.slice(-2000) }
     })
   }, [])
 
@@ -71,7 +71,7 @@ export function BotStateProvider({ children }: { children: ReactNode }) {
     const key = instanceId || 'global'
     // Only update if logs actually changed (avoid re-renders)
     setLogsState(prev => {
-      const sliced = newLogs.slice(-1000)
+      const sliced = newLogs.slice(-2000)
       const instanceLogs = prev[key] || []
       // Fast check: if same length and last entry is same, skip update
       if (instanceLogs.length === sliced.length && instanceLogs[instanceLogs.length - 1] === sliced[sliced.length - 1]) {
@@ -85,7 +85,7 @@ export function BotStateProvider({ children }: { children: ReactNode }) {
     const key = instanceId || 'global'
     setStderrLogsState(prev => ({
       ...prev,
-      [key]: newLogs.slice(-1000)
+      [key]: newLogs.slice(-2000)
     }))
   }, [])
 

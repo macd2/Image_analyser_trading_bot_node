@@ -27,7 +27,7 @@ export function GlobalLogListener() {
     }
 
     try {
-      const res = await fetch(`/api/bot/logs/recent?instance_id=${instanceId}&limit=100`)
+      const res = await fetch(`/api/bot/logs/recent?instance_id=${instanceId}&limit=500`)
       if (res.ok) {
         const data = await res.json()
         console.log(`[GlobalLogListener] Loaded ${data.count} recent logs for instance: ${instanceId}`)
