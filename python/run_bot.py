@@ -587,14 +587,12 @@ def main():
         print("   Example: python run_bot.py --instance <instance_id>", file=sys.stderr, flush=True)
         return
 
-    # Safety check for live trading
+    # Safety check for live trading - just log warning, don't block
     if args.live and not args.testnet:
-        print("\n⚠️  WARNING: You are about to start LIVE TRADING on MAINNET!", file=sys.stderr, flush=True)
+        print("\n" + "=" * 70, file=sys.stderr, flush=True)
+        print("⚠️  WARNING: You are about to start LIVE TRADING on MAINNET!", file=sys.stderr, flush=True)
         print("   This will use REAL MONEY.", file=sys.stderr, flush=True)
-        confirm = input("   Type 'CONFIRM' to proceed: ")
-        if confirm != "CONFIRM":
-            print("Aborted.", file=sys.stderr, flush=True)
-            return
+        print("=" * 70 + "\n", file=sys.stderr, flush=True)
 
     bot = TradingBot(
         paper_trading=not args.live,
