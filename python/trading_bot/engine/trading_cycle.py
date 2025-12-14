@@ -12,6 +12,7 @@ MULTISTEP PROCESS:
 """
 
 import asyncio
+import json
 import logging
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -599,6 +600,24 @@ class TradingCycle:
                 for symbol in symbols_with_existing_recs:
                     rec_data = existing_recs_map[symbol]
                     if rec_data:
+                        # Parse raw_response to extract market_data_snapshot and other analysis data
+                        market_data_snapshot = {}
+                        analysis_data = {}
+                        raw_response_str = rec_data.get("raw_response", "{}")
+
+                        if raw_response_str:
+                            try:
+                                if isinstance(raw_response_str, str):
+                                    analysis_data = json.loads(raw_response_str)
+                                else:
+                                    analysis_data = raw_response_str
+
+                                # Extract market_data_snapshot from the parsed JSON
+                                market_data_snapshot = analysis_data.get("market_data_snapshot", {})
+                            except (json.JSONDecodeError, TypeError) as e:
+                                logger.warning(f"Could not parse raw_response for {symbol}: {e}")
+                                market_data_snapshot = {}
+
                         # Convert database record to analysis result format
                         rec_result = {
                             "symbol": symbol,
@@ -614,6 +633,8 @@ class TradingCycle:
                             "cycle_id": cycle_id,
                             "recommendation_id": rec_data.get("id"),  # Already has ID from DB
                             "from_existing": True,  # Mark as existing recommendation
+                            "market_data_snapshot": market_data_snapshot,  # Include for price sanity check
+                            "raw_response": analysis_data,  # Include full analysis data
                         }
                         results["recommendations"].append(rec_result)
 
