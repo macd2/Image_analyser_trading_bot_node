@@ -119,14 +119,12 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
 
   // Fallback wallet state when WebSocket data is not available
   const [fallbackWallet, setFallbackWallet] = useState<any>(null)
-  const [walletLoading, setWalletLoading] = useState(false)
 
   // Fetch fallback wallet data when WebSocket wallet is not available
   const fetchFallbackWallet = useCallback(async () => {
     if (liveWallet) return // Don't fetch if we have WebSocket data
 
     try {
-      setWalletLoading(true)
       const res = await fetch('/api/bot/wallet')
       if (res.ok) {
         const data = await res.json()
@@ -134,8 +132,6 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
       }
     } catch (err) {
       console.error('[OverviewTab] Failed to fetch fallback wallet:', err)
-    } finally {
-      setWalletLoading(false)
     }
   }, [liveWallet])
 
@@ -178,7 +174,6 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
   const [loginActionLoading, setLoginActionLoading] = useState(false)
   const [vncModalOpen, setVncModalOpen] = useState(false)
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null)
-  const [logsInitialized, setLogsInitialized] = useState(false)
 
   // Track if we've done initial load from API
   const initialLoadDoneRef = useRef(false)
@@ -258,7 +253,6 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
           console.log('[OverviewTab] Initial load: API has no logs yet, waiting for Socket.IO')
         }
         initialLoadDoneRef.current = true
-        setLogsInitialized(true)
       }
       // After initial load, NEVER call setLogs again - let Socket.IO handle all log updates
 

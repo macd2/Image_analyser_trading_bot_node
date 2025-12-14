@@ -5,7 +5,7 @@
  * GET /api/bot/wallet
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import path from 'path';
 
@@ -20,12 +20,12 @@ interface WalletResponse {
   error?: string;
 }
 
-export async function GET(request: NextRequest) {
+export async function GET(): Promise<Response> {
   try {
     // Call Python script to fetch wallet balance from Bybit API
     const pythonScript = path.join(process.cwd(), 'python', 'get_wallet_balance.py');
-    
-    return new Promise((resolve) => {
+
+    return new Promise<Response>((resolve) => {
       const python = spawn('python', [pythonScript], {
         cwd: process.cwd(),
         env: { ...process.env }
