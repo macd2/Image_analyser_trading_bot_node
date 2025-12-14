@@ -89,7 +89,10 @@ interface MonitorStatus {
     action: 'checked' | 'closed' | 'cancelled'
     current_price: number
     instance_name?: string
+    timeframe?: string
     checked_at?: string
+    exit_reason?: string
+    pnl?: number
     bars_open?: number
   }>
 }

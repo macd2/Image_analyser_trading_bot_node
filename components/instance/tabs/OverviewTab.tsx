@@ -99,6 +99,7 @@ interface MonitorStatus {
     action: 'checked' | 'closed'
     current_price: number
     instance_name?: string
+    timeframe?: string
     checked_at?: string
   }>
 }
