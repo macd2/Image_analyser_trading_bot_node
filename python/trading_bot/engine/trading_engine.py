@@ -77,6 +77,9 @@ class TradingEngine:
             order_executor=self.order_executor,
             risk_percentage=self.config.trading.risk_percentage,
             min_position_value=self.config.trading.min_position_value_usd,
+            use_kelly_criterion=self.config.trading.use_kelly_criterion,
+            kelly_fraction=self.config.trading.kelly_fraction,
+            kelly_window=self.config.trading.kelly_window,
         )
 
         # WebSocket manager (shared singleton for multi-instance support)
@@ -162,7 +165,37 @@ class TradingEngine:
     def _on_ws_disconnect(self) -> None:
         """Handle WebSocket disconnection."""
         logger.warning("📡 WebSocket disconnected")
-    
+
+    def _get_closed_trades_for_kelly(self) -> List[Dict[str, Any]]:
+        """
+        Get closed trades for Kelly Criterion calculation.
+        Returns trades with pnl_percent field for Kelly analysis.
+        """
+        if not self._db:
+            return []
+
+        try:
+            # Query closed trades with PnL data
+            rows = query(
+                self._db,
+                """
+                SELECT pnl_percent FROM trades
+                WHERE status IN ('closed', 'filled')
+                AND pnl_percent IS NOT NULL
+                AND instance_id = ?
+                ORDER BY closed_at DESC
+                LIMIT 100
+                """,
+                (self.instance_id,)
+            )
+
+            # Convert to list of dicts with pnl_percent
+            trades = [{"pnl_percent": float(row.get("pnl_percent", 0))} for row in rows]
+            return trades
+        except Exception as e:
+            logger.warning(f"Failed to fetch closed trades for Kelly: {e}")
+            return []
+
     def can_open_trade(self, symbol: str) -> Dict[str, Any]:
         """
         Check if a new trade can be opened for symbol.
@@ -376,12 +409,18 @@ class TradingEngine:
         wallet = self.order_executor.get_wallet_balance()
         balance = wallet.get("available", 10000)  # Default for paper
 
+        # Get trade history for Kelly Criterion if enabled
+        trade_history = None
+        if self.config.trading.use_kelly_criterion:
+            trade_history = self._get_closed_trades_for_kelly()
+
         sizing = self.position_sizer.calculate_position_size(
             symbol=symbol,
             entry_price=signal["entry_price"],
             stop_loss=signal["stop_loss"],
             wallet_balance=balance,
             confidence=signal.get("confidence", 0.75),
+            trade_history=trade_history,
         )
 
         if "error" in sizing:
@@ -413,10 +452,16 @@ class TradingEngine:
 
         self._record_trade(trade)
 
-        logger.info(
+        # Log detailed position sizing info for audit trail
+        sizing_details = (
             f"📝 PAPER TRADE: {symbol} {side} {sizing['position_size']} "
-            f"@ {signal['entry_price']} (RR: {rr_ratio:.2f})"
+            f"@ {signal['entry_price']} (RR: {rr_ratio:.2f}) | "
+            f"Sizing: {sizing['sizing_method'].upper()} | "
+            f"Risk: {sizing['risk_pct_used']:.2%} | "
+            f"Risk Amount: ${sizing['risk_amount']:.2f} | "
+            f"Confidence: {signal.get('confidence', 0.75):.2f}"
         )
+        logger.info(sizing_details)
 
         return trade
 
@@ -446,12 +491,18 @@ class TradingEngine:
             }
 
         # Calculate position size
+        # Get trade history for Kelly Criterion if enabled
+        trade_history = None
+        if self.config.trading.use_kelly_criterion:
+            trade_history = self._get_closed_trades_for_kelly()
+
         sizing = self.position_sizer.calculate_position_size(
             symbol=symbol,
             entry_price=signal["entry_price"],
             stop_loss=signal["stop_loss"],
             wallet_balance=wallet["available"],
             confidence=signal.get("confidence", 0.75),
+            trade_history=trade_history,
         )
 
         if "error" in sizing:
@@ -514,10 +565,16 @@ class TradingEngine:
 
         self._record_trade(trade)
 
-        logger.info(
+        # Log detailed position sizing info for audit trail
+        sizing_details = (
             f"🚀 LIVE TRADE: {symbol} {side} {sizing['position_size']} "
-            f"@ {signal['entry_price']} (Order: {result.get('order_id')})"
+            f"@ {signal['entry_price']} (Order: {result.get('order_id')}) | "
+            f"Sizing: {sizing['sizing_method'].upper()} | "
+            f"Risk: {sizing['risk_pct_used']:.2%} | "
+            f"Risk Amount: ${sizing['risk_amount']:.2f} | "
+            f"Confidence: {signal.get('confidence', 0.75):.2f}"
         )
+        logger.info(sizing_details)
 
         return trade
 

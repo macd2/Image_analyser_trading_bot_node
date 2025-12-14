@@ -132,7 +132,7 @@ export const DEFAULT_CONFIG: ConfigDefault[] = [
     description: "RR levels and SL positions for tightening"
   },
 
-  // Position Sizing (2 settings)
+  // Position Sizing (5 settings)
   {
     key: "trading.use_enhanced_position_sizing",
     value: true,
@@ -146,6 +146,27 @@ export const DEFAULT_CONFIG: ConfigDefault[] = [
     type: "number",
     category: "sizing",
     description: "Minimum position size in USD"
+  },
+  {
+    key: "trading.use_kelly_criterion",
+    value: false,
+    type: "boolean",
+    category: "sizing",
+    description: "Use Kelly Criterion for dynamic position sizing based on trade history"
+  },
+  {
+    key: "trading.kelly_fraction",
+    value: 0.3,
+    type: "number",
+    category: "sizing",
+    description: "Fractional Kelly multiplier (0.3 = 30% of full Kelly, safer than 1.0)"
+  },
+  {
+    key: "trading.kelly_window",
+    value: 30,
+    type: "number",
+    category: "sizing",
+    description: "Number of recent trades to analyze for Kelly Criterion calculation"
   },
 
   // Order Replacement (2 settings)

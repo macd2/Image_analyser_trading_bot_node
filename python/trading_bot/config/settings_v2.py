@@ -118,6 +118,11 @@ class TradingConfig:
     use_enhanced_position_sizing: bool = True
     min_position_value_usd: float = 50.0
 
+    # Kelly Criterion (from DB)
+    use_kelly_criterion: bool = False
+    kelly_fraction: float = 0.3  # Fractional Kelly (0.3 = 30% of full Kelly)
+    kelly_window: int = 30  # Number of recent trades to analyze
+
     # Order replacement (from DB)
     enable_intelligent_replacement: bool = True
     min_score_improvement_threshold: float = 0.15
@@ -443,6 +448,9 @@ class ConfigV2:
             age_tightening_bars=age_tightening_bars,
             age_cancellation_enabled=db_config.get('trading.age_cancellation_enabled', False),
             age_cancellation_max_bars=age_cancellation_bars,
+            use_kelly_criterion=db_config.get('trading.use_kelly_criterion', False),
+            kelly_fraction=db_config.get('trading.kelly_fraction', 0.3),
+            kelly_window=db_config.get('trading.kelly_window', 30),
         )
 
     @staticmethod

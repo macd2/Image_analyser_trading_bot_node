@@ -50,11 +50,17 @@ DEFAULT_CONFIG: List[Tuple[str, Any, str, str, str]] = [
     ("trading.rr_tightening_steps", DEFAULT_RR_TIGHTENING_STEPS, "json", "tightening",
      "RR levels and SL positions for tightening"),
 
-    # Position Sizing (2 settings)
+    # Position Sizing (5 settings)
     ("trading.use_enhanced_position_sizing", True, "boolean", "sizing",
      "Use confidence/volatility weighting for position sizing"),
     ("trading.min_position_value_usd", 50.0, "number", "sizing",
      "Minimum position size in USD"),
+    ("trading.use_kelly_criterion", False, "boolean", "sizing",
+     "Use Kelly Criterion for dynamic position sizing based on trade history"),
+    ("trading.kelly_fraction", 0.3, "number", "sizing",
+     "Fractional Kelly multiplier (0.3 = 30% of full Kelly, safer than 1.0)"),
+    ("trading.kelly_window", 30, "number", "sizing",
+     "Number of recent trades to analyze for Kelly Criterion calculation"),
 
     # Order Replacement (2 settings)
     ("trading.enable_intelligent_replacement", True, "boolean", "replacement",

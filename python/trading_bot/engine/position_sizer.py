@@ -1,11 +1,13 @@
 """
-Position Sizer - Clean position sizing with confidence weighting.
+Position Sizer - Clean position sizing with confidence weighting and Kelly Criterion.
 Calculates optimal position size based on risk parameters.
 """
 
 import logging
 from decimal import Decimal, ROUND_DOWN
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+
+import numpy as np
 
 from trading_bot.engine.order_executor import OrderExecutor
 
@@ -33,10 +35,13 @@ class PositionSizer:
         high_conf_threshold: float = 0.85,
         low_conf_weight: float = 0.8,
         high_conf_weight: float = 1.2,
+        use_kelly_criterion: bool = False,
+        kelly_fraction: float = 0.3,
+        kelly_window: int = 30,
     ):
         """
         Initialize position sizer.
-        
+
         Args:
             order_executor: OrderExecutor for instrument info
             risk_percentage: Base risk per trade (0.01 = 1%)
@@ -46,6 +51,9 @@ class PositionSizer:
             high_conf_threshold: Threshold for high confidence
             low_conf_weight: Weight multiplier for low confidence
             high_conf_weight: Weight multiplier for high confidence
+            use_kelly_criterion: Enable Kelly Criterion for dynamic sizing
+            kelly_fraction: Fractional Kelly multiplier (0.3 = 30% of full Kelly)
+            kelly_window: Number of recent trades to analyze for Kelly
         """
         self.executor = order_executor
         self.risk_percentage = risk_percentage
@@ -55,6 +63,9 @@ class PositionSizer:
         self.high_conf_threshold = high_conf_threshold
         self.low_conf_weight = low_conf_weight
         self.high_conf_weight = high_conf_weight
+        self.use_kelly_criterion = use_kelly_criterion
+        self.kelly_fraction = kelly_fraction
+        self.kelly_window = kelly_window
     
     def calculate_position_size(
         self,
@@ -64,10 +75,11 @@ class PositionSizer:
         wallet_balance: float,
         confidence: float = 0.75,
         leverage: int = 1,
+        trade_history: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Calculate position size based on risk parameters.
-        
+
         Args:
             symbol: Trading symbol
             entry_price: Entry price
@@ -75,7 +87,8 @@ class PositionSizer:
             wallet_balance: Available wallet balance
             confidence: Confidence score (0-1)
             leverage: Leverage multiplier
-            
+            trade_history: Optional list of closed trades for Kelly Criterion
+
         Returns:
             Dict with position_size, risk_amount, and calculation details
         """
@@ -83,9 +96,17 @@ class PositionSizer:
         risk_per_unit = abs(entry_price - stop_loss)
         if risk_per_unit == 0:
             return {"error": "Invalid stop loss - same as entry price"}
-        
+
+        # Determine risk percentage (Kelly or fixed)
+        if self.use_kelly_criterion and trade_history:
+            risk_pct = self.calculate_kelly_fraction(trade_history)
+            sizing_method = "kelly"
+        else:
+            risk_pct = self.risk_percentage
+            sizing_method = "fixed"
+
         # Calculate base risk amount
-        base_risk_amount = wallet_balance * self.risk_percentage
+        base_risk_amount = wallet_balance * risk_pct
         
         # Apply confidence weighting
         confidence_weight = self._get_confidence_weight(confidence)
@@ -127,7 +148,7 @@ class PositionSizer:
         # Calculate actual risk
         actual_risk = qty * risk_per_unit
         actual_risk_pct = actual_risk / wallet_balance if wallet_balance > 0 else 0
-        
+
         return {
             "position_size": qty,
             "position_value": position_value,
@@ -137,6 +158,8 @@ class PositionSizer:
             "entry_price": entry_price,
             "stop_loss": stop_loss,
             "risk_per_unit": risk_per_unit,
+            "sizing_method": sizing_method,
+            "risk_pct_used": risk_pct,
         }
     
     def _get_confidence_weight(self, confidence: float) -> float:
@@ -162,3 +185,71 @@ class PositionSizer:
         decimal_step = Decimal(str(step))
         rounded = (decimal_qty / decimal_step).to_integral_value(rounding=ROUND_DOWN) * decimal_step
         return float(rounded)
+
+    def calculate_kelly_fraction(self, trade_history: List[Dict[str, Any]]) -> float:
+        """
+        Calculate Kelly Criterion fraction from trade history.
+
+        Kelly Criterion formula: f* = (b*p - q) / b
+        where:
+            p = win probability
+            q = loss probability (1 - p)
+            b = average win / average loss ratio
+            f* = optimal fraction of capital to risk
+
+        Args:
+            trade_history: List of closed trades with 'pnl_percent' field
+
+        Returns:
+            Kelly fraction (0-0.5), or fallback risk_percentage if insufficient data
+        """
+        if not trade_history or len(trade_history) < 10:
+            logger.info(f"Kelly Criterion: Insufficient trade history ({len(trade_history) if trade_history else 0} trades), falling back to fixed risk ({self.risk_percentage:.2%})")
+            return self.risk_percentage
+
+        # Get recent trades within window
+        recent = trade_history[-self.kelly_window:]
+
+        # Separate wins and losses
+        wins = [t for t in recent if t.get('pnl_percent', 0) > 0]
+        losses = [t for t in recent if t.get('pnl_percent', 0) < 0]
+
+        # Need at least some wins and losses for meaningful calculation
+        if not wins or not losses:
+            logger.info(f"Kelly Criterion: No wins or losses in recent {len(recent)} trades, falling back to fixed risk ({self.risk_percentage:.2%})")
+            return self.risk_percentage
+
+        # Calculate probabilities
+        p = len(wins) / len(recent)  # Win probability
+        q = 1 - p  # Loss probability
+
+        # Calculate average win/loss (as percentages)
+        avg_win = np.mean([t.get('pnl_percent', 0) for t in wins])
+        avg_loss = abs(np.mean([t.get('pnl_percent', 0) for t in losses]))
+
+        # Avoid division by zero
+        if avg_loss <= 0:
+            logger.info("Kelly Criterion: Average loss is zero or negative, falling back to fixed risk")
+            return self.risk_percentage
+
+        # Calculate win/loss ratio
+        b = avg_win / avg_loss
+
+        # Calculate full Kelly fraction
+        f_star = (b * p - q) / b
+
+        # Clip to safe range (0 to 50%)
+        f_star = np.clip(f_star, 0, 0.5)
+
+        # Apply fractional Kelly for safety
+        kelly_risk = self.kelly_fraction * f_star
+
+        logger.info(
+            f"Kelly Criterion Calculation: "
+            f"Trades={len(recent)}, Wins={len(wins)}, Losses={len(losses)}, "
+            f"WinRate={p:.2%}, AvgWin={avg_win:.2f}%, AvgLoss={avg_loss:.2f}%, "
+            f"WinLossRatio={b:.2f}, FullKelly={f_star:.2%}, "
+            f"FractionalKelly({self.kelly_fraction})={kelly_risk:.2%}"
+        )
+
+        return kelly_risk
