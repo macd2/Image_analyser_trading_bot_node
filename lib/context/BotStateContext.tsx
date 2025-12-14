@@ -54,6 +54,7 @@ export function BotStateProvider({ children }: { children: ReactNode }) {
       const newLogs = [...instanceLogs, log]
       // Keep last 2000 logs per instance to prevent memory issues (supports 500 fetched logs + buffer)
       const updated = { ...prev, [key]: newLogs.slice(-2000) }
+      console.log('[BotStateContext] Updated logs for', key, 'new count:', updated[key].length)
       return updated
     })
   }, [])

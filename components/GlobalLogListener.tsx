@@ -50,10 +50,12 @@ export function GlobalLogListener() {
       // On first log from this instance, fetch historical logs from database
       if (data.instanceId && !logsPerInstanceRef.current[data.instanceId]) {
         console.log(`[GlobalLogListener] First log from instance ${data.instanceId}, fetching historical logs...`)
+        logsPerInstanceRef.current[data.instanceId] = []
         fetchRecentLogs(data.instanceId)
       }
 
       // Add the incoming log to context immediately
+      console.log('[GlobalLogListener] Calling addLog with:', { targetInstanceId, logLength: data.log.length })
       addLog(data.log, targetInstanceId)
     }
 

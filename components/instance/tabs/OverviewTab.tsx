@@ -178,10 +178,10 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
   const [loginActionLoading, setLoginActionLoading] = useState(false)
   const [vncModalOpen, setVncModalOpen] = useState(false)
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null)
+  const [logsInitialized, setLogsInitialized] = useState(false)
 
-  // Track logs length in ref to avoid stale closure in fetchData
-  const logsLengthRef = useRef(instanceLogs.length)
-  useEffect(() => { logsLengthRef.current = instanceLogs.length }, [instanceLogs.length])
+  // Track if we've done initial load from API
+  const initialLoadDoneRef = useRef(false)
 
   // Refs for auto-scroll
   const logsPreviewRef = useRef<HTMLDivElement>(null)
@@ -248,14 +248,19 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         setMonitorStatus(monitorData)
       }
 
-      // Always sync logs from bot control API
-      // This ensures logs are updated even if socket events were missed
-      if (controlData?.logs && controlData.logs.length > 0) {
-        // If API has more logs than we have, use API logs as the source of truth
-        // Use ref to avoid stale closure issue with interval
-        if (controlData.logs.length > logsLengthRef.current) {
-          setLogs(controlData.logs, instanceId)
-        }
+      // On initial load, sync logs from API (but only if API has logs)
+      // After that, rely on Socket.IO for real-time updates via GlobalLogListener
+      // Don't clear logs with empty array - let Socket.IO add logs in real-time
+      if (!initialLoadDoneRef.current && controlData?.logs && controlData.logs.length > 0) {
+        console.log('[OverviewTab] Initial load: setting logs from API', { count: controlData.logs.length })
+        setLogs(controlData.logs, instanceId)
+        initialLoadDoneRef.current = true
+        setLogsInitialized(true)
+      } else if (!initialLoadDoneRef.current && controlData?.logs) {
+        // API has no logs yet (bot just started), mark as initialized but don't clear
+        console.log('[OverviewTab] Initial load: API has no logs yet, waiting for Socket.IO')
+        initialLoadDoneRef.current = true
+        setLogsInitialized(true)
       }
 
       setError(null)
@@ -293,6 +298,15 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
     const interval = setInterval(fetchData, 5000)
     return () => clearInterval(interval)
   }, [instanceId])
+
+  // Reset initial load flag when bot status changes (bot restart)
+  useEffect(() => {
+    if (status?.running) {
+      // Bot just started, reset the initial load flag so we can load logs from API again
+      initialLoadDoneRef.current = false
+      console.log('[OverviewTab] Bot started, reset initial load flag')
+    }
+  }, [status?.running])
 
   // Note: Live logs are now handled by GlobalLogListener at the layout level
   // This avoids duplicate log entries when multiple components subscribe to bot_log
