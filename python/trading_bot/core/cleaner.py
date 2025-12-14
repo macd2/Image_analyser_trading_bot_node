@@ -40,17 +40,14 @@ class ChartCleaner:
     def is_file_outdated(self, file_path: str, file_timestamp: datetime, timeframe: str, current_time: datetime) -> tuple[bool, str]:
         """
         Check if file is outdated based on cycle boundaries.
-        A file is outdated ONLY if:
-        1. It's from a PREVIOUS cycle (older than current boundary) AND
-        2. It's older than max_file_age_hours
+        A file is outdated if it's from OUTSIDE the current cycle boundary.
 
-        Files from the current cycle are ALWAYS kept, even if they're old.
+        Files from the current cycle are ALWAYS kept.
+        Files from previous cycles are ALWAYS cleaned (regardless of age).
         Files without valid boundary-aligned timestamps are preserved.
 
         Returns (is_outdated, reason)
         """
-        reasons = []
-
         # Cycle-based check (primary method)
         if self.enable_cycle_based_cleaning:
             try:
@@ -60,28 +57,21 @@ class ChartCleaner:
                 # Get the file's cycle boundary
                 file_cycle_boundary = align_timestamp_to_boundary(file_timestamp, timeframe)
 
-                # File is outdated ONLY if it's from a PREVIOUS cycle (strictly older)
+                # File is outdated if it's from a PREVIOUS cycle (strictly older)
                 # Files from current cycle are always kept
                 if file_cycle_boundary < current_cycle_boundary:
-                    reasons.append(f"previous_cycle (file: {file_cycle_boundary.strftime('%Y-%m-%d %H:%M')}, current: {current_cycle_boundary.strftime('%Y-%m-%d %H:%M')})")
+                    reason = f"outside_boundary (file: {file_cycle_boundary.strftime('%Y-%m-%d %H:%M')}, current: {current_cycle_boundary.strftime('%Y-%m-%d %H:%M')})"
+                    return (True, reason)
                 else:
-                    # File is from current cycle or future - keep it regardless of age
+                    # File is from current cycle or future - keep it
                     return (False, "")
             except Exception as e:
                 self.logger.warning(f"Cycle check failed: {e}")
                 # If we can't parse the boundary, preserve the file
                 return (False, "")
 
-        # Age-based check (secondary/fallback method) - only for files from previous cycles
-        if self.enable_age_based_cleaning and reasons:
-            age_hours = (current_time - file_timestamp).total_seconds() / 3600
-            if age_hours > self.max_file_age_hours:
-                reasons.append(f"age ({age_hours:.1f}h > {self.max_file_age_hours}h)")
-            else:
-                # File is from previous cycle but still within age limit - keep it
-                return (False, "")
-
-        return (len(reasons) > 0, ", ".join(reasons) if reasons else "")
+        # If cycle-based cleaning is disabled, don't clean anything
+        return (False, "")
 
     def scan_files(self, folder_path: str, timeframe_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -209,7 +199,9 @@ class ChartCleaner:
                         rel_dest = f"charts/.backup/{filename}"
                         result = move_file(rel_source, rel_dest)
                         if not result['success']:
-                            raise Exception(result.get('error', 'Move failed'))
+                            error_msg = result.get('error', 'Move failed')
+                            self.logger.error(f"❌ Failed to move {filename}: {error_msg}")
+                            raise Exception(error_msg)
                         self.logger.info(f"📦 Moved: {filename} → charts/.backup/ (cloud)")
 
                 moved_files.append(file_path)
