@@ -91,6 +91,51 @@ function validateTradeTimestamps(
 }
 
 /**
+ * Normalize timestamp to milliseconds (number)
+ * Handles: ISO strings, Date objects, numbers, null/undefined
+ * Returns: milliseconds since epoch or null if invalid
+ */
+function normalizeTimestamp(ts: unknown): number | null {
+  if (ts === null || ts === undefined) {
+    return null;
+  }
+
+  // Already a number - validate it's a valid timestamp
+  if (typeof ts === 'number') {
+    if (isNaN(ts) || ts < 0) {
+      return null;
+    }
+    return ts;
+  }
+
+  // String - try to parse as ISO or number
+  if (typeof ts === 'string') {
+    // Try parsing as ISO string first
+    const isoDate = new Date(ts);
+    if (!isNaN(isoDate.getTime())) {
+      return isoDate.getTime();
+    }
+    // Try parsing as number string
+    const numVal = parseInt(ts, 10);
+    if (!isNaN(numVal) && numVal > 0) {
+      return numVal;
+    }
+    return null;
+  }
+
+  // Date object
+  if (ts instanceof Date) {
+    const ms = ts.getTime();
+    if (!isNaN(ms)) {
+      return ms;
+    }
+    return null;
+  }
+
+  return null;
+}
+
+/**
  * Log error to database for audit trail
  * Stores errors in a way that can be queried later for debugging
  */
@@ -595,12 +640,11 @@ export async function POST() {
         const maxOpenBars = await getMaxOpenBarsForTimeframe(timeframe, trade.status as 'pending_fill' | 'paper_trade' | 'filled');
 
         // Parse trade creation time - validate it's a valid date
-        const createdAtDate = new Date(trade.created_at);
-        if (isNaN(createdAtDate.getTime())) {
+        const createdAt = normalizeTimestamp(trade.created_at);
+        if (createdAt === null) {
           console.error(`[Auto-Close] Invalid created_at date for trade ${trade.id}: ${trade.created_at}`);
           continue; // Skip this trade
         }
-        const createdAt = createdAtDate.getTime();
 
       // Fetch all candles from trade creation to now
       const candles = await getHistoricalCandles(trade.symbol, timeframe, createdAt);
@@ -627,7 +671,10 @@ export async function POST() {
 
       // CRITICAL FIX: Filter candles to only include those at or after trade creation
       // A trade cannot be filled before it was created!
-      const candlesAfterCreation = candles.filter(c => c.timestamp >= createdAt);
+      const candlesAfterCreation = candles.filter(c => {
+        const candleTs = normalizeTimestamp(c.timestamp);
+        return candleTs !== null && candleTs >= createdAt;
+      });
 
       if (candlesAfterCreation.length === 0) {
         console.log(`[Auto-Close] No candles after trade creation (${new Date(createdAt).toISOString()}), skipping`);
@@ -648,13 +695,12 @@ export async function POST() {
       let firstCandleTime = 'unknown';
       let lastCandleTime = 'unknown';
       try {
-        const firstTs = candlesAfterCreation[0].timestamp;
-        const lastTs = candlesAfterCreation[candlesAfterCreation.length - 1].timestamp;
-        // Validate timestamps are valid numbers
-        if (typeof firstTs === 'number' && !isNaN(firstTs) && firstTs > 0) {
+        const firstTs = normalizeTimestamp(candlesAfterCreation[0].timestamp);
+        const lastTs = normalizeTimestamp(candlesAfterCreation[candlesAfterCreation.length - 1].timestamp);
+        if (firstTs !== null) {
           firstCandleTime = new Date(firstTs).toISOString();
         }
-        if (typeof lastTs === 'number' && !isNaN(lastTs) && lastTs > 0) {
+        if (lastTs !== null) {
           lastCandleTime = new Date(lastTs).toISOString();
         }
       } catch (e) {
@@ -670,10 +716,12 @@ export async function POST() {
 
       if (alreadyFilled) {
         // Trade already filled - find the fill candle index to start SL/TP check from
-        const filledAtDate = new Date(trade.filled_at as string);
-        if (!isNaN(filledAtDate.getTime())) {
-          const filledAtMs = filledAtDate.getTime();
-          fillCandleIndex = candlesAfterCreation.findIndex(c => c.timestamp >= filledAtMs);
+        const filledAtMs = normalizeTimestamp(trade.filled_at);
+        if (filledAtMs !== null) {
+          fillCandleIndex = candlesAfterCreation.findIndex(c => {
+            const candleTs = normalizeTimestamp(c.timestamp);
+            return candleTs !== null && candleTs >= filledAtMs;
+          });
 
           // CRITICAL: If no candles exist after fill time, we cannot check for exits
           // Skip this trade - it cannot have exited if there are no candles after it filled
@@ -708,10 +756,10 @@ export async function POST() {
           // Log first and last candle for debugging
           if (candles.length > 0) {
             try {
-              const firstTs = candles[0].timestamp;
-              const lastTs = candles[candles.length - 1].timestamp;
-              const firstTime = (typeof firstTs === 'number' && !isNaN(firstTs) && firstTs > 0) ? new Date(firstTs).toISOString() : 'invalid';
-              const lastTime = (typeof lastTs === 'number' && !isNaN(lastTs) && lastTs > 0) ? new Date(lastTs).toISOString() : 'invalid';
+              const firstTs = normalizeTimestamp(candles[0].timestamp);
+              const lastTs = normalizeTimestamp(candles[candles.length - 1].timestamp);
+              const firstTime = firstTs !== null ? new Date(firstTs).toISOString() : 'invalid';
+              const lastTime = lastTs !== null ? new Date(lastTs).toISOString() : 'invalid';
               console.log(`  First candle: ${firstTime} [${candles[0].low}-${candles[0].high}]`);
               console.log(`  Last candle: ${lastTime} [${candles[candles.length - 1].low}-${candles[candles.length - 1].high}]`);
             } catch (e) {
@@ -766,12 +814,10 @@ export async function POST() {
         }
 
         // Trade is now filled - update database with fill info
-        // fillTimestamp is a number (Unix ms), convert to Date
-        const fillTimeMs = typeof fillResult.fillTimestamp === 'string'
-          ? parseInt(fillResult.fillTimestamp, 10)
-          : fillResult.fillTimestamp;
+        // Normalize fillTimestamp to milliseconds
+        const fillTimeMs = normalizeTimestamp(fillResult.fillTimestamp);
 
-        if (!fillTimeMs || isNaN(fillTimeMs)) {
+        if (fillTimeMs === null) {
           console.error(`[Auto-Close] Invalid fillTimestamp for trade ${trade.id}: ${fillResult.fillTimestamp}`);
           continue; // Skip this trade
         }
