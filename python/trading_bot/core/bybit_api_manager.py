@@ -224,6 +224,15 @@ class BybitAPIManager:
                         "error": f"API returned {type(response).__name__} instead of dict"
                     }
 
+                # Check if response has retCode field
+                if "retCode" not in response:
+                    logger.error(f"❌ Response missing retCode field. Response keys: {list(response.keys())}. Full response: {response}")
+                    return {
+                        "retCode": -1,
+                        "retMsg": "Response missing retCode field",
+                        "error": f"API response missing retCode. Keys: {list(response.keys())}"
+                    }
+
                 # Check for API errors (retCode != 0)
                 if response.get("retCode") != 0:
                     ret_code = response.get("retCode")
