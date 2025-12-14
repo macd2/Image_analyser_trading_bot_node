@@ -531,9 +531,9 @@ class SimpleOpenAIAssistantHandler:
                             "confidence": 0.5,
                             "evidence": "Chart analysis",
                             "last_close_price": last_close_price,
-                            "entry_price": 0.0,
-                            "stop_loss": 0.0,
-                            "take_profit": 0.0,
+                            "entry_price": None,  # Don't default to 0.0 - let downstream handle missing prices
+                            "stop_loss": None,    # Don't default to 0.0 - let downstream handle missing prices
+                            "take_profit": None,  # Don't default to 0.0 - let downstream handle missing prices
                             "trade_confidence": 0.5,
                             "direction": "Long"
                         }
@@ -542,6 +542,23 @@ class SimpleOpenAIAssistantHandler:
                         for key, default_value in required_fields.items():
                             if key not in analysis_data:
                                 analysis_data[key] = default_value
+
+                        # Validate: if recommendation is buy/sell, price levels must be provided
+                        recommendation = str(analysis_data.get("recommendation", "hold")).lower()
+                        if recommendation in ["buy", "sell"]:
+                            entry = analysis_data.get("entry_price")
+                            sl = analysis_data.get("stop_loss")
+                            tp = analysis_data.get("take_profit")
+
+                            # Check if any price level is missing or zero
+                            if not entry or not sl or not tp:
+                                self.logger.warning(
+                                    f"⚠️ AI returned '{recommendation}' but missing price levels: "
+                                    f"entry={entry}, stop_loss={sl}, take_profit={tp}. "
+                                    f"Downgrading to 'hold' to prevent invalid trades."
+                                )
+                                analysis_data["recommendation"] = "hold"
+                                analysis_data["llm_original_recommendation"] = recommendation
 
                         # Apply decision matrix enforcement if enabled in prompt
                         if prompt_data and isinstance(prompt_data, dict):
