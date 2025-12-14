@@ -248,20 +248,19 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         setMonitorStatus(monitorData)
       }
 
-      // On initial load, sync logs from API (but only if API has logs)
-      // After that, rely on Socket.IO for real-time updates via GlobalLogListener
-      // Don't clear logs with empty array - let Socket.IO add logs in real-time
-      if (!initialLoadDoneRef.current && controlData?.logs && controlData.logs.length > 0) {
-        console.log('[OverviewTab] Initial load: setting logs from API', { count: controlData.logs.length })
-        setLogs(controlData.logs, instanceId)
-        initialLoadDoneRef.current = true
-        setLogsInitialized(true)
-      } else if (!initialLoadDoneRef.current && controlData?.logs) {
-        // API has no logs yet (bot just started), mark as initialized but don't clear
-        console.log('[OverviewTab] Initial load: API has no logs yet, waiting for Socket.IO')
+      // IMPORTANT: Only use API logs for initial page load, NEVER overwrite with API after that
+      // Socket.IO provides real-time logs via GlobalLogListener which is the source of truth
+      if (!initialLoadDoneRef.current) {
+        if (controlData?.logs && controlData.logs.length > 0) {
+          console.log('[OverviewTab] Initial load: setting logs from API', { count: controlData.logs.length })
+          setLogs(controlData.logs, instanceId)
+        } else {
+          console.log('[OverviewTab] Initial load: API has no logs yet, waiting for Socket.IO')
+        }
         initialLoadDoneRef.current = true
         setLogsInitialized(true)
       }
+      // After initial load, NEVER call setLogs again - let Socket.IO handle all log updates
 
       setError(null)
     } catch (err) {
@@ -299,13 +298,15 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
     return () => clearInterval(interval)
   }, [instanceId])
 
-  // Reset initial load flag when bot status changes (bot restart)
+  // Reset initial load flag when bot STARTS (not when it stops)
+  // This allows us to load fresh logs from API when bot restarts
   useEffect(() => {
     if (status?.running) {
       // Bot just started, reset the initial load flag so we can load logs from API again
       initialLoadDoneRef.current = false
       console.log('[OverviewTab] Bot started, reset initial load flag')
     }
+    // Don't reset when bot stops - keep showing the logs from the run that just finished
   }, [status?.running])
 
   // Note: Live logs are now handled by GlobalLogListener at the layout level
