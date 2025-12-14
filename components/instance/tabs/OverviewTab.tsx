@@ -421,14 +421,17 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
               {monitorStatus.results.slice(-10).map((result, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                   <span className="text-slate-500">[{new Date(result.checked_at || Date.now()).toLocaleTimeString()}]</span>
-                  <span className="text-white">{result.symbol}</span>
+                  <span className={result.action === 'closed' ? 'text-yellow-400' : 'text-slate-400'}>
+                    {result.action === 'closed' ? '✓ Filled' : '✓ Checked'}
+                  </span>
+                  {result.timeframe && (
+                    <span className="text-slate-400">• {result.timeframe}</span>
+                  )}
+                  <span className="text-white">• {result.symbol}</span>
+                  <span className="text-blue-400">@ ${result.current_price.toFixed(4)}</span>
                   {result.instance_name && (
                     <span className="text-slate-400">• {result.instance_name}</span>
                   )}
-                  <span className={result.action === 'closed' ? 'text-yellow-400' : 'text-slate-400'}>
-                    {result.action === 'closed' ? 'Filled' : 'Waiting for fill'}
-                  </span>
-                  <span className="text-blue-400">@ ${result.current_price.toFixed(4)}</span>
                   {result.action === 'closed' && (
                     <span className="text-yellow-300">→ Trade closed!</span>
                   )}
@@ -552,6 +555,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
                   <th className="text-right py-1.5 font-medium">Entry</th>
                   <th className="text-right py-1.5 font-medium">P&L</th>
                   <th className="text-right py-1.5 font-medium">Status</th>
+                  <th className="text-right py-1.5 font-medium">Timeframe</th>
                   <th className="text-right py-1.5 font-medium">Time</th>
                 </tr>
               </thead>
@@ -587,7 +591,10 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
                       </span>
                     </td>
                     <td className="py-1.5 text-right text-xs text-slate-500">
-                      {trade.created_at ? new Date(trade.created_at).toLocaleTimeString() : '-'}
+                      {trade.timeframe || '-'}
+                    </td>
+                    <td className="py-1.5 text-right text-xs text-slate-500">
+                      {trade.created_at ? new Date(trade.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) + ' ' + new Date(trade.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '-'}
                     </td>
                   </tr>
                 ))}

@@ -958,7 +958,10 @@ export function SimulatorPage() {
                        result.action === 'cancelled' ? '⏱️ CANCELLED' :
                        '✓ Checked'}
                     </span>
-                    <span className="text-white">{result.symbol}</span>
+                    {result.timeframe && (
+                      <span className="text-slate-400">• {result.timeframe}</span>
+                    )}
+                    <span className="text-white">• {result.symbol}</span>
                     <span className="text-blue-400">@ ${result.current_price.toFixed(4)}</span>
                     {result.instance_name && (
                       <span className="text-slate-400">• {result.instance_name}</span>

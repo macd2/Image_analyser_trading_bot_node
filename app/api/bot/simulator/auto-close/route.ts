@@ -398,7 +398,8 @@ async function getHistoricalCandles(
     // The Bybit API returns the latest N candles, not candles from a specific start time
     // So we must filter to ensure we only return candles after the trade was created
     const filteredCandles = candles.filter(c => c.timestamp >= startTime);
-    console.log(`[Auto-Close] Filtered ${candles.length} candles to ${filteredCandles.length} candles >= ${new Date(startTime).toISOString()}`);
+    const startTimeStr = (startTime > 0 && startTime < 8640000000000000) ? new Date(startTime).toISOString() : startTime.toString();
+    console.log(`[Auto-Close] Filtered ${candles.length} candles to ${filteredCandles.length} candles >= ${startTimeStr}`);
 
     return filteredCandles;
   } catch (e) {
@@ -568,6 +569,7 @@ export async function POST() {
       action: 'checked' | 'closed' | 'filled' | 'cancelled';
       current_price: number;
       instance_name?: string;
+      timeframe?: string;
       fill_timestamp?: string;
       exit_reason?: string;
       exit_timestamp?: string;
@@ -582,12 +584,12 @@ export async function POST() {
     let cancelledCount = 0;
 
     for (const trade of openTrades) {
+      const timeframe = trade.timeframe || '1h';
       try {
         const isLong = trade.side === 'Buy';
         const entryPrice = trade.entry_price || 0;
         const stopLoss = trade.stop_loss || 0;
         const takeProfit = trade.take_profit || 0;
-        const timeframe = trade.timeframe || '1h';
 
         // Get max open bars for this trade's timeframe and status (0 = disabled)
         const maxOpenBars = await getMaxOpenBarsForTimeframe(timeframe, trade.status as 'pending_fill' | 'paper_trade' | 'filled');
@@ -616,6 +618,7 @@ export async function POST() {
           action: 'checked',
           current_price: currentPrice,
           instance_name: trade.instance_name,
+          timeframe: timeframe,
           candles_checked: 0,
           checked_at: new Date().toISOString()
         });
@@ -634,6 +637,7 @@ export async function POST() {
           action: 'checked',
           current_price: 0,
           instance_name: trade.instance_name,
+          timeframe: timeframe,
           candles_checked: 0,
           checked_at: new Date().toISOString()
         });
@@ -681,6 +685,7 @@ export async function POST() {
               action: 'checked',
               current_price: await getCurrentPrice(trade.symbol),
               instance_name: trade.instance_name,
+              timeframe: timeframe,
               candles_checked: candlesAfterCreation.length,
               bars_open: 0,
               checked_at: new Date().toISOString()
@@ -736,6 +741,7 @@ export async function POST() {
               action: 'cancelled',
               current_price: currentPrice,
               instance_name: trade.instance_name,
+              timeframe: timeframe,
               exit_reason: 'max_bars_exceeded',
               candles_checked: candles.length,
               bars_open: barsPending,
@@ -751,6 +757,7 @@ export async function POST() {
             action: 'checked',
             current_price: currentPrice,
             instance_name: trade.instance_name,
+            timeframe: timeframe,
             candles_checked: candles.length,
             bars_open: barsPending,
             checked_at: new Date().toISOString()
@@ -828,6 +835,7 @@ export async function POST() {
           action: 'checked',
           current_price: await getCurrentPrice(trade.symbol),
           instance_name: trade.instance_name,
+          timeframe: timeframe,
           candles_checked: candles.length,
           bars_open: 0,
           checked_at: new Date().toISOString()
@@ -890,6 +898,7 @@ export async function POST() {
             action: 'checked',
             current_price: await getCurrentPrice(trade.symbol),
             instance_name: trade.instance_name,
+            timeframe: timeframe,
             candles_checked: candles.length,
             bars_open: barsOpen,
             checked_at: new Date().toISOString()
@@ -926,6 +935,7 @@ export async function POST() {
             action: 'checked',
             current_price: await getCurrentPrice(trade.symbol),
             instance_name: trade.instance_name,
+            timeframe: timeframe,
             candles_checked: candles.length,
             bars_open: barsOpen,
             checked_at: new Date().toISOString()
@@ -977,6 +987,7 @@ export async function POST() {
           action: 'closed',
           current_price: exitResult.currentPrice,
           instance_name: trade.instance_name,
+          timeframe: timeframe,
           exit_reason: exitResult.reason,
           exit_timestamp: exitTime,
           pnl: Math.round(pnl * 100) / 100,
@@ -1070,6 +1081,7 @@ export async function POST() {
           action: 'cancelled',
           current_price: currentPrice,
           instance_name: trade.instance_name,
+          timeframe: timeframe,
           exit_reason: 'max_bars_exceeded',
           exit_timestamp: cancelTime,
           pnl: Math.round(pnl * 100) / 100,
@@ -1084,6 +1096,7 @@ export async function POST() {
           action: alreadyFilled ? 'checked' : 'filled',
           current_price: exitResult.currentPrice,
           instance_name: trade.instance_name,
+          timeframe: timeframe,
           candles_checked: candles.length,
           bars_open: barsOpen,
           checked_at: new Date().toISOString()
@@ -1101,6 +1114,7 @@ export async function POST() {
           action: 'checked',
           current_price: 0,
           instance_name: trade.instance_name,
+          timeframe: timeframe,
           candles_checked: 0,
           checked_at: new Date().toISOString()
         });
