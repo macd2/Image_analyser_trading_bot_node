@@ -333,9 +333,25 @@ class OrderExecutor:
             return {"error": str(e)}
 
     def get_positions(self, settle_coin: str = "USDT") -> Dict[str, Any]:
-        """Get open positions."""
+        """
+        Get open positions from Bybit API.
+
+        Returns the raw Bybit API response format with retCode for compatibility
+        with count_open_positions_and_orders() and other functions that expect
+        the standard Bybit API response structure.
+
+        Returns:
+            Dict with Bybit API response format:
+            - retCode: 0 for success, non-zero for error
+            - retMsg: Status message
+            - result: Dict with 'list' containing position data
+        """
         if not self._session:
-            return {"error": "Session not initialized", "positions": []}
+            return {
+                "retCode": -1,
+                "retMsg": "Session not initialized",
+                "result": {"list": []}
+            }
 
         try:
             response = self._session.get_positions(
@@ -343,24 +359,62 @@ class OrderExecutor:
                 settleCoin=settle_coin,
             )
 
-            if response.get("retCode") != 0:
-                return {"error": response.get("retMsg"), "positions": []}
-
-            positions = []
-            for pos in response.get("result", {}).get("list", []):
-                size = float(pos.get("size") or 0)
-                if size > 0:
-                    positions.append({
-                        "symbol": pos.get("symbol"),
-                        "side": pos.get("side"),
-                        "size": size,
-                        "entry_price": float(pos.get("avgPrice") or 0),
-                        "mark_price": float(pos.get("markPrice") or 0),
-                        "pnl": float(pos.get("unrealisedPnl") or 0),
-                        "leverage": pos.get("leverage"),
-                    })
-
-            return {"positions": positions}
+            # Return the raw Bybit API response (which has retCode, retMsg, result)
+            return response
 
         except Exception as e:
-            return {"error": str(e), "positions": []}
+            return {
+                "retCode": -1,
+                "retMsg": str(e),
+                "result": {"list": []}
+            }
+
+    def get_open_orders(self, **kwargs) -> Dict[str, Any]:
+        """
+        Get open orders from Bybit API.
+
+        Returns the raw Bybit API response format with retCode for compatibility
+        with count_open_positions_and_orders() and other functions that expect
+        the standard Bybit API response structure.
+
+        Args:
+            **kwargs: Parameters to pass to Bybit API (openOnly, limit, symbol, etc.)
+
+        Returns:
+            Dict with Bybit API response format:
+            - retCode: 0 for success, non-zero for error
+            - retMsg: Status message
+            - result: Dict with 'list' containing order data
+        """
+        if not self._session:
+            return {
+                "retCode": -1,
+                "retMsg": "Session not initialized",
+                "result": {"list": []}
+            }
+
+        try:
+            # Set defaults for Bybit API
+            kwargs.setdefault("category", "linear")
+            kwargs.setdefault("openOnly", 1)
+            kwargs.setdefault("limit", 50)
+
+            # Normalize symbol if provided
+            if "symbol" in kwargs:
+                kwargs["symbol"] = normalize_symbol_for_bybit(kwargs["symbol"])
+
+            # Bybit API requires symbol, settleCoin, or baseCoin for open orders
+            if "symbol" not in kwargs and "settleCoin" not in kwargs and "baseCoin" not in kwargs:
+                kwargs.setdefault("settleCoin", "USDT")
+
+            response = self._session.get_open_orders(**kwargs)
+
+            # Return the raw Bybit API response (which has retCode, retMsg, result)
+            return response
+
+        except Exception as e:
+            return {
+                "retCode": -1,
+                "retMsg": str(e),
+                "result": {"list": []}
+            }
