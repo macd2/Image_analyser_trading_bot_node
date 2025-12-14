@@ -1053,12 +1053,25 @@ class TradingCycle:
     def _build_signal(self, analysis: Dict[str, Any], recommendation: str, confidence: float) -> Optional[Dict[str, Any]]:
         """Build trading signal from analysis with price sanity check."""
         try:
-            entry = float(analysis.get("entry_price", 0))
-            tp = float(analysis.get("take_profit", 0))
-            sl = float(analysis.get("stop_loss", 0))
+            # Extract price levels - check if they exist and are non-zero
+            entry_raw = analysis.get("entry_price")
+            tp_raw = analysis.get("take_profit")
+            sl_raw = analysis.get("stop_loss")
 
-            if not all([entry, tp, sl]):
-                logger.warning("   ⚠️ Missing price levels in analysis")
+            # Convert to float, handling None and empty values
+            try:
+                entry = float(entry_raw) if entry_raw is not None else 0.0
+                tp = float(tp_raw) if tp_raw is not None else 0.0
+                sl = float(sl_raw) if sl_raw is not None else 0.0
+            except (ValueError, TypeError):
+                logger.warning("   ⚠️ Invalid price level format in analysis")
+                return None
+
+            # Check if all price levels are present and non-zero
+            if entry <= 0 or tp <= 0 or sl <= 0:
+                symbol = analysis.get("symbol", "UNKNOWN")
+                logger.warning(f"   ⚠️ Missing price levels in analysis for {symbol}")
+                logger.debug(f"      entry_price={entry}, take_profit={tp}, stop_loss={sl}")
                 return None
 
             # PRICE SANITY CHECK: Verify AI-extracted price is reasonable
