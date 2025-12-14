@@ -128,10 +128,38 @@ def _move_file_s3(source_path: str, dest_path: str) -> dict:
         s3 = get_s3_client()
         bucket = get_bucket_name()
 
+        # First verify source file exists
+        try:
+            s3.head_object(Bucket=bucket, Key=source_path)
+        except Exception:
+            return {'success': False, 'error': f'Source file not found: {source_path}'}
+
         # S3 doesn't have native move - copy then delete
         copy_source = {'Bucket': bucket, 'Key': source_path}
-        s3.copy_object(Bucket=bucket, Key=dest_path, CopySource=copy_source)
+        copy_response = s3.copy_object(Bucket=bucket, Key=dest_path, CopySource=copy_source)
+
+        # Check if copy was successful
+        if copy_response.get('ResponseMetadata', {}).get('HTTPStatusCode') != 200:
+            return {'success': False, 'error': f'Copy failed with status {copy_response.get("ResponseMetadata", {}).get("HTTPStatusCode")}'}
+
+        # Verify destination file exists before deleting source
+        try:
+            s3.head_object(Bucket=bucket, Key=dest_path)
+        except Exception:
+            return {'success': False, 'error': f'Destination file not created after copy: {dest_path}'}
+
+        # Now delete the source
         s3.delete_object(Bucket=bucket, Key=source_path)
+
+        # Verify source was deleted
+        try:
+            s3.head_object(Bucket=bucket, Key=source_path)
+            return {'success': False, 'error': f'Source file still exists after delete: {source_path}'}
+        except Exception:
+            # Good - source is deleted
+            pass
+
+        logger.info(f"✅ Successfully moved {source_path} → {dest_path}")
         return {'success': True}
     except Exception as e:
         return {'success': False, 'error': str(e)}
