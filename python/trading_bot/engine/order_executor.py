@@ -314,14 +314,18 @@ class OrderExecutor:
 
             accounts = response.get("result", {}).get("list", [])
             if accounts:
-                coins = accounts[0].get("coin", [])
+                account = accounts[0]
+                coins = account.get("coin", [])
                 for c in coins:
                     if c.get("coin") == coin:
                         return {
                             "coin": coin,
-                            "available": float(c.get("availableToWithdraw") or 0),
+                            # For UNIFIED accounts, use totalAvailableBalance from account level
+                            # availableToWithdraw is deprecated and returns empty string
+                            "available": float(account.get("totalAvailableBalance") or 0),
                             "wallet_balance": float(c.get("walletBalance") or 0),
-                            "equity": float(c.get("equity") or 0),
+                            "equity": float(account.get("totalEquity") or 0),
+                            "unrealised_pnl": float(account.get("totalPerpUPL") or 0),
                         }
             return {"coin": coin, "available": 0, "wallet_balance": 0, "equity": 0}
 

@@ -342,7 +342,7 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
                   !dryRun ? 'bg-red-600 text-white' : 'bg-slate-600 text-slate-400 hover:bg-slate-500'
                 } ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                Hot
+                Live
               </button>
             </div>
           </div>

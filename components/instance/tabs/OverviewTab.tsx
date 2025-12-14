@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
-import { Activity, Clock, Maximize2, AlertTriangle, CheckCircle, RefreshCw, X } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { Activity, Clock, Maximize2, AlertTriangle, CheckCircle, RefreshCw, X, HelpCircle } from 'lucide-react'
 import { LoadingState, ErrorState } from '@/components/shared'
 import TradeChartModal from '@/components/shared/TradeChartModal'
 import StatsBar, { StatsScope } from '@/components/StatsBar'
@@ -117,6 +117,28 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
   // Connect to Socket.IO for real-time updates (wallet, positions, tickers)
   const { wallet: liveWallet, positions: livePositions, socket } = useRealtime()
 
+  // Fallback wallet state when WebSocket data is not available
+  const [fallbackWallet, setFallbackWallet] = useState<any>(null)
+  const [walletLoading, setWalletLoading] = useState(false)
+
+  // Fetch fallback wallet data when WebSocket wallet is not available
+  const fetchFallbackWallet = useCallback(async () => {
+    if (liveWallet) return // Don't fetch if we have WebSocket data
+
+    try {
+      setWalletLoading(true)
+      const res = await fetch('/api/bot/wallet')
+      if (res.ok) {
+        const data = await res.json()
+        setFallbackWallet(data)
+      }
+    } catch (err) {
+      console.error('[OverviewTab] Failed to fetch fallback wallet:', err)
+    } finally {
+      setWalletLoading(false)
+    }
+  }, [liveWallet])
+
   // Subscribe to instance-specific logs on mount
   useEffect(() => {
     if (!socket) return
@@ -131,6 +153,11 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
       socket.emit('unsubscribe_instance', instanceId)
     }
   }, [socket, instanceId])
+
+  // Fetch fallback wallet on mount and when liveWallet changes
+  useEffect(() => {
+    fetchFallbackWallet()
+  }, [fetchFallbackWallet])
 
   const [status, setStatus] = useState<BotStatus | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
@@ -357,6 +384,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
             <div className="flex items-center gap-2">
               Account
               {liveWallet && <span className="text-green-500 text-[10px]">● LIVE</span>}
+              {!liveWallet && fallbackWallet && <span className="text-amber-500 text-[10px]">● API</span>}
             </div>
             {/* Permanent VNC Login Button */}
             <button
@@ -368,28 +396,73 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
               VNC Login
             </button>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div>
-              <span className="text-slate-500">Balance:</span>
-              <span className="text-white ml-1 font-mono">
-                ${liveWallet ? parseFloat(liveWallet.walletBalance).toFixed(0) : (status?.wallet?.balance_usdt?.toFixed(0) || '0')}
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            {/* USDT Wallet Balance */}
+            <div className="group relative">
+              <div className="flex items-center gap-1">
+                <span className="text-slate-500">USDT Balance:</span>
+                <HelpCircle className="w-3 h-3 text-slate-400 cursor-help" />
+              </div>
+              <span className="text-white font-mono">
+                ${liveWallet ? parseFloat(liveWallet.walletBalance).toFixed(0) : (fallbackWallet ? parseFloat(fallbackWallet.walletBalance).toFixed(0) : '0')}
               </span>
+              <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 whitespace-nowrap z-10">
+                Your actual USDT balance
+              </div>
             </div>
-            <div>
-              <span className="text-slate-500">Equity:</span>
-              <span className="text-white ml-1 font-mono">
-                ${liveWallet ? parseFloat(liveWallet.equity).toFixed(0) : (status?.wallet?.equity_usdt?.toFixed(0) || '0')}
+
+            {/* Total Equity */}
+            <div className="group relative">
+              <div className="flex items-center gap-1">
+                <span className="text-slate-500">Total Equity:</span>
+                <HelpCircle className="w-3 h-3 text-slate-400 cursor-help" />
+              </div>
+              <span className="text-white font-mono">
+                ${liveWallet ? parseFloat(liveWallet.equity).toFixed(0) : (fallbackWallet ? parseFloat(fallbackWallet.equity).toFixed(0) : '0')}
               </span>
+              <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 whitespace-nowrap z-10">
+                Account value (all coins)
+              </div>
             </div>
-            <div>
-              <span className="text-slate-500">Available:</span>
-              <span className="text-green-400 ml-1 font-mono">
-                ${liveWallet ? parseFloat(liveWallet.availableToWithdraw).toFixed(0) : (status?.wallet?.available_usdt?.toFixed(0) || '0')}
+
+            {/* Available to Trade */}
+            <div className="group relative">
+              <div className="flex items-center gap-1">
+                <span className="text-slate-500">Available:</span>
+                <HelpCircle className="w-3 h-3 text-slate-400 cursor-help" />
+              </div>
+              <span className="text-green-400 font-mono">
+                ${liveWallet ? parseFloat(liveWallet.availableToWithdraw).toFixed(0) : (fallbackWallet ? parseFloat(fallbackWallet.availableToWithdraw).toFixed(0) : '0')}
               </span>
+              <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 whitespace-nowrap z-10">
+                Can use for new trades
+              </div>
             </div>
-            <div>
-              <span className="text-slate-500">Slots:</span>
-              <span className="text-white ml-1">{status?.slots?.used || 0}/{status?.slots?.max || 0}</span>
+
+            {/* Unrealised PnL */}
+            <div className="group relative">
+              <div className="flex items-center gap-1">
+                <span className="text-slate-500">Unrealised PnL:</span>
+                <HelpCircle className="w-3 h-3 text-slate-400 cursor-help" />
+              </div>
+              <span className={`font-mono ${(liveWallet ? parseFloat(liveWallet.unrealisedPnl) : (fallbackWallet ? parseFloat(fallbackWallet.unrealisedPnl) : 0)) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                ${liveWallet ? parseFloat(liveWallet.unrealisedPnl).toFixed(2) : (fallbackWallet ? parseFloat(fallbackWallet.unrealisedPnl).toFixed(2) : '0.00')}
+              </span>
+              <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 whitespace-nowrap z-10">
+                P&L on open positions
+              </div>
+            </div>
+
+            {/* Slots */}
+            <div className="group relative">
+              <div className="flex items-center gap-1">
+                <span className="text-slate-500">Slots:</span>
+                <HelpCircle className="w-3 h-3 text-slate-400 cursor-help" />
+              </div>
+              <span className="text-white">{status?.slots?.used || 0}/{status?.slots?.max || 0}</span>
+              <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 whitespace-nowrap z-10">
+                Open trades / Max trades
+              </div>
             </div>
           </div>
         </div>
