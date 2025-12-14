@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import uuid
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -16,6 +17,10 @@ from trading_bot.core.utils import (
 )
 from trading_bot.db.client import get_connection, execute
 from trading_bot.core.storage import move_file, get_storage_type, list_files
+
+# Track files being moved to prevent race conditions between instances
+_files_being_moved: Dict[str, float] = {}
+_move_timeout_seconds = 30  # Timeout for stale locks
 
 
 class ChartCleaner:
@@ -183,35 +188,64 @@ class ChartCleaner:
                 if dry_run:
                     self.logger.info(f"🔍 DRY RUN: Would move {filename} ({item['reason']})")
                 else:
-                    # Move file using storage abstraction
-                    if storage_type == 'local':
-                        # Local filesystem move
-                        src_path = Path(file_path)
-                        backup_dir = src_path.parent / '.backup'
-                        backup_dir.mkdir(exist_ok=True)
-                        dest_path = backup_dir / filename
-                        src_path.rename(dest_path)
-                        self.logger.info(f"📦 Moved: {filename} → .backup/ (local)")
-                    else:
-                        # Cloud storage move (S3/Supabase)
-                        # file_path already includes 'charts/' prefix
-                        rel_source = file_path
-                        rel_dest = f"charts/.backup/{filename}"
-                        result = move_file(rel_source, rel_dest)
-                        if not result['success']:
-                            error_msg = result.get('error', 'Move failed')
-                            self.logger.error(f"❌ Failed to move {filename}: {error_msg}")
-                            raise Exception(error_msg)
-                        self.logger.info(f"📦 Moved: {filename} → charts/.backup/ (cloud)")
+                    # Check if another instance is already moving this file
+                    current_time = time.time()
+                    if file_path in _files_being_moved:
+                        lock_time = _files_being_moved[file_path]
+                        if current_time - lock_time < _move_timeout_seconds:
+                            self.logger.warning(f"⏳ File is being moved by another instance, skipping: {filename}")
+                            continue
+                        else:
+                            # Lock is stale, remove it
+                            del _files_being_moved[file_path]
 
-                moved_files.append(file_path)
-                moved_details.append({
-                    'filename': filename,
-                    'symbol': item.get('symbol'),
-                    'timeframe': item.get('timeframe'),
-                    'reason': item.get('reason'),
-                    'age_minutes': item.get('age_minutes')
-                })
+                    # Acquire lock
+                    _files_being_moved[file_path] = current_time
+
+                    try:
+                        # Move file using storage abstraction
+                        if storage_type == 'local':
+                            # Local filesystem move
+                            src_path = Path(file_path)
+
+                            # Check if file still exists (might have been deleted by another process)
+                            if not src_path.exists():
+                                self.logger.warning(f"⚠️  File no longer exists (may have been deleted): {filename}")
+                                continue
+
+                            backup_dir = src_path.parent / '.backup'
+                            backup_dir.mkdir(exist_ok=True)
+                            dest_path = backup_dir / filename
+                            src_path.rename(dest_path)
+                            self.logger.info(f"📦 Moved: {filename} → .backup/ (local)")
+                        else:
+                            # Cloud storage move (S3/Supabase)
+                            # file_path already includes 'charts/' prefix
+                            rel_source = file_path
+                            rel_dest = f"charts/.backup/{filename}"
+                            result = move_file(rel_source, rel_dest)
+                            if not result['success']:
+                                error_msg = result.get('error', 'Move failed')
+                                # Check if error is "file not found" - if so, just skip it
+                                if 'not found' in error_msg.lower():
+                                    self.logger.warning(f"⚠️  File no longer exists (may have been deleted): {filename}")
+                                    continue
+                                self.logger.error(f"❌ Failed to move {filename}: {error_msg}")
+                                raise Exception(error_msg)
+                            self.logger.info(f"📦 Moved: {filename} → charts/.backup/ (cloud)")
+
+                        moved_files.append(file_path)
+                        moved_details.append({
+                            'filename': filename,
+                            'symbol': item.get('symbol'),
+                            'timeframe': item.get('timeframe'),
+                            'reason': item.get('reason'),
+                            'age_minutes': item.get('age_minutes')
+                        })
+                    finally:
+                        # Release lock
+                        if file_path in _files_being_moved:
+                            del _files_being_moved[file_path]
             except Exception as e:
                 self.logger.error(f"Failed to move {filename}: {e}")
 
