@@ -160,11 +160,23 @@ export class BybitWebSocket extends EventEmitter {
 
           // Data updates
           if (msg.topic === 'position') {
-            console.log('[Bybit WS] Position update received');
+            console.log('[Bybit WS] Position update received:', {
+              count: msg.data?.length || 0,
+              positions: msg.data?.map((p: any) => ({ symbol: p.symbol, side: p.side, size: p.size })) || []
+            });
             this.emit('position', msg.data);
           }
           if (msg.topic === 'order') {
-            console.log('[Bybit WS] Order update received');
+            console.log('[Bybit WS] Order update received:', {
+              count: msg.data?.length || 0,
+              orders: msg.data?.map((o: any) => ({
+                symbol: o.symbol,
+                side: o.side,
+                qty: o.orderQty,
+                price: o.price,
+                status: o.orderStatus
+              })) || []
+            });
             this.emit('order', msg.data);
           }
           if (msg.topic === 'wallet') {

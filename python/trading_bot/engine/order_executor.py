@@ -396,7 +396,7 @@ class OrderExecutor:
         try:
             # Set defaults for Bybit API
             kwargs.setdefault("category", "linear")
-            kwargs.setdefault("openOnly", 1)
+            kwargs.setdefault("openOnly", 0)  # 0 returns open orders, 1 returns closed orders
             kwargs.setdefault("limit", 50)
 
             # Normalize symbol if provided

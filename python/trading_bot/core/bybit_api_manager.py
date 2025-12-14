@@ -325,7 +325,7 @@ class BybitAPIManager:
     def get_open_orders(self, **kwargs) -> Dict[str, Any]:
         """Get open orders from Bybit."""
         kwargs.setdefault("category", "linear")
-        kwargs.setdefault("openOnly", 1)
+        kwargs.setdefault("openOnly", 0)  # 0 returns open orders, 1 returns closed orders
         kwargs.setdefault("limit", 50)
         if "symbol" in kwargs:
             kwargs["symbol"] = normalize_symbol_for_bybit(kwargs["symbol"])

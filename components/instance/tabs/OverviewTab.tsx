@@ -67,7 +67,7 @@ interface BotStatus {
   error: string | null
   // Legacy fields for backwards compatibility (now come from WebSocket)
   wallet?: { balance_usdt: number; available_usdt: number; equity_usdt: number }
-  positions?: Array<{ symbol: string; side: string; size: string; entryPrice: string; unrealisedPnl: string }>
+  positions?: Array<{ symbol: string; side: string; size: string; entryPrice: string; unrealisedPnl: string; markPrice?: string; leverage?: string; positionValue?: string; liqPrice?: string }>
 }
 
 interface Trade {
@@ -115,7 +115,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
   }, [logs, instanceId])
 
   // Connect to Socket.IO for real-time updates (wallet, positions, tickers)
-  const { wallet: liveWallet, positions: livePositions, socket } = useRealtime()
+  const { wallet: liveWallet, positions: livePositions, pendingOrders: livePendingOrders, socket } = useRealtime()
 
   // Fallback wallet state when WebSocket data is not available
   const [fallbackWallet, setFallbackWallet] = useState<any>(null)
@@ -312,7 +312,10 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
   // Use WebSocket positions if available, fallback to status API
   const positions = livePositions.length > 0 ? livePositions : (status?.positions || [])
   const unrealizedPnl = positions.reduce((sum, p) => sum + parseFloat(p.unrealisedPnl || '0'), 0)
+
+  // Separate positions and orders
   const positionCount = positions.length
+  const orderCount = livePendingOrders.length
 
   return (
     <div className="p-4 space-y-4">
@@ -568,14 +571,14 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         </div>
       </div>
 
-      {/* Row 5: Open Positions - Full Width */}
+      {/* Row 5a: Open Positions - Full Width */}
       <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <Activity className="w-4 h-4 text-blue-400" />
+            <Activity className="w-4 h-4 text-green-400" />
             Open Positions
             {positionCount > 0 && (
-              <span className="px-1.5 py-0.5 text-xs bg-blue-600/30 text-blue-400 rounded">{positionCount}</span>
+              <span className="px-1.5 py-0.5 text-xs bg-green-600/30 text-green-400 rounded">{positionCount}</span>
             )}
           </h3>
           {unrealizedPnl !== 0 && (
@@ -592,24 +595,30 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
                   <th className="text-left py-1.5 font-medium">Symbol</th>
                   <th className="text-left py-1.5 font-medium">Side</th>
                   <th className="text-right py-1.5 font-medium">Size</th>
-                  <th className="text-right py-1.5 font-medium">Entry</th>
+                  <th className="text-right py-1.5 font-medium">Entry Price</th>
+                  <th className="text-right py-1.5 font-medium">Mark Price</th>
+                  <th className="text-right py-1.5 font-medium">Liq Price</th>
                   <th className="text-right py-1.5 font-medium">P&L</th>
+                  <th className="text-right py-1.5 font-medium">Leverage</th>
                 </tr>
               </thead>
               <tbody>
-                {positions.map((pos, idx) => (
+                {positions.map((position, idx) => (
                   <tr key={idx} className="border-b border-slate-700/50 hover:bg-slate-700/20">
-                    <td className="py-1.5 font-mono font-bold text-white">{pos.symbol}</td>
+                    <td className="py-1.5 font-mono font-bold text-white">{position.symbol}</td>
                     <td className="py-1.5">
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${pos.side === 'Buy' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
-                        {pos.side === 'Buy' ? 'LONG' : 'SHORT'}
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${position.side === 'Buy' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+                        {position.side === 'Buy' ? 'LONG' : 'SHORT'}
                       </span>
                     </td>
-                    <td className="py-1.5 text-right text-slate-300 font-mono">{pos.size}</td>
-                    <td className="py-1.5 text-right text-slate-300 font-mono">${parseFloat(pos.entryPrice).toFixed(2)}</td>
-                    <td className={`py-1.5 text-right font-bold font-mono ${parseFloat(pos.unrealisedPnl) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {parseFloat(pos.unrealisedPnl) >= 0 ? '+' : ''}${parseFloat(pos.unrealisedPnl).toFixed(2)}
+                    <td className="py-1.5 text-right text-slate-300 font-mono">{position.size}</td>
+                    <td className="py-1.5 text-right text-slate-300 font-mono">${parseFloat(position.entryPrice).toFixed(4)}</td>
+                    <td className="py-1.5 text-right text-slate-300 font-mono">${position.markPrice ? parseFloat(position.markPrice).toFixed(4) : '-'}</td>
+                    <td className="py-1.5 text-right text-slate-300 font-mono">${position.liqPrice ? parseFloat(position.liqPrice).toFixed(4) : '-'}</td>
+                    <td className={`py-1.5 text-right font-bold font-mono ${parseFloat(position.unrealisedPnl) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {parseFloat(position.unrealisedPnl) >= 0 ? '+' : ''}${parseFloat(position.unrealisedPnl).toFixed(2)}
                     </td>
+                    <td className="py-1.5 text-right text-slate-300 font-mono">{position.leverage ? `${position.leverage}x` : '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -618,6 +627,70 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         ) : (
           <div className="text-slate-500 text-sm py-4 text-center border border-dashed border-slate-700 rounded">
             No open positions
+          </div>
+        )}
+      </div>
+
+      {/* Row 5b: Open Orders - Full Width */}
+      <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Activity className="w-4 h-4 text-amber-400" />
+            Open Orders
+            {orderCount > 0 && (
+              <span className="px-1.5 py-0.5 text-xs bg-amber-600/30 text-amber-400 rounded">{orderCount}</span>
+            )}
+          </h3>
+        </div>
+        {orderCount > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-slate-400 text-xs border-b border-slate-700">
+                  <th className="text-left py-1.5 font-medium">Symbol</th>
+                  <th className="text-left py-1.5 font-medium">Side</th>
+                  <th className="text-right py-1.5 font-medium">Qty</th>
+                  <th className="text-right py-1.5 font-medium">Price</th>
+                  <th className="text-right py-1.5 font-medium">Filled</th>
+                  <th className="text-right py-1.5 font-medium">Avg Price</th>
+                  <th className="text-right py-1.5 font-medium">Type</th>
+                  <th className="text-right py-1.5 font-medium">Created</th>
+                  <th className="text-right py-1.5 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {livePendingOrders.map((order, idx) => {
+                  const createdDate = order.createdTime ? new Date(parseInt(order.createdTime)).toLocaleTimeString() : 'N/A'
+                  const filledQty = parseFloat(order.cumExecQty || '0')
+                  const totalQty = parseFloat(order.qty || order.orderQty || '0')
+                  const filledPct = totalQty > 0 ? ((filledQty / totalQty) * 100).toFixed(0) : '0'
+
+                  return (
+                    <tr key={idx} className="border-b border-slate-700/50 hover:bg-slate-700/20">
+                      <td className="py-1.5 font-mono font-bold text-white">{order.symbol}</td>
+                      <td className="py-1.5">
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${order.side === 'Buy' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+                          {order.side === 'Buy' ? 'LONG' : 'SHORT'}
+                        </span>
+                      </td>
+                      <td className="py-1.5 text-right text-slate-300 font-mono">{totalQty.toFixed(0)}</td>
+                      <td className="py-1.5 text-right text-slate-300 font-mono">${parseFloat(order.price).toFixed(4)}</td>
+                      <td className="py-1.5 text-right text-slate-300 font-mono">{filledPct}%</td>
+                      <td className="py-1.5 text-right text-slate-300 font-mono">{order.avgPrice ? `$${parseFloat(order.avgPrice).toFixed(4)}` : '-'}</td>
+                      <td className="py-1.5 text-right text-slate-300 font-mono text-xs">{order.orderType || 'Limit'}</td>
+                      <td className="py-1.5 text-right text-slate-300 font-mono text-xs">{createdDate}</td>
+                      <td className="py-1.5 text-right font-bold font-mono">
+                        <span className="text-xs text-amber-400">{order.orderStatus}</span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-slate-500 text-sm py-4 text-center border border-dashed border-slate-700 rounded">
+            No open orders
           </div>
         )}
       </div>

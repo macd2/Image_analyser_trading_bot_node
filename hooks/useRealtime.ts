@@ -20,11 +20,30 @@ export interface Position {
   side: string;
   size: string;
   entryPrice: string;
-  markPrice: string;
+  markPrice?: string;
   unrealisedPnl: string;
-  leverage: string;
-  positionValue: string;
-  liqPrice: string;
+  leverage?: string;
+  positionValue?: string;
+  liqPrice?: string;
+}
+
+export interface PendingOrder {
+  symbol: string;
+  side: string;
+  orderQty: string | null;
+  qty?: string;
+  price: string;
+  orderStatus: string;
+  orderId?: string;
+  createdTime?: string;  // milliseconds since epoch
+  updatedTime?: string;
+  orderType?: string;
+  timeInForce?: string;
+  takeProfit?: string;
+  stopLoss?: string;
+  cumExecQty?: string;
+  avgPrice?: string;
+  leavesQty?: string;
 }
 
 export interface Wallet {
@@ -45,6 +64,7 @@ export interface InstanceStatusUpdate {
 interface RealtimeState {
   tickers: Record<string, Ticker>;
   positions: Position[];
+  pendingOrders: PendingOrder[];
   wallet: Wallet | null;
   connected: boolean;
   lastUpdate: Date | null;
@@ -72,6 +92,7 @@ export function useRealtime() {
   const [state, setState] = useState<RealtimeState>({
     tickers: {},
     positions: [],
+    pendingOrders: [],
     wallet: null,
     connected: false,
     lastUpdate: null,
@@ -96,7 +117,13 @@ export function useRealtime() {
       setState(prev => ({ ...prev, connected: false }));
     });
 
-    s.on('init', (data: { tickers: Record<string, Ticker>; positions: Position[]; wallet?: Wallet | null; runningInstances?: string[] }) => {
+    s.on('init', (data: { tickers: Record<string, Ticker>; positions: Position[]; pendingOrders?: PendingOrder[]; wallet?: Wallet | null; runningInstances?: string[] }) => {
+      console.log('[Realtime] Init data received:', {
+        tickerCount: Object.keys(data.tickers).length,
+        positionCount: data.positions.length,
+        pendingOrderCount: data.pendingOrders?.length || 0,
+        positions: data.positions.map(p => ({ symbol: p.symbol, side: p.side, size: p.size }))
+      });
       Object.entries(data.tickers).forEach(([symbol, ticker]) => {
         tickersRef.current[symbol] = mergeTicker(tickersRef.current[symbol], ticker);
       });
@@ -104,6 +131,7 @@ export function useRealtime() {
         ...prev,
         tickers: { ...tickersRef.current },
         positions: data.positions,
+        pendingOrders: data.pendingOrders || [],
         wallet: data.wallet || null,
         runningInstances: data.runningInstances || [],
         lastUpdate: new Date()
@@ -120,6 +148,10 @@ export function useRealtime() {
     });
 
     s.on('positions', (data: Position[]) => {
+      console.log('[Realtime] Positions update:', {
+        count: data.length,
+        positions: data.map(p => ({ symbol: p.symbol, side: p.side, size: p.size }))
+      });
       setState(prev => ({
         ...prev,
         positions: data,
@@ -132,6 +164,15 @@ export function useRealtime() {
       setState(prev => ({
         ...prev,
         wallet: data,
+        lastUpdate: new Date()
+      }));
+    });
+
+    s.on('trades', (data: { positions: Position[]; pendingOrders: PendingOrder[] }) => {
+      setState(prev => ({
+        ...prev,
+        positions: data.positions,
+        pendingOrders: data.pendingOrders,
         lastUpdate: new Date()
       }));
     });
@@ -179,6 +220,7 @@ export function useRealtime() {
   return {
     tickers: state.tickers,
     positions: state.positions,
+    pendingOrders: state.pendingOrders,
     wallet: state.wallet,
     connected: state.connected,
     lastUpdate: state.lastUpdate,

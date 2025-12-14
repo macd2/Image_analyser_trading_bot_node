@@ -14,10 +14,19 @@ let currentWatchlist: string[] = [];
 // Store latest data
 const tickers: Record<string, TickerData> = {};
 const positions: PositionData[] = [];
+const pendingOrders: any[] = []; // Store pending orders
 let wallet: WalletData | null = null;
 
 export function getSocketServer(): SocketIOServer | null {
   return io;
+}
+
+export function getPositions(): PositionData[] {
+  return positions;
+}
+
+export function getPendingOrders(): any[] {
+  return pendingOrders;
 }
 
 // Default symbols always included for dashboard
@@ -134,15 +143,52 @@ export function initSocketServer(httpServer: HTTPServer): SocketIOServer {
 
       // Forward position updates
       bybit.on('position', (data: PositionData[]) => {
+        console.log('[Socket.io] Received positions from Bybit:', {
+          total: data.length,
+          positions: data.map(p => ({ symbol: p.symbol, side: p.side, size: p.size }))
+        });
         const openPositions = data.filter(p => parseFloat(p.size) !== 0);
+        console.log('[Socket.io] Filtered open positions:', {
+          count: openPositions.length,
+          positions: openPositions.map(p => ({ symbol: p.symbol, side: p.side, size: p.size }))
+        });
         positions.length = 0;
         positions.push(...openPositions);
         io?.emit('positions', openPositions);
       });
 
-      // Forward order updates
-      bybit.on('order', (data: unknown) => {
+      // Forward order updates and store pending orders
+      bybit.on('order', (data: any[]) => {
+        console.log('[Socket.io] Raw order data from Bybit:', {
+          total: data.length,
+          orders: data.map(o => ({
+            symbol: o.symbol,
+            side: o.side,
+            qty: o.orderQty,
+            price: o.price,
+            status: o.orderStatus,
+            allKeys: Object.keys(o).slice(0, 10)
+          }))
+        });
+
+        // Filter for truly open orders (exclude cancelled, rejected, filled)
+        const pendingOrdersList = data.filter(order => {
+          const status = order.orderStatus?.toLowerCase() || '';
+          return (status === 'new' || status === 'partiallyfilled' || status === 'pending') &&
+                 status !== 'cancelled' && status !== 'rejected' && status !== 'filled';
+        });
+
+        pendingOrders.length = 0;
+        pendingOrders.push(...pendingOrdersList);
+
+        console.log('[Socket.io] Pending orders updated:', {
+          count: pendingOrdersList.length,
+          orders: pendingOrdersList.map(o => ({ symbol: o.symbol, side: o.side, qty: o.orderQty, price: o.price, status: o.orderStatus }))
+        });
+
         io?.emit('order', data);
+        // Also emit combined trades (positions + pending orders)
+        io?.emit('trades', { positions, pendingOrders: pendingOrdersList });
       });
 
       // Forward wallet updates
@@ -191,6 +237,37 @@ export function initSocketServer(httpServer: HTTPServer): SocketIOServer {
         bybit.connectPrivate().catch(() => {
           // Silently catch - reconnect logic will handle it
         });
+
+        // Fetch initial orders and positions via REST API
+        // (WebSocket only sends updates, not initial state)
+        setTimeout(async () => {
+          try {
+            console.log('[Socket.io] Fetching initial orders and positions via REST API...');
+            const response = await fetch('http://localhost:3000/api/bot/bybit-orders');
+            if (response.ok) {
+              const data = await response.json();
+              if (data.orders && Array.isArray(data.orders)) {
+                // Filter for truly open orders (exclude cancelled, rejected, filled)
+                const pendingOrdersList = data.orders.filter((order: any) => {
+                  const status = order.orderStatus?.toLowerCase() || '';
+                  // Only include orders that are actively open/pending
+                  return (status === 'new' || status === 'partiallyfilled' || status === 'pending') &&
+                         status !== 'cancelled' && status !== 'rejected' && status !== 'filled';
+                });
+                pendingOrders.length = 0;
+                pendingOrders.push(...pendingOrdersList);
+                console.log('[Socket.io] Initial pending orders loaded:', {
+                  count: pendingOrdersList.length,
+                  total: data.orders.length,
+                  orders: pendingOrdersList.map((o: any) => ({ symbol: o.symbol, side: o.side, qty: o.orderQty, price: o.price }))
+                });
+                io?.emit('order', data.orders);
+              }
+            }
+          } catch (err) {
+            console.error('[Socket.io] Failed to fetch initial orders:', err);
+          }
+        }, 2000); // Wait 2 seconds for WebSocket to connect
       } else {
         console.warn('[Socket.io] ⚠️ No Bybit API credentials - wallet updates will NOT be available via WebSocket');
       }
@@ -213,6 +290,7 @@ export function initSocketServer(httpServer: HTTPServer): SocketIOServer {
     socket.emit('init', {
       tickers,
       positions,
+      pendingOrders,
       wallet,
       runningInstances: processMonitor.getRunningInstanceIds()
     });

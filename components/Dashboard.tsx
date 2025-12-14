@@ -19,17 +19,20 @@ export default function Dashboard() {
   ]
 
   // Format live positions for display
-  const positions = livePositions.length > 0 ? livePositions.map((p: Position) => ({
-    symbol: p.symbol,
-    side: p.side.toUpperCase(),
-    entry: parseFloat(p.entryPrice),
-    current: parseFloat(p.markPrice),
-    pnl: `${parseFloat(p.unrealisedPnl) >= 0 ? '+' : ''}$${parseFloat(p.unrealisedPnl).toFixed(2)}`,
-    pnlPct: `${((parseFloat(p.markPrice) - parseFloat(p.entryPrice)) / parseFloat(p.entryPrice) * 100 * (p.side === 'Buy' ? 1 : -1)).toFixed(2)}%`,
-    confidence: 0.85,
-    leverage: p.leverage,
-    size: p.size
-  })) : [
+  const positions = livePositions.length > 0 ? livePositions.map((p: Position) => {
+    const markPrice = p.markPrice ? parseFloat(p.markPrice) : parseFloat(p.entryPrice)
+    return {
+      symbol: p.symbol,
+      side: p.side.toUpperCase(),
+      entry: parseFloat(p.entryPrice),
+      current: markPrice,
+      pnl: `${parseFloat(p.unrealisedPnl) >= 0 ? '+' : ''}$${parseFloat(p.unrealisedPnl).toFixed(2)}`,
+      pnlPct: `${((markPrice - parseFloat(p.entryPrice)) / parseFloat(p.entryPrice) * 100 * (p.side === 'Buy' ? 1 : -1)).toFixed(2)}%`,
+      confidence: 0.85,
+      leverage: p.leverage || '1',
+      size: p.size
+    }
+  }) : [
     { symbol: 'BTCUSDT', side: 'LONG', entry: 42150, current: 42676, pnl: '+$526.13', pnlPct: '+2.49%', confidence: 0.87 },
     { symbol: 'ETHUSDT', side: 'LONG', entry: 2280, current: 2315, pnl: '+$17.65', pnlPct: '+1.55%', confidence: 0.79 },
   ]
