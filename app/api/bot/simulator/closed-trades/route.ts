@@ -22,6 +22,14 @@ interface ClosedTrade {
   instance_name: string;
   run_id: string;
   bars_open?: number;
+  // Position sizing metrics
+  position_size_usd?: number;
+  risk_amount_usd?: number;
+  risk_percentage?: number;
+  confidence_weight?: number;
+  risk_per_unit?: number;
+  sizing_method?: string;
+  risk_pct_used?: number;
 }
 
 export async function GET() {
@@ -47,7 +55,14 @@ export async function GET() {
         t.closed_at,
         COALESCE(t.timeframe, rec.timeframe) as timeframe,
         i.name as instance_name,
-        r.id as run_id
+        r.id as run_id,
+        t.position_size_usd,
+        t.risk_amount_usd,
+        t.risk_percentage,
+        t.confidence_weight,
+        t.risk_per_unit,
+        t.sizing_method,
+        t.risk_pct_used
       FROM trades t
       LEFT JOIN recommendations rec ON t.recommendation_id = rec.id
       LEFT JOIN cycles c ON t.cycle_id = c.id

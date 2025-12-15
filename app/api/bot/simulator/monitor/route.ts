@@ -21,6 +21,8 @@ const SIMULATOR_SETTINGS_KEY = 'simulator'
 interface SimulatorSettings {
   max_open_bars_before_filled: MaxOpenBarsConfig  // Max bars for pending trades (before filled)
   max_open_bars_after_filled: MaxOpenBarsConfig   // Max bars for filled trades (before cancelled)
+  use_fixed_capital?: boolean                      // Use fixed capital instead of Bybit balance
+  fixed_capital_usd?: number                       // Fixed capital amount in USD
 }
 
 // Runtime status stored in file (ephemeral)
@@ -49,6 +51,8 @@ interface RuntimeStatus {
 interface MonitorStatus extends RuntimeStatus {
   max_open_bars_before_filled?: MaxOpenBarsConfig
   max_open_bars_after_filled?: MaxOpenBarsConfig
+  use_fixed_capital?: boolean
+  fixed_capital_usd?: number
 }
 
 // Default per-timeframe max open bars (0 = no cancellation)
@@ -69,16 +73,19 @@ async function getSimulatorSettings(): Promise<SimulatorSettings> {
   try {
     const settings = await getSettings<SimulatorSettings>(SIMULATOR_SETTINGS_KEY)
 
-
     return {
       max_open_bars_before_filled: { ...DEFAULT_MAX_OPEN_BARS_BEFORE_FILLED, ...(settings?.max_open_bars_before_filled || {}) },
-      max_open_bars_after_filled: { ...DEFAULT_MAX_OPEN_BARS_AFTER_FILLED, ...(settings?.max_open_bars_after_filled || {}) }
+      max_open_bars_after_filled: { ...DEFAULT_MAX_OPEN_BARS_AFTER_FILLED, ...(settings?.max_open_bars_after_filled || {}) },
+      use_fixed_capital: settings?.use_fixed_capital ?? false,
+      fixed_capital_usd: settings?.fixed_capital_usd ?? 10000
     }
   } catch (e) {
     console.error('Failed to read simulator settings from DB:', e)
     return {
       max_open_bars_before_filled: { ...DEFAULT_MAX_OPEN_BARS_BEFORE_FILLED },
-      max_open_bars_after_filled: { ...DEFAULT_MAX_OPEN_BARS_AFTER_FILLED }
+      max_open_bars_after_filled: { ...DEFAULT_MAX_OPEN_BARS_AFTER_FILLED },
+      use_fixed_capital: false,
+      fixed_capital_usd: 10000
     }
   }
 }
@@ -143,7 +150,9 @@ async function getStatus(): Promise<MonitorStatus> {
   return {
     ...runtime,
     max_open_bars_before_filled: settings.max_open_bars_before_filled,
-    max_open_bars_after_filled: settings.max_open_bars_after_filled
+    max_open_bars_after_filled: settings.max_open_bars_after_filled,
+    use_fixed_capital: settings.use_fixed_capital,
+    fixed_capital_usd: settings.fixed_capital_usd
   }
 }
 
@@ -278,9 +287,40 @@ export async function POST(request: NextRequest) {
         [settingType]: updatedMaxBars
       })
 
+    } else if (action === 'set-capital') {
+      // Update simulator capital settings in DATABASE (persisted across restarts)
+      // Can receive:
+      // { use_fixed_capital: true, fixed_capital_usd: 10000 }
+      const { use_fixed_capital, fixed_capital_usd } = body
+      const updatePayload: Partial<SimulatorSettings> = {}
+
+      if (typeof use_fixed_capital === 'boolean') {
+        updatePayload.use_fixed_capital = use_fixed_capital
+      }
+      if (typeof fixed_capital_usd === 'number' && fixed_capital_usd > 0) {
+        updatePayload.fixed_capital_usd = fixed_capital_usd
+      }
+
+      if (Object.keys(updatePayload).length === 0) {
+        return NextResponse.json(
+          { error: 'No valid capital settings provided' },
+          { status: 400 }
+        )
+      }
+
+      await saveSimulatorSettings(updatePayload)
+
+      const updatedSettings = await getSimulatorSettings()
+      return NextResponse.json({
+        success: true,
+        message: 'Simulator capital settings updated',
+        use_fixed_capital: updatedSettings.use_fixed_capital,
+        fixed_capital_usd: updatedSettings.fixed_capital_usd
+      })
+
     } else {
       return NextResponse.json(
-        { error: 'Invalid action. Use "start", "stop", "update", "force-run", or "set-max-bars"' },
+        { error: 'Invalid action. Use "start", "stop", "update", "force-run", "set-max-bars", or "set-capital"' },
         { status: 400 }
       )
     }

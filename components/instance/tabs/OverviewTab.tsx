@@ -514,7 +514,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
           {monitorStatus?.results && monitorStatus.results.length > 0 ? (
             <div className="space-y-1">
               {monitorStatus.results.slice(-10).map((result, idx) => (
-                <div key={idx} className="flex items-center gap-2">
+                <div key={idx} className="flex items-center gap-2 flex-wrap">
                   <span className="text-slate-500">[{new Date(result.checked_at || Date.now()).toLocaleTimeString()}]</span>
                   <span className={result.action === 'closed' ? 'text-yellow-400' : 'text-slate-400'}>
                     {result.action === 'closed' ? '✓ Filled' : '✓ Checked'}
@@ -524,6 +524,12 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
                   )}
                   <span className="text-white">• {result.symbol}</span>
                   <span className="text-blue-400">@ ${result.current_price.toFixed(4)}</span>
+                  {result.position_size_usd && (
+                    <span className="text-blue-300">• ${result.position_size_usd.toFixed(2)}</span>
+                  )}
+                  {result.risk_amount_usd && (
+                    <span className="text-orange-300">• ${result.risk_amount_usd.toFixed(2)}</span>
+                  )}
                   {result.instance_name && (
                     <span className="text-slate-400">• {result.instance_name}</span>
                   )}

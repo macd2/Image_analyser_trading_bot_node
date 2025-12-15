@@ -25,6 +25,14 @@ export interface OpenPaperTrade {
   rr_ratio: number | null;
   cycle_id: string;
   run_id: string;
+  // Position sizing metrics
+  position_size_usd?: number;
+  risk_amount_usd?: number;
+  risk_percentage?: number;
+  confidence_weight?: number;
+  risk_per_unit?: number;
+  sizing_method?: string;
+  risk_pct_used?: number;
 }
 
 export interface CycleWithTrades {
@@ -73,6 +81,14 @@ interface OpenTradeRow {
   run_started_at: string;
   run_status: string;
   instance_name: string;
+  // Position sizing metrics
+  position_size_usd?: number;
+  risk_amount_usd?: number;
+  risk_percentage?: number;
+  confidence_weight?: number;
+  risk_per_unit?: number;
+  sizing_method?: string;
+  risk_pct_used?: number;
 }
 
 /**

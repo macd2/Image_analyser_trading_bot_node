@@ -453,7 +453,7 @@ class TradingEngine:
             "timestamp": timestamp,
         }
 
-        self._record_trade(trade)
+        self._record_trade(trade, sizing)
 
         # Log detailed position sizing info for audit trail
         sizing_details = (
@@ -566,7 +566,7 @@ class TradingEngine:
             "timestamp": timestamp,
         }
 
-        self._record_trade(trade)
+        self._record_trade(trade, sizing)
 
         # Log detailed position sizing info for audit trail
         sizing_details = (
@@ -581,8 +581,8 @@ class TradingEngine:
 
         return trade
 
-    def _record_trade(self, trade: Dict[str, Any]) -> None:
-        """Record trade to database."""
+    def _record_trade(self, trade: Dict[str, Any], sizing: Dict[str, Any] = None) -> None:
+        """Record trade to database with position sizing metrics."""
         if not self._db:
             return
 
@@ -599,11 +599,22 @@ class TradingEngine:
                 except Exception as e:
                     logger.debug(f"Could not fetch timeframe from recommendation: {e}")
 
+            # Extract position sizing metrics from sizing dict
+            position_size_usd = sizing.get("position_value") if sizing else None
+            risk_amount_usd = sizing.get("risk_amount") if sizing else None
+            risk_percentage = sizing.get("risk_percentage") if sizing else None
+            confidence_weight = sizing.get("confidence_weight") if sizing else None
+            risk_per_unit = sizing.get("risk_per_unit") if sizing else None
+            sizing_method = sizing.get("sizing_method") if sizing else None
+            risk_pct_used = sizing.get("risk_pct_used") if sizing else None
+
             execute(self._db, """
                 INSERT INTO trades
                 (id, recommendation_id, run_id, cycle_id, symbol, side, entry_price, take_profit,
-                 stop_loss, quantity, status, order_id, confidence, rr_ratio, timeframe, dry_run, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 stop_loss, quantity, status, order_id, confidence, rr_ratio, timeframe, dry_run, created_at,
+                 position_size_usd, risk_amount_usd, risk_percentage, confidence_weight, risk_per_unit, sizing_method, risk_pct_used)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?)
             """, (
                 trade["id"],
                 trade.get("recommendation_id"),
@@ -622,6 +633,14 @@ class TradingEngine:
                 timeframe,  # Use timeframe from trade or recommendation
                 self.paper_trading,  # Pass boolean directly
                 trade["timestamp"].isoformat(),
+                # Position sizing metrics from position sizer
+                position_size_usd,
+                risk_amount_usd,
+                risk_percentage,
+                confidence_weight,
+                risk_per_unit,
+                sizing_method,
+                risk_pct_used,
             ))
         except Exception as e:
             logger.error(f"Failed to record trade: {e}")

@@ -120,7 +120,14 @@ CREATE TABLE IF NOT EXISTS trades (
     alteration_details TEXT,
     order_type TEXT DEFAULT 'Limit',
     last_tightened_milestone REAL,
-    rejection_reason TEXT
+    rejection_reason TEXT,
+    position_size_usd REAL,
+    risk_amount_usd REAL,
+    risk_percentage REAL,
+    confidence_weight REAL,
+    risk_per_unit REAL,
+    sizing_method TEXT,
+    risk_pct_used REAL
 );
 CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
 CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);

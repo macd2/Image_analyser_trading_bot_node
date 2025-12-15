@@ -950,7 +950,7 @@ export function SimulatorPage() {
             {monitorStatus?.results && monitorStatus.results.length > 0 ? (
               <div className="space-y-1">
                 {monitorStatus.results.map((result, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
+                  <div key={idx} className="flex items-center gap-2 flex-wrap">
                     <span className="text-slate-500">[{new Date(result.checked_at || Date.now()).toLocaleTimeString()}]</span>
                     <span className={
                       result.action === 'closed' ? 'text-yellow-400' :
@@ -966,6 +966,12 @@ export function SimulatorPage() {
                     )}
                     <span className="text-white">• {result.symbol}</span>
                     <span className="text-blue-400">@ ${result.current_price.toFixed(4)}</span>
+                    {result.position_size_usd && (
+                      <span className="text-blue-300">• ${result.position_size_usd.toFixed(2)}</span>
+                    )}
+                    {result.risk_amount_usd && (
+                      <span className="text-orange-300">• ${result.risk_amount_usd.toFixed(2)}</span>
+                    )}
                     {result.instance_name && (
                       <span className="text-slate-400">• {result.instance_name}</span>
                     )}
@@ -1419,7 +1425,7 @@ export function SimulatorPage() {
                       </div>
 
                       {/* Row 3: Prices */}
-                      <div className="flex items-center gap-6 text-sm">
+                      <div className="flex items-center gap-6 text-sm flex-wrap">
                         <div><span className="text-slate-400">Entry:</span> <span className="text-white font-mono">${trade.entry_price?.toFixed(4)}</span></div>
                         <div><span className="text-slate-400">Exit:</span> <span className={`font-mono ${isWin ? 'text-green-400' : 'text-red-400'}`}>${trade.exit_price?.toFixed(4)}</span></div>
                         <div><span className="text-slate-500">TP:</span> <span className="text-slate-400 font-mono">${trade.take_profit?.toFixed(4)}</span></div>
@@ -1449,6 +1455,21 @@ export function SimulatorPage() {
                           </button>
                         </div>
                       </div>
+
+                      {/* Row 4: Position Sizing Metrics */}
+                      {(trade.position_size_usd || trade.risk_amount_usd) && (
+                        <div className="flex items-center gap-6 text-sm mt-2 pt-2 border-t border-slate-700">
+                          {trade.position_size_usd && (
+                            <div><span className="text-slate-500">Position:</span> <span className="text-blue-400 font-mono">${trade.position_size_usd?.toFixed(2)}</span></div>
+                          )}
+                          {trade.risk_amount_usd && (
+                            <div><span className="text-slate-500">Risk:</span> <span className="text-orange-400 font-mono">${trade.risk_amount_usd?.toFixed(2)}</span></div>
+                          )}
+                          {trade.sizing_method && (
+                            <div><span className="text-slate-600 text-xs">({trade.sizing_method})</span></div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}

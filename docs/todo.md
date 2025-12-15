@@ -136,3 +136,5 @@ also the banner is blocking the ui it should be less highs yes promitnetn but no
 
 
 -- 
+
+[ ] the sumulator activity must be a shared component used in the simulator page and also the instanve overview page replace individual components with the sahred one

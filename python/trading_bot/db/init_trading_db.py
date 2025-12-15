@@ -158,6 +158,15 @@ CREATE TABLE IF NOT EXISTS trades (
     dry_run INTEGER DEFAULT 0,
     rejection_reason TEXT,  -- Why trade was rejected (if status='rejected')
 
+    -- Position Sizing Metrics (from position sizer)
+    position_size_usd REAL,      -- Position size in USD (qty × entry_price)
+    risk_amount_usd REAL,        -- Risk amount in USD (qty × risk_per_unit)
+    risk_percentage REAL,        -- Risk as % of wallet
+    confidence_weight REAL,      -- Confidence weighting multiplier
+    risk_per_unit REAL,          -- Price distance per unit (entry - SL)
+    sizing_method TEXT,          -- 'kelly' or 'fixed'
+    risk_pct_used REAL,          -- Risk % used in calculation
+
     -- Timestamps
     submitted_at TEXT,
     filled_at TEXT,
@@ -171,6 +180,7 @@ CREATE INDEX IF NOT EXISTS idx_trades_order ON trades(order_id);
 CREATE INDEX IF NOT EXISTS idx_trades_rec ON trades(recommendation_id);
 CREATE INDEX IF NOT EXISTS idx_trades_run ON trades(run_id);
 CREATE INDEX IF NOT EXISTS idx_trades_cycle ON trades(cycle_id);
+CREATE INDEX IF NOT EXISTS idx_trades_sizing_method ON trades(sizing_method);
 
 -- 3. Cycles (trading cycle audit trail)
 CREATE TABLE IF NOT EXISTS cycles (
