@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional
 import logging
 import os
 import asyncio
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
@@ -43,6 +44,39 @@ class CandleAdapter:
         """
         self.instance_id = instance_id
         self.logger = logging.getLogger(__name__)
+        self._available_symbols = None
+        self._symbols_fetched_at = 0
+
+    async def _get_available_symbols(self) -> List[str]:
+        """
+        Get list of available symbols from Bybit.
+        Caches the result for 24 hours.
+        """
+        current_time = time.time()
+        # Refresh if not cached or cache is older than 24 hours
+        if self._available_symbols is None or (current_time - self._symbols_fetched_at) > 24 * 3600:
+            try:
+                from prompt_performance.core.bybit_symbols import get_bybit_symbols_cached
+                self._available_symbols = get_bybit_symbols_cached(category="linear")
+                self._symbols_fetched_at = current_time
+                self.logger.debug(f"Fetched {len(self._available_symbols)} available symbols from Bybit")
+            except Exception as e:
+                self.logger.warning(f"Failed to fetch available symbols: {e}")
+                self._available_symbols = []
+        return self._available_symbols or []
+
+    async def symbol_exists(self, symbol: str) -> bool:
+        """
+        Check if a symbol exists on Bybit perpetual market.
+
+        Args:
+            symbol: Symbol to check (e.g., 'BTCUSDT', 'ETHUSDT')
+
+        Returns:
+            True if symbol exists, False otherwise
+        """
+        available = await self._get_available_symbols()
+        return symbol in available
 
     def _timeframe_to_ms(self, timeframe: str) -> int:
         """Convert timeframe string to milliseconds."""
@@ -97,7 +131,8 @@ class CandleAdapter:
         limit: int = 100,
         use_cache: bool = True,
         min_candles: int = 10,
-        prefer_source: str = "cache"
+        prefer_source: str = "cache",
+        cache_to_db: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Get candles for a symbol/timeframe.
@@ -109,6 +144,7 @@ class CandleAdapter:
             use_cache: Whether to use cached candles
             min_candles: Minimum number of candles required (default: 10)
             prefer_source: "cache" (prefer cached, fallback to API) or "api" (prefer API, fallback to cache)
+            cache_to_db: Whether to cache fetched candles to database (default: True)
 
         Returns:
             List of candles with OHLCV data (or empty list if < min_candles)
@@ -142,18 +178,24 @@ class CandleAdapter:
                         cached = query(conn, sql, (symbol, timeframe, limit))
 
                         if cached and len(cached) >= min_candles:
-                            # Reverse to get chronological order
-                            cached = list(reversed(cached))
-                            self.logger.debug(
-                                f"Got {len(cached)} candles from cache for {symbol} {timeframe}",
-                                extra={"symbol": symbol, "instance_id": self.instance_id}
-                            )
-                            # Normalize candle field names
-                            return [self._normalize_candle(c) for c in cached]
+                            # Check if we got close to the requested limit
+                            # If we got significantly fewer than requested, try API for more
+                            if len(cached) >= limit * 0.8:  # Got at least 80% of requested
+                                # Reverse to get chronological order
+                                cached = list(reversed(cached))
+                                self.logger.debug(
+                                    f"Got {len(cached)} candles from cache for {symbol} {timeframe}",
+                                    extra={"symbol": symbol, "instance_id": self.instance_id}
+                                )
+                                # Normalize candle field names
+                                return [self._normalize_candle(c) for c in cached]
+                            # If we got fewer than 80% of requested, try API for more
+                        # If we got some but not enough, or got nothing, continue to next source
                     finally:
                         release_connection(conn)
                 except Exception as e:
                     self.logger.warning(f"Failed to get cached candles: {e}")
+                # Fall through to try API
 
             elif source == "api":
                 # Fetch from API
@@ -228,8 +270,8 @@ class CandleAdapter:
                         )
                         continue  # Try next source
 
-                    # Cache for future use (async)
-                    if candles:
+                    # Cache for future use (async) - only if enabled
+                    if candles and cache_to_db:
                         await self._cache_candles_async(symbol, timeframe, candles)
 
                     if candles:

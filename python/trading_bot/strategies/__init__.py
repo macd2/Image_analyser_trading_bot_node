@@ -12,11 +12,17 @@ from trading_bot.strategies.base import BaseAnalysisModule
 from trading_bot.strategies.candle_adapter import CandleAdapter
 from trading_bot.strategies.factory import StrategyFactory
 from trading_bot.strategies.alex_analysis_module import AlexAnalysisModule
+from trading_bot.strategies.cointegration_analysis_module import CointegrationAnalysisModule
 
 __all__ = [
     "BaseAnalysisModule",
     "CandleAdapter",
     "StrategyFactory",
     "AlexAnalysisModule",
+    "CointegrationAnalysisModule",
 ]
+
+# Register strategies with factory
+StrategyFactory.register_strategy("alex", AlexAnalysisModule)
+StrategyFactory.register_strategy("cointegration", CointegrationAnalysisModule)
 

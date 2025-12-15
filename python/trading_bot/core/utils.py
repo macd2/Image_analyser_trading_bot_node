@@ -1327,7 +1327,9 @@ def normalize_symbol_for_bybit(symbol: str) -> str:
             break
 
     # After removing suffix (if any), check if it already ends with a quote currency
-    quote_currencies = ['USDT', 'USDC', 'BTC', 'ETH']
+    # Note: Only check for USDT/USDC as quote currencies, not BTC/ETH
+    # because BTC and ETH as standalone symbols should become BTCUSDT/ETHUSDT
+    quote_currencies = ['USDT', 'USDC']
     has_quote = any(normalized.endswith(quote) for quote in quote_currencies)
 
     # Only add USDT if no quote currency is present

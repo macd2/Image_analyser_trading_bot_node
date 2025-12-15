@@ -7,7 +7,7 @@ the appropriate strategy class.
 
 import json
 import logging
-from typing import Optional, Type, Dict, Any
+from typing import Optional, Type, Dict, Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,7 @@ class StrategyFactory:
             config: Trading bot config
             run_id: Run ID (for audit trail)
             **kwargs: Additional arguments to pass to strategy constructor
+                - heartbeat_callback: Optional callback for UI updates during analysis
         
         Returns:
             Strategy instance

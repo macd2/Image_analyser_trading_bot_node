@@ -9,7 +9,7 @@ Enforces:
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable
 import logging
 import json
 
@@ -36,24 +36,27 @@ class BaseAnalysisModule(ABC):
         instance_id: Optional[str] = None,
         run_id: Optional[str] = None,
         strategy_config: Optional[Dict[str, Any]] = None,
+        heartbeat_callback: Optional[Callable] = None,
     ):
         """
         Initialize analysis module.
-        
+
         Args:
             config: Trading bot config
             instance_id: Instance ID (for database lookups)
             run_id: Run ID (for audit trail)
             strategy_config: Instance-specific strategy config
+            heartbeat_callback: Optional callback for UI updates during analysis
         """
         self.config = config
         self.instance_id = instance_id
         self.run_id = run_id
+        self.heartbeat_callback = heartbeat_callback
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
         # Load strategy config from database or use provided config
         self.strategy_config = self._load_strategy_config(strategy_config)
-        
+
         # Initialize candle adapter
         self._init_candle_adapter()
     
@@ -117,6 +120,20 @@ class BaseAnalysisModule(ABC):
     def get_config_value(self, key: str, default: Any = None) -> Any:
         """Get a config value from strategy_config."""
         return self.strategy_config.get(key, default)
+
+    def _heartbeat(self, message: str = "", **kwargs) -> None:
+        """
+        Send heartbeat update to UI (if callback is registered).
+
+        Args:
+            message: Status message to send
+            **kwargs: Additional data to send with heartbeat
+        """
+        if self.heartbeat_callback:
+            try:
+                self.heartbeat_callback(message=message, **kwargs)
+            except Exception as e:
+                self.logger.warning(f"Heartbeat callback failed: {e}")
     
     @abstractmethod
     async def run_analysis_cycle(

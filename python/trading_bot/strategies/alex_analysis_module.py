@@ -36,9 +36,10 @@ class AlexAnalysisModule(BaseAnalysisModule):
         instance_id: Optional[str] = None,
         run_id: Optional[str] = None,
         strategy_config: Optional[Dict[str, Any]] = None,
+        heartbeat_callback: Optional[Any] = None,
     ):
         """Initialize Alex strategy with instance-specific config."""
-        super().__init__(config, instance_id, run_id, strategy_config)
+        super().__init__(config, instance_id, run_id, strategy_config, heartbeat_callback)
         global logger
         logger = self.logger
     
@@ -66,6 +67,9 @@ class AlexAnalysisModule(BaseAnalysisModule):
 
         for symbol in symbols:
             try:
+                # Send heartbeat: starting analysis for symbol
+                self._heartbeat(f"Analyzing {symbol}...", symbol=symbol)
+
                 # Get candles from adapter for ALL configured timeframes
                 if not self.candle_adapter:
                     results.append({
@@ -90,6 +94,9 @@ class AlexAnalysisModule(BaseAnalysisModule):
                     )
                     if candles:
                         timeframe_candles[tf] = candles
+
+                # Send heartbeat: candles fetched
+                self._heartbeat(f"Fetched candles for {symbol}", symbol=symbol, timeframes=list(timeframe_candles.keys()))
 
                 if not timeframe_candles:
                     results.append({
@@ -145,6 +152,9 @@ class AlexAnalysisModule(BaseAnalysisModule):
                 self._validate_output(result)
 
                 results.append(result)
+
+                # Send heartbeat: analysis complete
+                self._heartbeat(f"Completed analysis for {symbol}", symbol=symbol, recommendation=result.get("recommendation"))
                 
             except Exception as e:
                 self.logger.error(
