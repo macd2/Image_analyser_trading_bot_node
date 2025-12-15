@@ -146,5 +146,22 @@ convert these hardcoded values to configurable settings
 
 -----
 
+# Logtrail
+[ ] right now i have fast trader ad playboy 1 running but the   
+[ ] logtrails only shows active for fastrader
+[ ] it themes like i do not see older logs for some reason
+[ ] for example the eader fir playboy shows trades 35 trades ut only 2 cycles? 
+
+
+-----
+
 [ ] start server with log filter:
 cd /home/slicks/projects/^^Python/Analyse_Chart_Screenshot_Node && npm run dev 2>&1 | grep -E "\[Auto-Close\]|Bybit API request" | head -50
+
+to adust the amount of logs to leoad per instance in logtrails than adjust this:
+ // Get runs for this instance (cap at 5 to balance performance with showing historical data)
+    const runsLimit = Math.min(limit, 5);
+
+    in lib/db/trading-db.ts
+
+--------

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Activity, RefreshCw, Clock, TrendingUp, AlertCircle, CheckCircle,
+  Activity, RefreshCw, Clock, TrendingUp, AlertCircle, CheckCircle, Loader2,
   ChevronDown, ChevronRight, Search, Zap, Package, Play, Square, Eye, Image, Server, Copy, Check
 } from 'lucide-react'
 
@@ -287,7 +287,12 @@ export default function LogTrail() {
 
       {/* Hierarchical View - Starting with Instances (Level 0) */}
       <div className="space-y-3 max-h-[700px] overflow-y-auto pr-2">
-        {filteredInstances.length === 0 ? (
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <Loader2 size={32} className="animate-spin text-blue-400" />
+            <span className="text-slate-400 text-sm">Loading instances...</span>
+          </div>
+        ) : filteredInstances.length === 0 ? (
           <div className="text-center py-12 text-slate-500">
             <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
             <p>No instances found</p>
