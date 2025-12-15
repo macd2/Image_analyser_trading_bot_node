@@ -3064,7 +3064,29 @@ class ChartSourcer:
 
         except Exception as e:
             self.logger.warning(f"Error checking for blocking overlays: {str(e)}")
-    
+
+    def _get_expected_chart_filename(self, symbol: str, timeframe: str) -> str:
+        """
+        Generate expected chart filename without taking a screenshot.
+        Uses boundary-aligned timestamp to match save_chart() behavior.
+
+        Args:
+            symbol: Symbol name (will be normalized)
+            timeframe: Timeframe (e.g., '1h', '4h', '1d')
+
+        Returns:
+            Expected filename (e.g., 'BTCUSDT_1h_20241215_140000.png')
+        """
+        from trading_bot.core.utils import align_timestamp_to_boundary
+
+        normalized_symbol = normalize_symbol_for_bybit(symbol)
+        current_time = datetime.now(timezone.utc)
+        boundary_aligned_time = align_timestamp_to_boundary(current_time, timeframe)
+        timestamp = boundary_aligned_time.strftime("%Y%m%d_%H%M%S")
+        filename = f"{normalized_symbol}_{timeframe}_{timestamp}.png"
+
+        return filename
+
     async def capture_all_watchlist_screenshots(self, output_dir: Optional[str] = None, target_chart: Optional[str] = None, timeframe: Optional[str] = None) -> Dict[str, str]:
         """
         Capture screenshots for all symbols in the watchlist or a specific target chart.
@@ -3173,6 +3195,8 @@ class ChartSourcer:
             # Capture screenshots for each symbol in the watchlist
             screenshot_paths = {}
             successful_captures = 0
+            deduped_count = 0  # Track reused screenshots
+            new_captures = 0   # Track newly captured screenshots
 
             for i, symbol in enumerate(symbols):
                 # Check if browser is still alive before each capture
@@ -3186,6 +3210,23 @@ class ChartSourcer:
                     # Normalize symbol name for Bybit format (removes .P suffix etc.)
                     symbol_clean = symbol.replace('/', '_').replace(':', '_').replace(' ', '_')
                     symbol_clean = normalize_symbol_for_bybit(symbol_clean)
+
+                    # OPTIMIZATION: Check if screenshot already exists for this symbol+timeframe+boundary
+                    # This prevents duplicate screenshots when multiple instances run simultaneously
+                    from trading_bot.core.storage import file_exists
+
+                    expected_filename = self._get_expected_chart_filename(symbol_clean, timeframe or "1d")
+                    expected_path = f"charts/{expected_filename}"
+
+                    if file_exists(expected_path):
+                        self.logger.info(f"📦 [DEDUP] Reusing existing chart for {symbol_clean}")
+                        self.logger.info(f"   ├─ Filename: {expected_filename}")
+                        self.logger.info(f"   ├─ Storage path: {expected_path}")
+                        self.logger.info(f"   └─ Reason: Same symbol+timeframe+boundary already captured")
+                        screenshot_paths[symbol] = expected_path
+                        successful_captures += 1
+                        deduped_count += 1
+                        continue  # Skip to next symbol - no need to navigate or screenshot
 
                     # Navigate to symbol using URL-based navigation (more reliable than watchlist clicks)
                     if await self.navigate_to_chart(symbol_clean, timeframe or "1d"):
@@ -3209,7 +3250,8 @@ class ChartSourcer:
 
                         screenshot_paths[symbol] = str(screenshot_path)
                         successful_captures += 1
-                        self.logger.info(f"Screenshot saved: {Path(screenshot_path).name}")
+                        new_captures += 1
+                        self.logger.info(f"📸 [NEW] Screenshot captured and saved: {Path(screenshot_path).name}")
                     else:
                         self.logger.error(f"Failed to navigate to symbol: {symbol}")
 
@@ -3247,12 +3289,29 @@ class ChartSourcer:
                 for symbol, path in screenshot_paths.items():
                     f.write(f"  {symbol}: {Path(path).name}\n")
 
+            # Log deduplication summary for audit trail
+            self.logger.info(f"\n{'='*60}")
+            self.logger.info(f"📊 SCREENSHOT CAPTURE SUMMARY")
+            self.logger.info(f"{'='*60}")
+            self.logger.info(f"Total symbols processed: {len(symbols)}")
+            self.logger.info(f"├─ 📸 New screenshots captured: {new_captures}")
+            self.logger.info(f"├─ 📦 Existing screenshots reused (dedup): {deduped_count}")
+            self.logger.info(f"└─ ✅ Total successful: {successful_captures}/{len(symbols)}")
+
+            if deduped_count > 0:
+                dedup_percentage = (deduped_count / len(symbols)) * 100
+                self.logger.info(f"\n🎯 Deduplication Impact:")
+                self.logger.info(f"   ├─ Reused: {dedup_percentage:.1f}% of symbols")
+                self.logger.info(f"   ├─ Skipped: {deduped_count} browser navigations")
+                self.logger.info(f"   └─ Benefit: Faster cycle execution & reduced resource usage")
+
             if target_chart:
-                self.logger.info(f"Watchlist capture with target chart auth complete: {successful_captures}/{len(symbols)} successful")
+                self.logger.info(f"\nWatchlist capture with target chart auth complete: {successful_captures}/{len(symbols)} successful")
             else:
                 self.logger.info(f"Watchlist capture complete: {successful_captures}/{len(symbols)} successful")
             self.logger.info(f"Summary saved: {summary_file}")
-            
+            self.logger.info(f"{'='*60}\n")
+
             return screenshot_paths
             
         except Exception as e:
