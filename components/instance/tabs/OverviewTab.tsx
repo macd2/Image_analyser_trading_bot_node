@@ -189,6 +189,15 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
     return parsedLogs.filter(log => log.level === logFilter)
   }, [parsedLogs, logFilter])
 
+  // Memoize log items for faster modal rendering
+  const logItems = useMemo(() => {
+    return filteredLogs.map((log, idx) => (
+      <div key={idx} className={`py-0.5 px-1 ${getLogColor(log.level)} ${getLogBgColor(log.level)}`}>
+        {log.raw}
+      </div>
+    ))
+  }, [filteredLogs])
+
   // Count logs by level
   const logCounts = useMemo(() => {
     const counts = { error: 0, warning: 0, info: 0, debug: 0 }
@@ -287,8 +296,8 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
 
   useEffect(() => {
     fetchData()
-    // Poll every 5 seconds (logs come via Socket.IO in real-time)
-    const interval = setInterval(fetchData, 5000)
+    // Poll every 2 seconds (logs come via Socket.IO in real-time)
+    const interval = setInterval(fetchData, 2000)
     return () => clearInterval(interval)
   }, [instanceId])
 
@@ -559,10 +568,10 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
         </div>
         <div
           ref={logsPreviewRef}
-          className="bg-slate-900 rounded p-1.5 h-24 overflow-y-auto font-mono text-[10px] scroll-smooth"
+          className="bg-slate-900 rounded p-1.5 max-h-96 overflow-y-auto font-mono text-[10px] scroll-smooth"
         >
           {parsedLogs.length > 0 ? (
-            parsedLogs.slice(-15).map((log, idx) => (
+            parsedLogs.slice(-200).map((log, idx) => (
               <div key={idx} className={`py-0.5 whitespace-nowrap ${getLogColor(log.level)}`}>{log.raw}</div>
             ))
           ) : (
@@ -804,13 +813,7 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
               ref={logsModalRef}
               className="flex-1 overflow-y-auto p-4 bg-slate-900 font-mono text-xs scroll-smooth"
             >
-              {filteredLogs.length > 0 ? (
-                filteredLogs.map((log, idx) => (
-                  <div key={idx} className={`py-0.5 px-1 ${getLogColor(log.level)} ${getLogBgColor(log.level)}`}>
-                    {log.raw}
-                  </div>
-                ))
-              ) : (
+              {logItems.length > 0 ? logItems : (
                 <div className="text-slate-500 italic text-center py-8">No logs matching filter</div>
               )}
             </div>

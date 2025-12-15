@@ -212,9 +212,9 @@ function startBot(paperTrading: boolean, testnet: boolean, instanceId?: string):
       logs.push(...lines);
       // Emit logs to connected clients in real-time
       lines.forEach((line: string) => emitLog(line, instanceId));
-      // Keep only last 500 log lines
-      if (logs.length > 500) {
-        const trimmed = logs.slice(-500);
+      // Keep only last 2000 log lines (increased from 500 to preserve STEP_0-3 logs)
+      if (logs.length > 2000) {
+        const trimmed = logs.slice(-2000);
         logs.length = 0;
         logs.push(...trimmed);
       }
@@ -231,8 +231,9 @@ function startBot(paperTrading: boolean, testnet: boolean, instanceId?: string):
       logs.push(...lines);
       // Emit logs to connected clients in real-time
       lines.forEach((line: string) => emitLog(line, instanceId));
-      if (logs.length > 500) {
-        const trimmed = logs.slice(-500);
+      // Keep only last 2000 log lines (increased from 500 to preserve STEP_0-3 logs)
+      if (logs.length > 2000) {
+        const trimmed = logs.slice(-2000);
         logs.length = 0;
         logs.push(...trimmed);
       }
@@ -558,7 +559,7 @@ function getSingleInstanceStatus(instanceId: string): Response {
     running,
     message: running ? `Instance '${instanceId}' is running` : `Instance '${instanceId}' is not running`,
     uptime_seconds: running && startedAt ? Math.floor((Date.now() - startedAt) / 1000) : undefined,
-    logs: logs.slice(-50),
+    logs: logs.slice(-2000),
     pid,
     instance_id: instanceId,
   });
