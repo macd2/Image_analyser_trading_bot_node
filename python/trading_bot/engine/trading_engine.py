@@ -176,14 +176,17 @@ class TradingEngine:
 
         try:
             # Query closed trades with PnL data
+            # Join through runs table to filter by instance_id (trades table doesn't have instance_id)
             rows = query(
                 self._db,
                 """
-                SELECT pnl_percent FROM trades
-                WHERE status IN ('closed', 'filled')
-                AND pnl_percent IS NOT NULL
-                AND instance_id = ?
-                ORDER BY closed_at DESC
+                SELECT t.pnl_percent FROM trades t
+                JOIN cycles c ON t.cycle_id = c.id
+                JOIN runs r ON c.run_id = r.id
+                WHERE r.instance_id = ?
+                AND t.status IN ('closed', 'filled')
+                AND t.pnl_percent IS NOT NULL
+                ORDER BY t.closed_at DESC
                 LIMIT 100
                 """,
                 (self.instance_id,)
