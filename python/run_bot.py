@@ -137,6 +137,7 @@ class TradingBot:
             prompt_name=self.instance_prompt_name,  # Pass instance prompt
             paper_trading=self.paper_trading,  # Pass paper trading mode
             instance_id=self.instance_id,  # Pass instance ID for DB queries
+            heartbeat_callback=self._update_heartbeat,  # Pass heartbeat callback
         )
 
         # Enhanced position monitor for stop-loss tightening, TP proximity, age-based features
@@ -155,10 +156,11 @@ class TradingBot:
         self._setup_callbacks()
 
     def _cleanup_stale_runs(self) -> None:
-        """Mark any 'running' runs as 'crashed' - they're from previous sessions."""
+        """Mark any 'running' runs as 'crashed' - they're from previous sessions of THIS instance."""
         try:
             stale_runs = query(self._db,
-                "SELECT id FROM runs WHERE status = 'running'"
+                "SELECT id FROM runs WHERE status = 'running' AND instance_id = ?",
+                (self.instance_id,)
             )
 
             if stale_runs:
@@ -167,8 +169,8 @@ class TradingBot:
                     SET status = 'crashed',
                         stop_reason = 'stale_cleanup',
                         ended_at = ?
-                    WHERE status = 'running'
-                """, (datetime.now(timezone.utc).isoformat(),))
+                    WHERE status = 'running' AND instance_id = ?
+                """, (datetime.now(timezone.utc).isoformat(), self.instance_id))
                 self._db.commit()
                 logger.info(f"🧹 Cleaned up {len(stale_runs)} stale run(s) from previous crashes")
         except Exception as e:
@@ -220,6 +222,18 @@ class TradingBot:
 
         logger.info(f"📦 Created new run: {run_id}" + (f" (instance: {self.instance_id})" if self.instance_id else ""))
         return run_id
+
+    def _update_heartbeat(self) -> None:
+        """Update heartbeat timestamp in database to signal bot is alive."""
+        try:
+            execute(self._db, """
+                UPDATE runs
+                SET heartbeat_at = ?
+                WHERE id = ?
+            """, (datetime.now(timezone.utc).isoformat(), self.run_id))
+            self._db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to update heartbeat: {e}")
 
     def _end_run(self, status: str = "stopped", reason: str = None) -> None:
         """Mark run as ended."""
@@ -396,6 +410,8 @@ class TradingBot:
                     remaining_minutes = wait_seconds / 60
                     logger.info(f"⏳ Waiting for next cycle: {progress_percent:.0f}% | Remaining: {remaining_minutes:.1f} minutes ({wait_seconds:.0f}s)")
                     last_progress_milestone = current_milestone
+                    # Update heartbeat during waiting phase
+                    self._update_heartbeat()
 
             # Log why we exited the wait loop
             if not self._running:

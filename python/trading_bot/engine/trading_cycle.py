@@ -70,6 +70,7 @@ class TradingCycle:
         prompt_name: Optional[str] = None,
         paper_trading: bool = False,
         instance_id: Optional[str] = None,
+        heartbeat_callback: Optional[Callable] = None,
     ):
         """
         Initialize trading cycle.
@@ -82,6 +83,7 @@ class TradingCycle:
             prompt_name: Name of the prompt function to use for analysis
             paper_trading: Whether in paper trading mode (for database-based position checks)
             instance_id: Instance ID for filtering database queries in paper trading mode
+            heartbeat_callback: Callback to update heartbeat after each step
         """
         self.config = config or Config.load()
         self.testnet = testnet
@@ -90,6 +92,7 @@ class TradingCycle:
         self.prompt_name = prompt_name  # Instance-level prompt selection
         self.paper_trading = paper_trading
         self.instance_id = instance_id
+        self.heartbeat_callback = heartbeat_callback  # Callback to update heartbeat
 
         # Database
         self._db = get_connection()
@@ -508,6 +511,8 @@ class TradingCycle:
 
             step_0_duration = (datetime.now(timezone.utc) - step_0_start).total_seconds()
             self._print_step_0_summary(cleaned_count, step_0_duration)
+            if self.heartbeat_callback:
+                self.heartbeat_callback()
 
             # STEP 1: Capture all charts from watchlist
             target_chart = self.config.tradingview.target_chart if self.config.tradingview else None
@@ -538,6 +543,8 @@ class TradingCycle:
 
                 step_1_duration = (datetime.now(timezone.utc) - step_1_start).total_seconds()
                 self._print_step_1_summary(len(chart_paths), chart_paths, step_1_duration)
+                if self.heartbeat_callback:
+                    self.heartbeat_callback()
 
                 # STEP 1.5: Check for existing recommendations for current boundary (instance-aware)
                 logger.info(f"\n🔍 STEP 1.5: Checking for existing recommendations for current boundary...")
@@ -571,6 +578,8 @@ class TradingCycle:
                 successful_analyses = [a for a in newly_analyzed if not a.get("error")]
                 failed_analyses = [a for a in newly_analyzed if a.get("error")]
                 self._print_step_2_summary(len(newly_analyzed), len(successful_analyses), len(failed_analyses), analysis_duration, successful_analyses)
+                if self.heartbeat_callback:
+                    self.heartbeat_callback()
 
                 # STEP 3: Collect all recommendations (both newly analyzed and existing)
                 logger.info(f"\n📊 STEP 3: Collecting recommendations...")
@@ -656,6 +665,8 @@ class TradingCycle:
                 hold_recs = [r for r in results["recommendations"] if r.get("recommendation", "").upper() == "HOLD"]
 
                 self._print_step_3_summary(len(results["recommendations"]), len(actionable_signals), len(buy_recs), len(sell_recs), len(hold_recs))
+                if self.heartbeat_callback:
+                    self.heartbeat_callback()
 
                 # STEP 4: Rank signals by quality
                 logger.info(f"\n🏆 STEP 4: Ranking {len(actionable_signals)} signals by quality...")
@@ -663,12 +674,16 @@ class TradingCycle:
                 results["ranked_signals"] = ranked_signals
 
                 self._print_step_4_summary(ranked_signals)
+                if self.heartbeat_callback:
+                    self.heartbeat_callback()
 
                 # STEP 5: Check available slots
                 logger.info(f"\n📦 STEP 5: Checking available slots...")
                 available_slots = self._get_available_slots()
                 max_trades = self.config.trading.max_concurrent_trades if self.config and self.config.trading else 0
                 self._print_step_5_summary(available_slots, max_trades)
+                if self.heartbeat_callback:
+                    self.heartbeat_callback()
 
                 # STEP 6: Select best signals for available slots
                 logger.info(f"\n🎯 STEP 6: Selecting best {available_slots} signal(s)...")
@@ -676,6 +691,8 @@ class TradingCycle:
                 results["selected_signals"] = selected_signals
 
                 self._print_step_6_summary(selected_signals, available_slots)
+                if self.heartbeat_callback:
+                    self.heartbeat_callback()
 
                 # STEP 7: Execute selected signals
                 logger.info(f"\n🚀 STEP 7: Executing {len(selected_signals)} selected signal(s)...")
@@ -685,6 +702,8 @@ class TradingCycle:
                         results["trades_executed"].append(trade_result)
 
                 self._print_step_7_summary(results["trades_executed"], len(selected_signals))
+                if self.heartbeat_callback:
+                    self.heartbeat_callback()
 
             finally:
                 await self.sourcer.cleanup_browser_session()
