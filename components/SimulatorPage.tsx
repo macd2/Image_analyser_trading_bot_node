@@ -48,6 +48,8 @@ interface OpenPaperTrade {
   run_id: string
   dry_run?: number | null
   rejection_reason?: string | null
+  position_size_usd?: number
+  risk_amount_usd?: number
 }
 
 interface CycleWithTrades {
@@ -1195,7 +1197,7 @@ export function SimulatorPage() {
                         )}
                       </div>
 
-                      {/* Row 3: Prices + PnL */}
+                      {/* Row 3: Prices + Position + Risk + PnL */}
                       <div className="flex items-center gap-6 flex-wrap">
                         <div className="flex items-center gap-4 text-sm">
                           <div><span className="text-slate-400">Entry:</span> <span className="text-white font-mono">${trade.entry_price?.toFixed(4)}</span></div>
@@ -1203,6 +1205,27 @@ export function SimulatorPage() {
                           <div><span className="text-red-400">SL:</span> <span className="text-red-400 font-mono">${trade.stop_loss?.toFixed(4)}</span></div>
                           <div><span className="text-slate-400">Qty:</span> <span className="text-white font-mono">{trade.quantity}</span></div>
                         </div>
+
+                        {/* Position Size and Risk Amount */}
+                        {(trade.position_size_usd || trade.risk_amount_usd) && (
+                          <div className="flex items-center gap-3 bg-slate-700/50 rounded px-3 py-1.5 text-xs">
+                            {trade.position_size_usd && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-slate-400">Position:</span>
+                                <span className="text-blue-300 font-mono">${trade.position_size_usd.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {trade.position_size_usd && trade.risk_amount_usd && (
+                              <span className="text-slate-600">•</span>
+                            )}
+                            {trade.risk_amount_usd && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-slate-400">Risk:</span>
+                                <span className="text-orange-300 font-mono">${trade.risk_amount_usd.toFixed(2)}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         {lastChecked && (
                           <div className="flex items-center gap-2 bg-yellow-900/20 border border-yellow-700/50 rounded px-3 py-1">
