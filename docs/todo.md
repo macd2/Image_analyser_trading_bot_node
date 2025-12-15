@@ -16,7 +16,6 @@ This distinction allows the system to track the overall nature of a trade (dry_r
 ----
 
 # Improvments 
-[ ] make sure all chart modals have the signal and entry marker
 [ ] is the the value from confidence calculation from analysis actually used in the bot for trading deccisions?
 - Yes
 
@@ -33,21 +32,6 @@ docs/Strategies/trade_entry_strategies_E3lYZsy8nYE_HH_LL_alex_strat.md
 [ ] the architecture should be nodes based so we can combine strategies or individual functions the advisor needs its own page and the ui should show and make this node systhe editable. 
 [ ] one streategy we need is: docs/Strategies/market regime_check.py
 
-------
-# /instance page
-[ ] position tab in /instance should also show the dryrun positions 
-[ ] the simulator should act a a kind of exchange for dry run trades im not sure waht the best architecture is but we want to simulate stoploss tigheting an also order replacement 
-[ ] add a new card to overview tab that visually shows the current step of the cycle we are in. So getting charts, analyzing images, risk management, Order execution, waiting for next cycle (wait time)
-[ ] also add a stats card  with  key information like which cycle we are on, for how long the bot was running
-
-[ ] the open position must also show dry run positions for this instance 
-
-
------
-# overview 
-## insance page
-[ ] Trading Cycle Status this should be based on the current run 
-e the
 -----
 
 # OpenAI Credit Exhaustion Error Handling
@@ -104,13 +88,6 @@ UPDATE trades SET
 WHERE id = ?
 Again, exit_price is set to currentPrice (line 544). So indeed, the simulator sets exit price for cancelled trades.
 
-------
-
-[ErrorLogger] Failed to log error: connection pool exhausted
-2025-12-11 03:40:32 | ERROR | trading_bot.core.slot_manager | Error querying database for pending orders count: connection pool exhausted
-[ErrorLogger] Failed to log error: connection pool exhausted
-2025-12-11 03:40:32 | ERROR | trading_bot.core.state_manager | Error querying database for open positions: connection pool exhausted
-
 
 ------
 [ ] each part of the trading cycle must be instance aware
@@ -122,11 +99,9 @@ Again, exit_price is set to currentPrice (line 544). So indeed, the simulator se
 [ ] execution must check in dry run of the given recomendation was already executed based on database status in live trading ofcause based on exchnage data
 [ ] we need to define a set of error that pause the bot permantly until manually resumed
 
+----
 
-[ ] start server with log filter:
-cd /home/slicks/projects/^^Python/Analyse_Chart_Screenshot_Node && npm run dev 2>&1 | grep -E "\[Auto-Close\]|Bybit API request" | head -50
-
-[ ] the cleaner step from trade cycle must be a microservice calle by rhe innstance and maage duplicated calles, since it can be used by multiple istance if that happens than the one that was launched second thors error becuase it cant find the imagease already  cleaned up by the first instance 
+[ ] the cleaner step from trade cycle must be a microservice calle by rhe innstance and manage duplicated calles, since it can be used by multiple istance if that happens than the one that was launched second thors error becuase it cant find the imagease already  cleaned up by the first instance 
 
 [ ] 2025-12-12 11:06:25 | ERROR | __main__ | Failed to check for OpenAI rate limit error: tuple index out of range
 [ErrorLogger] ✅ Stored ERROR to DB: Failed to check for OpenAI rate limit error: tuple index out of range
@@ -138,3 +113,8 @@ also the banner is blocking the ui it should be less highs yes promitnetn but no
 -- 
 
 [ ] the sumulator activity must be a shared component used in the simulator page and also the instanve overview page replace individual components with the sahred one
+
+-----
+
+[ ] start server with log filter:
+cd /home/slicks/projects/^^Python/Analyse_Chart_Screenshot_Node && npm run dev 2>&1 | grep -E "\[Auto-Close\]|Bybit API request" | head -50
