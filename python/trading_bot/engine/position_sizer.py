@@ -30,6 +30,7 @@ class PositionSizer:
         order_executor: OrderExecutor,
         risk_percentage: float = 0.01,
         min_position_value: float = 10.0,
+        max_loss_usd: float = 0.0,
         confidence_weighting: bool = True,
         low_conf_threshold: float = 0.70,
         high_conf_threshold: float = 0.85,
@@ -46,6 +47,7 @@ class PositionSizer:
             order_executor: OrderExecutor for instrument info
             risk_percentage: Base risk per trade (0.01 = 1%)
             min_position_value: Minimum position value in USD
+            max_loss_usd: Maximum USD risk per trade (0 = disabled)
             confidence_weighting: Enable confidence-based sizing
             low_conf_threshold: Threshold for low confidence
             high_conf_threshold: Threshold for high confidence
@@ -58,6 +60,7 @@ class PositionSizer:
         self.executor = order_executor
         self.risk_percentage = risk_percentage
         self.min_position_value = min_position_value
+        self.max_loss_usd = max_loss_usd
         self.confidence_weighting = confidence_weighting
         self.low_conf_threshold = low_conf_threshold
         self.high_conf_threshold = high_conf_threshold
@@ -148,6 +151,17 @@ class PositionSizer:
         # Calculate actual risk
         actual_risk = qty * risk_per_unit
         actual_risk_pct = actual_risk / wallet_balance if wallet_balance > 0 else 0
+
+        # Enforce maximum loss cap (if enabled, i.e., > 0)
+        if self.max_loss_usd > 0 and actual_risk > self.max_loss_usd:
+            logger.info(f"Risk capped: ${actual_risk:.2f} → ${self.max_loss_usd:.2f} (max_loss_usd)")
+            # Recalculate quantity based on max loss cap
+            qty = self._round_qty(self.max_loss_usd / risk_per_unit, qty_step)
+            if qty < min_qty:
+                qty = min_qty
+            position_value = qty * entry_price
+            actual_risk = qty * risk_per_unit
+            actual_risk_pct = actual_risk / wallet_balance if wallet_balance > 0 else 0
 
         return {
             "position_size": qty,

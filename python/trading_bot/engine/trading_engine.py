@@ -77,6 +77,8 @@ class TradingEngine:
             order_executor=self.order_executor,
             risk_percentage=self.config.trading.risk_percentage,
             min_position_value=self.config.trading.min_position_value_usd,
+            max_loss_usd=self.config.trading.max_loss_usd,
+            confidence_weighting=self.config.trading.use_enhanced_position_sizing,
             use_kelly_criterion=self.config.trading.use_kelly_criterion,
             kelly_fraction=self.config.trading.kelly_fraction,
             kelly_window=self.config.trading.kelly_window,

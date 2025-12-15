@@ -550,7 +550,7 @@ export async function getInstancesWithSummary(): Promise<InstanceSummary[]> {
     // Signal quality metrics (from ALL recommendations across ALL cycles for this instance)
     // Actionable = recs that meet min_confidence and min_rr thresholds from settings
     let actionablePercent = 0, actionableCount = 0, totalRecs = 0, avgConfidence = 0, avgRiskReward = 0;
-    const minConfidence = Number(instanceSettings['trading.min_confidence']) || 0.6;
+    const minConfidence = Number(instanceSettings['trading.min_confidence_threshold']) || 0.6;
     const minRR = Number(instanceSettings['trading.min_rr']) || 1.5;
     const recStats = await dbQueryOne<{ total: number; actionable: number; avg_conf: number; avg_rr: number }>(`
       SELECT
@@ -754,7 +754,7 @@ const CONFIG_METADATA: Record<string, ConfigMeta> = {
 
   // Trading Settings - Risk Management
   'trading.risk_percentage': { type: 'number', category: 'trading', group: '4. Risk Management', description: 'Risk per trade as decimal (0.01 = 1% of account)', tooltip: 'Enter as decimal: 0.01 = 1% of account, 0.02 = 2%, 0.05 = 5%, 0.1 = 10%. This is the maximum % of your account balance risked on each trade (used when Kelly Criterion is disabled or has insufficient data).', order: 30 },
-  'trading.max_loss_usd': { type: 'number', category: 'trading', group: '4. Risk Management', description: 'Maximum USD risk per trade', tooltip: 'Hard cap on USD amount risked per trade', order: 31 },
+  'trading.max_loss_usd': { type: 'number', category: 'trading', group: '4. Risk Management', description: 'Maximum USD risk per trade', tooltip: 'Hard cap on USD amount risked per trade. Set to 0 to disable this limit and use only risk_percentage.', order: 31 },
   'trading.leverage': { type: 'number', category: 'trading', group: '4. Risk Management', description: 'Trading leverage multiplier', tooltip: 'Leverage to use for position sizing', order: 32 },
   'trading.max_concurrent_trades': { type: 'number', category: 'trading', group: '4. Risk Management', description: 'Maximum number of concurrent positions/orders', tooltip: 'Limit on open positions at any time', order: 33 },
 
@@ -1039,6 +1039,14 @@ export interface TradeRow {
   filled_at: string | null;
   closed_at: string | null;
   created_at: string;
+  // Position sizing metrics
+  position_size_usd: number | null;
+  risk_amount_usd: number | null;
+  risk_percentage: number | null;
+  confidence_weight: number | null;
+  risk_per_unit: number | null;
+  sizing_method: string | null;
+  risk_pct_used: number | null;
 }
 
 /**

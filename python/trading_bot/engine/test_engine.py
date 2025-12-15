@@ -86,7 +86,7 @@ def test_position_sizer_min_value():
         order_executor=executor,
         min_position_value=100.0,
     )
-    
+
     # Very small risk that would result in tiny position
     result = sizer.calculate_position_size(
         symbol="BTCUSDT",
@@ -95,11 +95,59 @@ def test_position_sizer_min_value():
         wallet_balance=100,
         confidence=0.75,
     )
-    
+
     # Position value should be at least min_position_value
     assert result["position_value"] >= 10.0  # Default min
-    
+
     print("✅ test_position_sizer_min_value passed")
+
+
+def test_position_sizer_max_loss_disabled():
+    """Test that max_loss_usd=0 disables the cap."""
+    executor = MockOrderExecutor()
+    sizer = PositionSizer(
+        order_executor=executor,
+        risk_percentage=0.015,
+        max_loss_usd=0.0,  # Disabled
+    )
+
+    result = sizer.calculate_position_size(
+        symbol="BTCUSDT",
+        entry_price=50000,
+        stop_loss=49000,
+        wallet_balance=10000,
+        confidence=0.75,
+    )
+
+    # Should use full risk calculation without capping
+    expected_risk = 10000 * 0.015 * 0.9333  # ~$140
+    assert result["risk_amount"] > 100  # Should be ~$140, not capped
+
+    print("✅ test_position_sizer_max_loss_disabled passed")
+
+
+def test_position_sizer_max_loss_cap():
+    """Test that max_loss_usd caps the risk amount."""
+    executor = MockOrderExecutor()
+    sizer = PositionSizer(
+        order_executor=executor,
+        risk_percentage=0.015,
+        max_loss_usd=10.0,  # Cap at $10
+    )
+
+    result = sizer.calculate_position_size(
+        symbol="BTCUSDT",
+        entry_price=50000,
+        stop_loss=49000,
+        wallet_balance=10000,
+        confidence=0.75,
+    )
+
+    # Risk should be capped at $10
+    assert result["risk_amount"] <= 10.0
+    assert abs(result["risk_amount"] - 10.0) < 0.01  # Should be ~$10
+
+    print("✅ test_position_sizer_max_loss_cap passed")
 
 
 def test_state_manager_slot_counting():
@@ -163,13 +211,15 @@ def test_state_manager_position_blocking():
 def run_all_tests():
     """Run all engine tests."""
     print("\n🧪 Running Trading Engine tests...\n")
-    
+
     test_position_sizer_basic()
     test_position_sizer_confidence_weighting()
     test_position_sizer_min_value()
+    test_position_sizer_max_loss_disabled()
+    test_position_sizer_max_loss_cap()
     test_state_manager_slot_counting()
     test_state_manager_position_blocking()
-    
+
     print("\n✅ All engine tests passed!\n")
 
 
