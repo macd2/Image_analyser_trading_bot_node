@@ -109,7 +109,37 @@ Again, exit_price is set to currentPrice (line 544). So indeed, the simulator se
 
 also the banner is blocking the ui it should be less highs yes promitnetn but not makingg the dashboard unusalble 
 
+---------
+🔴 REMAINING HARDCODED VALUES (12 values across 4 categories)
+These should be converted to configurable settings:
 
+1. Position Sizer Confidence Thresholds (4 values)
+
+low_conf_threshold = 0.70
+high_conf_threshold = 0.85
+low_conf_weight = 0.8
+high_conf_weight = 1.2
+Location:  python/trading_bot/engine/position_sizer.py (lines 35-38)
+2. Signal Ranking Weights (4 values)
+
+confidence_weight = 0.4
+risk_reward_weight = 0.3
+setup_quality_weight = 0.2
+market_environment_weight = 0.1
+Location:  python/trading_bot/engine/trading_cycle.py (lines 57-61)
+3. ADX Tightening Parameters (3 values)
+
+adx_threshold = 25
+adx_moderate_threshold = 20
+strong_trend_multiplier = 1.2
+Location:  python/trading_bot/core/adx_stop_tightener.py (lines 116, 129, 327)
+4. RR Normalization Cap (1 value)
+
+rr_scoring_cap = 5
+Location:  python/trading_bot/engine/trading_cycle.py (line 822)
+
+
+convert these hardcoded values to configurable settings
 -- 
 
 [ ] the sumulator activity must be a shared component used in the simulator page and also the instanve overview page replace individual components with the sahred one
