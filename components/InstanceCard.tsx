@@ -259,7 +259,7 @@ export default function InstanceCard({ instance, onAction }: InstanceCardProps) 
         </div>
 
         {/* Mode Badge */}
-        <span className={`px-3 py-1.5 text-sm font-bold rounded-lg ${
+        <span className={`px-3 py-1.2 text-xs font-bold rounded-lg ${
           instance.config.paper_trading
             ? 'bg-amber-600/30 text-amber-400 border border-amber-600/50'
             : 'bg-red-600/30 text-red-400 border border-red-600/50'
