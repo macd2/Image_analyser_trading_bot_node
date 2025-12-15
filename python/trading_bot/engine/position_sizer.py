@@ -164,16 +164,16 @@ class PositionSizer:
             actual_risk_pct = actual_risk / wallet_balance if wallet_balance > 0 else 0
 
         return {
-            "position_size": qty,
-            "position_value": position_value,
-            "risk_amount": actual_risk,
-            "risk_percentage": actual_risk_pct,
-            "confidence_weight": confidence_weight,
-            "entry_price": entry_price,
-            "stop_loss": stop_loss,
-            "risk_per_unit": risk_per_unit,
+            "position_size": float(qty),
+            "position_value": float(position_value),
+            "risk_amount": float(actual_risk),
+            "risk_percentage": float(actual_risk_pct),
+            "confidence_weight": float(confidence_weight),
+            "entry_price": float(entry_price),
+            "stop_loss": float(stop_loss),
+            "risk_per_unit": float(risk_per_unit),
             "sizing_method": sizing_method,
-            "risk_pct_used": risk_pct,
+            "risk_pct_used": float(risk_pct),
         }
     
     def _get_confidence_weight(self, confidence: float) -> float:
@@ -238,8 +238,8 @@ class PositionSizer:
         q = 1 - p  # Loss probability
 
         # Calculate average win/loss (as percentages)
-        avg_win = np.mean([t.get('pnl_percent', 0) for t in wins])
-        avg_loss = abs(np.mean([t.get('pnl_percent', 0) for t in losses]))
+        avg_win = float(np.mean([t.get('pnl_percent', 0) for t in wins]))
+        avg_loss = float(abs(np.mean([t.get('pnl_percent', 0) for t in losses])))
 
         # Avoid division by zero
         if avg_loss <= 0:
@@ -252,11 +252,11 @@ class PositionSizer:
         # Calculate full Kelly fraction
         f_star = (b * p - q) / b
 
-        # Clip to safe range (0 to 50%)
-        f_star = np.clip(f_star, 0, 0.5)
+        # Clip to safe range (0 to 50%) and convert to Python float
+        f_star = float(np.clip(f_star, 0, 0.5))
 
-        # Apply fractional Kelly for safety
-        kelly_risk = self.kelly_fraction * f_star
+        # Apply fractional Kelly for safety and convert to Python float
+        kelly_risk = float(self.kelly_fraction * f_star)
 
         logger.info(
             f"Kelly Criterion Calculation: "
