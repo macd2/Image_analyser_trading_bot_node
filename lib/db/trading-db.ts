@@ -1535,8 +1535,8 @@ export async function getInstancesWithHierarchy(limit: number = 10): Promise<Ins
 
   const results: InstanceWithHierarchy[] = [];
   for (const instance of instances) {
-    // Get runs for this instance (limited to 2 to reduce queries)
-    const runsLimit = Math.min(limit, 2);
+    // Get runs for this instance (cap at 5 to balance performance with showing historical data)
+    const runsLimit = Math.min(limit, 5);
     const runs = await dbQuery<RunRow>(`
       SELECT * FROM runs
       WHERE instance_id = ?
