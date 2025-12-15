@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db/client';
-import { getProcessState, isProcessAlive } from '@/lib/process-state';
 
 export const dynamic = 'force-dynamic';
+
+// Heartbeat timeout: 3 minutes (180 seconds)
+// If no heartbeat update in 3 minutes, consider bot crashed
+const HEARTBEAT_TIMEOUT_MS = 3 * 60 * 1000;
 
 export interface CycleStatusResponse {
   is_running: boolean;
@@ -40,22 +43,27 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Check if bot is running for this instance
-    const processState = getProcessState(instanceId);
-    const isRunning = processState ? isProcessAlive(processState.pid) : false;
-
     // Get current run for the instance
     const runs = await query<{
       id: string;
       started_at: string;
       status: string;
+      heartbeat_at: string | null;
     }>(`
-      SELECT id, started_at, status
+      SELECT id, started_at, status, heartbeat_at
       FROM runs
       WHERE instance_id = ? AND status = 'running'
       ORDER BY started_at DESC
       LIMIT 1
     `, [instanceId]);
+
+    // Check if bot is running based on heartbeat (not PID)
+    let isRunning = false;
+    if (runs.length > 0 && runs[0].heartbeat_at) {
+      const lastHeartbeat = new Date(runs[0].heartbeat_at).getTime();
+      const timeSinceHeartbeat = Date.now() - lastHeartbeat;
+      isRunning = timeSinceHeartbeat < HEARTBEAT_TIMEOUT_MS;
+    }
 
     if (runs.length === 0) {
       return NextResponse.json({
