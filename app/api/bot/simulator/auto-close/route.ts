@@ -319,7 +319,9 @@ async function getHistoricalCandles(
   );
 
   // PostgreSQL bigint is now configured to return as number (see lib/db/client.ts)
-  const latestCandleTs = latestCandleResult[0]?.max_ts || 0;
+  // But normalize it just in case it comes back as a string
+  const rawLatestCandleTs = latestCandleResult[0]?.max_ts;
+  const latestCandleTs = normalizeTimestamp(rawLatestCandleTs) || 0;
   const latestCompleteCandle = Math.max(0, now - (now % tfMs) - tfMs); // Timestamp of the latest COMPLETE candle (ensure >= 0)
 
   // Validate timestamps before converting to Date (prevent Invalid time value errors)
@@ -359,7 +361,7 @@ async function getHistoricalCandles(
   if (dbCandles.length >= expectedCandles * 0.8) { // 80% threshold
     console.log(`[Auto-Close] Using ${dbCandles.length} cached candles for ${symbol} ${timeframe}`);
     return dbCandles.map(c => ({
-      timestamp: c.start_time,
+      timestamp: normalizeTimestamp(c.start_time) || 0,
       open: c.open_price,
       high: c.high_price,
       low: c.low_price,
@@ -393,7 +395,7 @@ async function getHistoricalCandles(
     if (!res.ok) {
       console.error(`[Auto-Close] Bybit API error for ${symbol}: ${res.status}`);
       return dbCandles.map(c => ({
-        timestamp: c.start_time,
+        timestamp: normalizeTimestamp(c.start_time) || 0,
         open: c.open_price,
         high: c.high_price,
         low: c.low_price,
@@ -405,7 +407,7 @@ async function getHistoricalCandles(
     if (data.retCode !== 0 || !data.result?.list) {
       console.error(`[Auto-Close] Bybit error for ${symbol}: ${(data as any).retMsg}`);
       return dbCandles.map(c => ({
-        timestamp: c.start_time,
+        timestamp: normalizeTimestamp(c.start_time) || 0,
         open: c.open_price,
         high: c.high_price,
         low: c.low_price,
@@ -454,7 +456,7 @@ async function getHistoricalCandles(
       console.error(`[Auto-Close] Failed to fetch candles for ${symbol}:`, e);
     }
     return dbCandles.map(c => ({
-      timestamp: c.start_time,
+      timestamp: normalizeTimestamp(c.start_time) || 0,
       open: c.open_price,
       high: c.high_price,
       low: c.low_price,
@@ -622,6 +624,8 @@ export async function POST() {
       candles_checked?: number;
       bars_open?: number;
       checked_at?: string;
+      position_size_usd?: number;
+      risk_amount_usd?: number;
     }> = [];
 
     let closedCount = 0;
@@ -947,7 +951,9 @@ export async function POST() {
             timeframe: timeframe,
             candles_checked: candles.length,
             bars_open: barsOpen,
-            checked_at: new Date().toISOString()
+            checked_at: new Date().toISOString(),
+            position_size_usd: trade.position_size_usd || undefined,
+            risk_amount_usd: trade.risk_amount_usd || undefined
           });
           continue;
         }
@@ -984,7 +990,9 @@ export async function POST() {
             timeframe: timeframe,
             candles_checked: candles.length,
             bars_open: barsOpen,
-            checked_at: new Date().toISOString()
+            checked_at: new Date().toISOString(),
+            position_size_usd: trade.position_size_usd || undefined,
+            risk_amount_usd: trade.risk_amount_usd || undefined
           });
           continue;
         }
@@ -1039,7 +1047,9 @@ export async function POST() {
           pnl: Math.round(pnl * 100) / 100,
           candles_checked: candles.length,
           bars_open: barsOpen,
-          checked_at: new Date().toISOString()
+          checked_at: new Date().toISOString(),
+          position_size_usd: trade.position_size_usd || undefined,
+          risk_amount_usd: trade.risk_amount_usd || undefined
         });
       } else if (maxOpenBars > 0 && barsOpen >= maxOpenBars) {
         // STEP 3: Check for max bars exceeded - cancel the trade
@@ -1133,7 +1143,9 @@ export async function POST() {
           pnl: Math.round(pnl * 100) / 100,
           candles_checked: candles.length,
           bars_open: barsOpen,
-          checked_at: new Date().toISOString()
+          checked_at: new Date().toISOString(),
+          position_size_usd: trade.position_size_usd || undefined,
+          risk_amount_usd: trade.risk_amount_usd || undefined
         });
       } else {
         results.push({
@@ -1145,7 +1157,9 @@ export async function POST() {
           timeframe: timeframe,
           candles_checked: candles.length,
           bars_open: barsOpen,
-          checked_at: new Date().toISOString()
+          checked_at: new Date().toISOString(),
+          position_size_usd: trade.position_size_usd || undefined,
+          risk_amount_usd: trade.risk_amount_usd || undefined
         });
       }
       } catch (tradeError) {
@@ -1162,7 +1176,9 @@ export async function POST() {
           instance_name: trade.instance_name,
           timeframe: timeframe,
           candles_checked: 0,
-          checked_at: new Date().toISOString()
+          checked_at: new Date().toISOString(),
+          position_size_usd: trade.position_size_usd || undefined,
+          risk_amount_usd: trade.risk_amount_usd || undefined
         });
       }
     }

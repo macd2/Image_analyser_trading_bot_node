@@ -94,6 +94,8 @@ interface MonitorStatus {
     exit_reason?: string
     pnl?: number
     bars_open?: number
+    position_size_usd?: number
+    risk_amount_usd?: number
   }>
 }
 
@@ -120,6 +122,13 @@ interface ClosedTrade {
   run_id: string
   bars_open?: number
   dry_run?: number | null
+  position_size_usd?: number
+  risk_amount_usd?: number
+  risk_percentage?: number
+  confidence_weight?: number
+  risk_per_unit?: number
+  sizing_method?: string
+  risk_pct_used?: number
 }
 
 // Cancelled trades have same structure as closed trades

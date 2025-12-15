@@ -44,6 +44,8 @@ interface RuntimeStatus {
     exit_reason?: string
     pnl?: number
     bars_open?: number
+    position_size_usd?: number
+    risk_amount_usd?: number
   }>
 }
 

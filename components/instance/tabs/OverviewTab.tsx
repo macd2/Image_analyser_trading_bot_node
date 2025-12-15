@@ -101,6 +101,8 @@ interface MonitorStatus {
     instance_name?: string
     timeframe?: string
     checked_at?: string
+    position_size_usd?: number
+    risk_amount_usd?: number
   }>
 }
 
