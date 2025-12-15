@@ -190,17 +190,41 @@ export function UnifiedCycleCard({ instanceId }: UnifiedCycleCardProps) {
 
             {/* Current Step Highlight */}
             {isRunning && currentCycle ? (
-              <div className={`p-3 rounded-lg ${stepBgColors[currentCycle.current_step]} border ${stepColors[currentCycle.current_step].replace('text', 'border')}/30`}>
+              <div 
+                className={`p-3 rounded-lg transition-all duration-300 ${
+                  stepBgColors[currentCycle.current_step]
+                } border ${
+                  stepColors[currentCycle.current_step].replace('text', 'border')
+                }/30`}
+                // 👇 ADD subtle scale & shadow on active state
+                style={{ transform: 'scale(1.02)', boxShadow: '0 4px 12px rgba(0,0,0,0.25)' }}
+              >
                 <div className="flex items-center gap-3">
                   {(() => {
                     const Icon = stepIcons[currentCycle.current_step]
-                    return <Icon className={`w-5 h-5 ${stepColors[currentCycle.current_step]} animate-pulse drop-shadow-lg`} />
+                    // 👇 ENHANCED ICON: larger, stronger pulse, colored glow
+                    return (
+                      <Icon 
+                        className={`
+                          w-6 h-6   /* ↑ 20% larger */
+                          ${stepColors[currentCycle.current_step]}
+                          animate-pulse-strong   /* ← custom stronger pulse (see below) */
+                          drop-shadow-[0_0_10px_{${
+                            stepColors[currentCycle.current_step]
+                              .replace('text-', '')
+                              .replace('-400', '-400/50')
+                              .replace('-500', '-500/50')
+                          }] 
+                        `}
+                      />
+                    )
                   })()}
                   <div>
-                    <div className="font-medium text-white text-sm">
-                      {currentCycle.current_step.replace('_', ' ').toUpperCase()}
+                    <div className="font-bold text-white text-sm tracking-wide">
+                      {/* 👇 Uppercase + slight spacing for emphasis */}
+                      {currentCycle.current_step.replace(/_/g, ' ').toUpperCase()}
                     </div>
-                    <div className="text-xs text-slate-300">
+                    <div className="text-xs text-slate-200 mt-0.5">
                       {currentCycle.steps.find(s => s.name.toLowerCase().includes(currentCycle.current_step.split('_')[0]))?.description || 'Processing...'}
                     </div>
                   </div>
