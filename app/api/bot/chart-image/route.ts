@@ -67,10 +67,11 @@ export async function GET(req: NextRequest) {
     const contentType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
 
     // Return image with proper headers
-    // Convert Buffer to Uint8Array for NextResponse
-    return new NextResponse(new Uint8Array(imageBuffer), {
+    // Set Content-Length explicitly to avoid header mismatch
+    return new NextResponse(imageBuffer, {
       headers: {
         'Content-Type': contentType,
+        'Content-Length': imageBuffer.length.toString(),
         'Cache-Control': 'public, max-age=31536000, immutable',
       },
     });
