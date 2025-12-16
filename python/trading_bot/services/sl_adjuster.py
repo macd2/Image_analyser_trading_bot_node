@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Tuple
 
-from trading_bot.db.client import execute
+from trading_bot.db.client import execute, get_connection, release_connection
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +24,13 @@ class StopLossAdjuster:
     and trade reproducibility.
     """
 
-    def __init__(self, db_connection):
+    def __init__(self):
         """
-        Initialize adjuster with database connection.
-        
-        Args:
-            db_connection: Database connection for recording adjustments
+        Initialize adjuster.
+        Database connections are obtained fresh for each operation to avoid
+        connection pool exhaustion in multi-threaded/async environments.
         """
-        self._db = db_connection
+        pass
 
     def adjust_recommendation(
         self,
@@ -133,13 +132,13 @@ class StopLossAdjuster:
 
     def _record_adjustment(self, record: Dict[str, Any]) -> None:
         """Record adjustment to sl_adjustments table."""
-        if not self._db:
-            return
-
+        conn = None
         try:
+            # Get fresh connection for this operation
+            conn = get_connection()
             timestamp = datetime.now(timezone.utc).isoformat()
 
-            execute(self._db, """
+            execute(conn, """
                 INSERT INTO sl_adjustments
                 (id, recommendation_id, original_stop_loss, adjusted_stop_loss,
                  adjustment_type, adjustment_value, reason, created_at)
@@ -154,8 +153,10 @@ class StopLossAdjuster:
                 record['reason'],
                 timestamp,
             ))
-            self._db.commit()
 
         except Exception as e:
             logger.error(f"Failed to record SL adjustment: {e}")
+        finally:
+            if conn:
+                release_connection(conn)
 

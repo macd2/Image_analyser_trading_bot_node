@@ -14,7 +14,8 @@ from trading_bot.db.client import (
     execute,
     get_table_name,
     DB_TYPE,
-    should_run_migrations
+    should_run_migrations,
+    release_connection
 )
 
 logger = logging.getLogger(__name__)
@@ -57,8 +58,9 @@ class CandleStoreDatabase:
         # SQLite: Create tables
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
 
-        conn = self.get_connection()
+        conn = None
         try:
+            conn = self.get_connection()
             # Create klines_store table
             execute(conn, """
                 CREATE TABLE IF NOT EXISTS klines_store (
@@ -98,7 +100,8 @@ class CandleStoreDatabase:
             conn.commit()
             logger.info(f"✅ Candle store database initialized at {self.db_path}")
         finally:
-            conn.close()
+            if conn:
+                release_connection(conn)
 
     def get_connection(self):
         """Get database connection using centralized client.
@@ -133,7 +136,7 @@ class CandleStoreDatabase:
                 return results[0]['max']
             return None
         finally:
-            conn.close()
+            release_connection()
 
     def get_earliest_candle_timestamp(self, symbol: str, timeframe: str) -> Optional[int]:
         """Get the earliest stored candle timestamp for a symbol/timeframe."""
@@ -152,7 +155,7 @@ class CandleStoreDatabase:
                 return results[0]['min']
             return None
         finally:
-            conn.close()
+            release_connection()
 
     def insert_candles(self, candles: List[Dict[str, Any]], symbol: str, timeframe: str, category: str):
         """Insert candles into cache, skipping duplicates."""
@@ -208,7 +211,7 @@ class CandleStoreDatabase:
             conn.commit()
             logger.info(f"Inserted {inserted_count} new candles for {symbol} {timeframe}")
         finally:
-            conn.close()
+            release_connection()
 
     def get_candles_after_timestamp(self, symbol: str, timeframe: str, start_timestamp: int, limit: int = 1000) -> List[Dict[str, Any]]:
         """Get candles after a specific timestamp, ordered by start_time ASC."""
@@ -223,7 +226,7 @@ class CandleStoreDatabase:
         try:
             return query(conn, sql, (symbol, timeframe, start_timestamp, limit))
         finally:
-            conn.close()
+            release_connection()
 
     def get_candle_count(self, symbol: str, timeframe: str) -> int:
         """Get total count of candles for a symbol/timeframe."""
@@ -242,7 +245,7 @@ class CandleStoreDatabase:
                 return results[0]['count']
             return 0
         finally:
-            conn.close()
+            release_connection()
 
     def store_prompt_hash_mapping(self, prompt_hash: str, prompt_text: str, timeframe: Optional[str] = None, symbol: Optional[str] = None):
         """Store a prompt hash to prompt text mapping with optional metadata."""
@@ -272,7 +275,7 @@ class CandleStoreDatabase:
             execute(conn, sql, (prompt_hash, prompt_text, timeframe, normalized_symbol))
             conn.commit()
         finally:
-            conn.close()
+            release_connection()
 
     def _timeframe_to_ms(self, timeframe: str) -> int:
         mapping = {"1m":60000, "5m":300000, "15m":900000, "30m":1800000, "1h":3600000, "4h":14400000, "1d":86400000, "1w":604800000}
@@ -296,7 +299,7 @@ class CandleStoreDatabase:
                 return []
             times = [r['start_time'] for r in rows]
         finally:
-            conn.close()
+            release_connection()
 
         interval = self._timeframe_to_ms(timeframe)
         gaps: List[Dict[str, int]] = []
@@ -321,7 +324,7 @@ class CandleStoreDatabase:
             results = query(conn, sql, (prompt_hash,))
             return results[0]['prompt_text'] if results else None
         finally:
-            conn.close()
+            release_connection()
 
     def get_all_prompt_mappings(self) -> Dict[str, str]:
         """Get all prompt hash to text mappings."""
@@ -334,7 +337,7 @@ class CandleStoreDatabase:
             results = query(conn, sql, ())
             return {row['prompt_hash']: row['prompt_text'] for row in results}
         finally:
-            conn.close()
+            release_connection()
 
     def get_prompt_metadata(self, prompt_hash: str) -> Optional[Dict[str, str]]:
         """Get metadata (timeframe, symbol) for a prompt hash."""
@@ -352,7 +355,7 @@ class CandleStoreDatabase:
                 }
             return None
         finally:
-            conn.close()
+            release_connection()
 
     def get_available_symbols(self) -> List[str]:
         """Get all unique symbols available in the candle cache."""
@@ -366,7 +369,7 @@ class CandleStoreDatabase:
             results = query(conn, sql, ())
             return [row['symbol'] for row in results]
         finally:
-            conn.close()
+            release_connection()
 
     def get_available_timeframes(self, symbol: Optional[str] = None) -> List[str]:
         """Get all unique timeframes available in the candle cache, optionally filtered by symbol."""
@@ -391,7 +394,7 @@ class CandleStoreDatabase:
             results = query(conn, sql, params)
             return [row['timeframe'] for row in results]
         finally:
-            conn.close()
+            release_connection()
 
     def get_candles_between_timestamps(self, symbol: str, timeframe: str,
                                       start_timestamp: int, end_timestamp: int,
@@ -409,7 +412,7 @@ class CandleStoreDatabase:
         try:
             return query(conn, sql, (symbol, timeframe, start_timestamp, end_timestamp, limit))
         finally:
-            conn.close()
+            release_connection()
 
     def get_candle_date_range(self, symbol: str, timeframe: str) -> Optional[Dict[str, int]]:
         """Get the date range (earliest and latest timestamps) for a symbol/timeframe."""
@@ -432,4 +435,4 @@ class CandleStoreDatabase:
                     }
             return None
         finally:
-            conn.close()
+            release_connection()

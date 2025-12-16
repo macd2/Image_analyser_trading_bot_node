@@ -1039,14 +1039,15 @@ class DataAgent:
                    timeframe: Optional[str] = None, confidence: Optional[float] = None,
                    risk_reward_ratio: Optional[float] = None, order_type: Optional[str] = 'Limit') -> bool:
         """Store a trade record in the database."""
-        try:
-            # Check if trade with this order_id already exists (only for non-empty order_ids)
-            if order_id and order_id.strip():  # Only check for duplicates if order_id is not empty/whitespace
-                existing_trade = self.get_trade_by_order_id(order_id)
-                if existing_trade:
-                    # print(f"Trade with order_id {order_id} already exists, skipping insertion")
-                    return True  # Return True since the trade effectively exists
+        # Check if trade with this order_id already exists (only for non-empty order_ids)
+        if order_id and order_id.strip():  # Only check for duplicates if order_id is not empty/whitespace
+            existing_trade = self.get_trade_by_order_id(order_id)
+            if existing_trade:
+                # print(f"Trade with order_id {order_id} already exists, skipping insertion")
+                return True  # Return True since the trade effectively exists
 
+        conn = None
+        try:
             conn = self.get_connection()
             cursor = conn.cursor()
 
@@ -1064,15 +1065,18 @@ class DataAgent:
                   prompt_name, timeframe, confidence, risk_reward_ratio, order_type))
 
             conn.commit()
-            release_connection(conn)
             return True
 
         except sqlite3.Error as e:
             print(f"Database error in store_trade: {e}")
             return False
+        finally:
+            if conn:
+                release_connection(conn)
 
     def update_trade(self, trade_id: str, **kwargs) -> bool:
         """Update a trade record with new data."""
+        conn = None
         try:
             conn = self.get_connection()
 
@@ -1108,7 +1112,6 @@ class DataAgent:
 
             conn.commit()
             # print(f"DEBUG: Rows affected: {rows_affected}")
-            release_connection(conn)
 
             if rows_affected == 0:
                 # print(f"DEBUG: No rows updated for trade_id {trade_id} - trade may not exist")
@@ -1119,9 +1122,13 @@ class DataAgent:
         except Exception as e:
             print(f"Database error in update_trade: {e}")
             return False
+        finally:
+            if conn:
+                release_connection(conn)
 
     def update_trade_by_order_id(self, order_id: str, **kwargs) -> bool:
         """Update a trade record by order_id with new data."""
+        conn = None
         try:
             conn = self.get_connection()
 
@@ -1149,13 +1156,15 @@ class DataAgent:
             rows_affected = db_execute(conn, query_str, tuple(values))
 
             conn.commit()
-            release_connection(conn)
 
             return rows_affected > 0
 
         except Exception as e:
             print(f"Database error in update_trade_by_order_id: {e}")
             return False
+        finally:
+            if conn:
+                release_connection(conn)
 
     def mark_trade_as_cancelled(self, order_id: str) -> bool:
         """Mark a trade as cancelled when its order is cancelled."""
@@ -1194,6 +1203,7 @@ class DataAgent:
 
     def get_trades(self, symbol: Optional[str] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get trades from database with optional filtering."""
+        conn = None
         try:
             conn = self.get_connection()
 
@@ -1219,15 +1229,18 @@ class DataAgent:
 
             trades = [dict(row.items()) for row in rows]
 
-            release_connection(conn)
             return trades
 
         except Exception as e:
             print(f"Database error in get_trades: {e}")
             return []
+        finally:
+            if conn:
+                release_connection(conn)
 
     def get_trade_by_order_id(self, order_id: str) -> Optional[Dict[str, Any]]:
         """Get a trade by its order ID."""
+        conn = None
         try:
             conn = self.get_connection()
 
@@ -1237,24 +1250,26 @@ class DataAgent:
             if row:
                 # Convert UnifiedRow to dict
                 trade = dict(row.items())
-                release_connection(conn)
                 return trade
 
-            release_connection(conn)
             return None
 
         except Exception as e:
             print(f"Database error in get_trade_by_order_id: {e}")
             return None
+        finally:
+            if conn:
+                release_connection(conn)
 
     def store_position_tracking(self, tracking_data: Dict[str, Any]) -> bool:
         """Store position tracking data for live R/R monitoring."""
+        conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             tracking_id = str(uuid.uuid4())
-            
+
             cursor.execute('''
                 INSERT INTO position_tracking (
                     id, recommendation_id, trade_id, symbol, timeframe, direction,
@@ -1278,34 +1293,36 @@ class DataAgent:
                 tracking_data['position_size'],
                 tracking_data['checked_at']
             ))
-            
+
             conn.commit()
-            release_connection(conn)
             return True
 
         except sqlite3.Error as e:
             print(f"Error storing position tracking data: {e}")
-            release_connection(conn)
             return False
+        finally:
+            if conn:
+                release_connection(conn)
     
     def update_trading_stats_for_closed_trade(self, trade_data: Dict[str, Any]) -> bool:
         """Update trading statistics when a trade closes."""
+        conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             symbol = trade_data['symbol']
             timeframe = trade_data.get('timeframe', 'unknown')
             pnl = float(trade_data.get('pnl', 0))
             is_win = pnl > 0
-            
+
             # Get or create stats record
             cursor.execute('''
                 SELECT * FROM trading_stats WHERE symbol = ? AND timeframe = ?
             ''', (symbol, timeframe))
-            
+
             existing = cursor.fetchone()
-            
+
             if existing:
                 # Update existing record
                 stats = self._row_to_dict(cursor, existing)
@@ -1318,23 +1335,23 @@ class DataAgent:
                     stats['losing_trades'] += 1
                     stats['total_loss_pnl'] = stats.get('total_loss_pnl', 0) + abs(pnl)
                     stats['max_loss'] = max(stats.get('max_loss', 0), abs(pnl))
-                
+
                 stats['total_pnl'] += pnl
-                
+
                 # Calculate derived metrics
                 stats['win_rate'] = stats['winning_trades'] / stats['total_trades']
                 stats['avg_win'] = stats['total_win_pnl'] / max(stats['winning_trades'], 1)
                 stats['avg_loss'] = stats['total_loss_pnl'] / max(stats['losing_trades'], 1)
-                
+
                 # Expected Value = (Win Rate × Avg Win) - (Loss Rate × Avg Loss)
                 loss_rate = stats['losing_trades'] / stats['total_trades']
                 stats['expected_value'] = (stats['win_rate'] * stats['avg_win']) - (loss_rate * stats['avg_loss'])
-                
+
                 # Profit Factor = Total Gross Profit / Total Gross Loss
                 stats['profit_factor'] = stats['total_win_pnl'] / max(stats['total_loss_pnl'], 0.01)
-                
+
                 stats['last_updated'] = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-                
+
                 cursor.execute('''
                     UPDATE trading_stats SET
                         total_trades = ?, winning_trades = ?, losing_trades = ?,
@@ -1356,7 +1373,7 @@ class DataAgent:
                 win_rate = 1.0 if is_win else 0.0
                 total_win_pnl = pnl if is_win else 0.0
                 total_loss_pnl = abs(pnl) if not is_win else 0.0
-                
+
                 cursor.execute('''
                     INSERT INTO trading_stats (
                         id, symbol, timeframe, total_trades, winning_trades, losing_trades,
@@ -1375,17 +1392,20 @@ class DataAgent:
                     abs(pnl) if not is_win else 0,  # max_loss
                     datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
                 ))
-            
+
             conn.commit()
-            release_connection(conn)
             return True
-            
+
         except Exception as e:
             print(f"Error updating trading stats: {e}")
             return False
+        finally:
+            if conn:
+                release_connection(conn)
    
     def get_trading_stats(self, symbol: Optional[str] = None, timeframe: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get trading statistics with optional filtering."""
+        conn = None
         try:
             conn = self.get_connection()
 
@@ -1406,20 +1426,23 @@ class DataAgent:
 
             # Use centralized query to handle SQLite/PostgreSQL placeholder conversion
             results = query(conn, query_str, tuple(params))
-            release_connection(conn)
 
             return [dict(row.items()) for row in results]
 
         except Exception as e:
             print(f"Error getting trading stats: {e}")
             return []
+        finally:
+            if conn:
+                release_connection(conn)
     
     def get_portfolio_ev_summary(self) -> Dict[str, Any]:
         """Get portfolio-wide Expected Value summary."""
+        conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 SELECT
                     SUM(total_trades) as total_trades,
@@ -1434,15 +1457,14 @@ class DataAgent:
                 FROM trading_stats
                 WHERE total_trades > 0
             ''')
-            
+
             result = cursor.fetchone()
-            release_connection(conn)
-            
+
             if result and result[0]:  # Check if we have data
                 total_trades = result[0]
                 portfolio_win_rate = result[1] / total_trades if total_trades > 0 else 0
                 portfolio_pf = result[4] / max(result[5], 0.01) if result[5] > 0 else 0
-                
+
                 return {
                     'total_trades': total_trades,
                     'portfolio_win_rate': portfolio_win_rate,
@@ -1462,47 +1484,51 @@ class DataAgent:
                     'avg_profit_factor': 0,
                     'avg_win_rate': 0
                 }
-                
+
         except sqlite3.Error as e:
             print(f"Error getting portfolio EV summary: {e}")
             return {'error': str(e)}
+        finally:
+            if conn:
+                release_connection(conn)
 
     def get_recommendations_for_current_boundary(self, symbol: str, timeframe: str) -> List[Dict[str, Any]]:
         """
         Get recommendations for the current timeframe boundary using standardized TimestampValidator.
-        
-        For example, if it's 1:33pm UTC and timeframe is 1h, 
+
+        For example, if it's 1:33pm UTC and timeframe is 1h,
         fetch only recommendations between 1:00pm and 2:00pm.
-        
+
         This method uses the same boundary calculation logic as TimestampValidator
         to ensure consistency across the entire system.
-        
+
         Args:
             symbol: Symbol to filter for, or "all" for all symbols
             timeframe: Timeframe string (e.g., "1h", "15m", "4h")
-            
+
         Returns:
             List of recommendations within the current boundary period
         """
+        conn = None
         try:
             from datetime import datetime, timezone
             from trading_bot.core.timestamp_validator import TimestampValidator
-            
+
             # Use standardized TimestampValidator for consistent boundary calculation
             validator = TimestampValidator()
             current_time = datetime.now(timezone.utc)
-            
+
             # Calculate current boundary period using the same logic as recommender
             timeframe_info = validator.normalize_timeframe(timeframe)
             next_boundary = validator.calculate_next_boundary(current_time, timeframe_info.normalized)
             current_boundary = next_boundary - timeframe_info.timedelta
-            
+
             # Format timestamps for database query (both formats)
             current_boundary_str = current_boundary.strftime('%Y-%m-%d %H:%M:%S')
             next_boundary_str = next_boundary.strftime('%Y-%m-%d %H:%M:%S')
             current_boundary_iso = current_boundary.isoformat()
             next_boundary_iso = next_boundary.isoformat()
-            
+
             conn = self.get_connection()
 
             # Query for recommendations within the current boundary period
@@ -1535,7 +1561,7 @@ class DataAgent:
             rows = query(conn, query_str, params)
 
             results = [dict(row.items()) for row in rows]
-            
+
             # Filter results to ensure they are actually within the current boundary period
             # This provides an additional safety check
             filtered_results = []
@@ -1556,51 +1582,53 @@ class DataAgent:
                     except Exception:
                         # If validation fails, exclude the result
                         pass
-            
-            release_connection(conn)
-            
+
             # Log debug information
             import logging
             logger = logging.getLogger(__name__)
             logger.debug(f"Boundary calculation for {timeframe}: {current_boundary_str} to {next_boundary_str}")
             logger.debug(f"Found {len(results)} raw results, {len(filtered_results)} filtered results")
-            
+
             return filtered_results
-            
+
         except Exception as e:
             print(f"Error getting recommendations for current boundary: {e}")
             import traceback
             print(f"Traceback: {traceback.format_exc()}")
             return []
+        finally:
+            if conn:
+                release_connection(conn)
 
     def get_trades_for_current_cycle(self, timeframe: str, current_time: datetime) -> List[Dict[str, Any]]:
         """
         Get trades that were placed within the current cycle boundary.
-        
+
         This method uses the same boundary calculation logic as TimestampValidator
         to ensure consistency across the entire system.
-        
+
         Args:
             timeframe: Timeframe string (e.g., "1h", "15m", "4h")
             current_time: Current UTC time
-            
+
         Returns:
             List of trades placed within the current cycle period
         """
+        conn = None
         try:
             from trading_bot.core.timestamp_validator import TimestampValidator
-            
+
             validator = TimestampValidator()
-            
+
             # Calculate current cycle boundary period
             timeframe_info = validator.normalize_timeframe(timeframe)
             next_boundary = validator.calculate_next_boundary(current_time, timeframe_info.normalized)
             current_boundary = next_boundary - timeframe_info.timedelta
-            
+
             # Format timestamps for database query
             current_boundary_str = current_boundary.strftime('%Y-%m-%d %H:%M:%S')
             next_boundary_str = next_boundary.strftime('%Y-%m-%d %H:%M:%S')
-            
+
             conn = self.get_connection()
 
             # Query for trades within the current cycle period
@@ -1616,21 +1644,22 @@ class DataAgent:
             rows = query(conn, query_str, params)
 
             results = [dict(row.items()) for row in rows]
-            
-            release_connection(conn)
-            
+
             import logging
             logger = logging.getLogger(__name__)
             logger.debug(f"Trades boundary calculation for {timeframe}: {current_boundary_str} to {next_boundary_str}")
             logger.debug(f"Found {len(results)} trades within current cycle")
-            
+
             return results
-            
+
         except Exception as e:
             print(f"Error getting trades for current cycle: {e}")
             import traceback
             print(f"Traceback: {traceback.format_exc()}")
             return []
+        finally:
+            if conn:
+                release_connection(conn)
 
     def close_connection(self):
         """Close any open database connection if necessary."""
@@ -1642,31 +1671,32 @@ class DataAgent:
     def bulk_update_trades_from_exchange(self, exchange_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Bulk update trades from exchange data for efficient synchronization.
-        
+
         Args:
             exchange_data: List of trade data from exchange sync
-            
+
         Returns:
             Dict with update statistics
         """
+        conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            
+
             updated_count = 0
             created_count = 0
             error_count = 0
-            
+
             for trade_data in exchange_data:
                 try:
                     order_id = trade_data.get('order_id')
                     if not order_id:
                         error_count += 1
                         continue
-                    
+
                     # Check if trade exists
                     existing_trade = self.get_trade_by_order_id(order_id)
-                    
+
                     if existing_trade:
                         # Update existing trade
                         update_data = {
@@ -1677,7 +1707,7 @@ class DataAgent:
                             'closed_size': trade_data.get('closed_size'),
                             'updated_at': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
                         }
-                        
+
                         if self.update_trade(existing_trade['id'], **update_data):
                             updated_count += 1
                     else:
@@ -1700,13 +1730,11 @@ class DataAgent:
                             created_count += 1
                         else:
                             error_count += 1
-                            
+
                 except Exception as e:
                     print(f"Error processing trade data: {e}")
                     error_count += 1
-            
-            release_connection(conn)
-            
+
             return {
                 'status': 'success',
                 'updated_count': updated_count,
@@ -1714,10 +1742,13 @@ class DataAgent:
                 'error_count': error_count,
                 'total_processed': len(exchange_data)
             }
-            
+
         except Exception as e:
             print(f"Error in bulk_update_trades_from_exchange: {e}")
             return {
                 'status': 'error',
                 'error': str(e)
             }
+        finally:
+            if conn:
+                release_connection(conn)

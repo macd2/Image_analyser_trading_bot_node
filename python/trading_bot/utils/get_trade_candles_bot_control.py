@@ -19,7 +19,15 @@ from typing import List, Dict, Any
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Use centralized database client
-from trading_bot.db.client import get_connection, release_connection, query, execute, get_table_name, DB_TYPE
+from trading_bot.db.client import (
+    get_connection,
+    release_connection,
+    query,
+    execute,
+    get_table_name,
+    DB_TYPE,
+    get_backtest_connection
+)
 
 
 def _convert_timeframe_to_bybit(timeframe: str) -> str:
@@ -86,34 +94,45 @@ def _get_symbol_precision(symbol: str) -> dict:
 
 
 def _get_candle_connection():
-    """Get connection to candle database. Uses centralized client for PostgreSQL,
-    separate candle_store.db for SQLite."""
+    """Get connection to candle database using centralized client.
+
+    For PostgreSQL: Uses centralized connection pool
+    For SQLite: Uses separate candle_store.db via centralized layer
+    """
     if DB_TYPE == 'postgres':
         return get_connection()
     else:
-        # SQLite: use separate candle_store.db
-        import sqlite3
-        db_path = Path(__file__).parent.parent.parent.parent / "data" / "candle_store.db"
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(db_path))
-        # Ensure table exists
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS klines_store (
-                symbol TEXT NOT NULL,
-                timeframe TEXT NOT NULL,
-                category TEXT NOT NULL,
-                start_time INTEGER NOT NULL,
-                open_price REAL NOT NULL,
-                high_price REAL NOT NULL,
-                low_price REAL NOT NULL,
-                close_price REAL NOT NULL,
-                volume REAL NOT NULL,
-                turnover REAL NOT NULL,
-                UNIQUE(symbol, timeframe, start_time)
-            )
-        """)
-        conn.commit()
-        return conn
+        # SQLite: use separate candle_store.db via centralized layer
+        # Import CandleStoreDatabase from prompt_performance
+        try:
+            from prompt_performance.core.database_utils import CandleStoreDatabase
+            db = CandleStoreDatabase()
+            return db.get_connection()
+        except ImportError:
+            # Fallback: create connection directly if import fails
+            import sqlite3
+            db_path = Path(__file__).parent.parent.parent.parent / "data" / "candle_store.db"
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = sqlite3.Row
+            # Ensure table exists
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS klines_store (
+                    symbol TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    start_time INTEGER NOT NULL,
+                    open_price REAL NOT NULL,
+                    high_price REAL NOT NULL,
+                    low_price REAL NOT NULL,
+                    close_price REAL NOT NULL,
+                    volume REAL NOT NULL,
+                    turnover REAL NOT NULL,
+                    UNIQUE(symbol, timeframe, start_time)
+                )
+            """)
+            conn.commit()
+            return conn
 
 
 def _get_candles_from_db(symbol: str, timeframe: str, start_ts: int, end_ts: int) -> List[Dict[str, Any]]:

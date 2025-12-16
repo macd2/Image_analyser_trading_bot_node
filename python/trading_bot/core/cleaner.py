@@ -15,7 +15,7 @@ from trading_bot.core.utils import (
     extract_symbol_from_filename,
     align_timestamp_to_boundary
 )
-from trading_bot.db.client import get_connection, execute
+from trading_bot.db.client import get_connection, release_connection, execute
 from trading_bot.core.storage import move_file, get_storage_type, list_files
 
 # Track files being moved to prevent race conditions between instances
@@ -264,8 +264,16 @@ class ChartCleaner:
 
     def _log_cleanup_action(self, folder_path: str, files_moved: int, total_scanned: int, details: List[Dict], cycle_id: Optional[str] = None):
         """Log cleanup action to database for audit trail."""
+        db = None
         try:
-            db = self._db or get_connection()
+            # Use existing connection if available, otherwise get fresh one
+            if self._db:
+                db = self._db
+                should_release = False
+            else:
+                db = get_connection()
+                should_release = True
+
             cleanup_id = str(uuid.uuid4())[:8]
 
             # Ensure bot_actions table exists
@@ -301,6 +309,10 @@ class ChartCleaner:
 
         except Exception as e:
             self.logger.warning(f"Failed to log cleanup action: {e}")
+        finally:
+            # Only release if we got a fresh connection (not self._db)
+            if db and not self._db:
+                release_connection(db)
 
     def get_summary(self, folder_path: str) -> Dict[str, Any]:
         """Get cleanup summary without making changes."""

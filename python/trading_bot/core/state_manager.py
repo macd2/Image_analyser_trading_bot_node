@@ -336,11 +336,11 @@ class StateManager:
 
     def _persist_execution(self, exec_record: ExecutionRecord) -> None:
         """Persist execution to database."""
-        if not self._db:
-            return
-
+        conn = None
         try:
-            execute(self._db, """
+            # Get fresh connection for this operation
+            conn = get_connection()
+            execute(conn, """
                 INSERT INTO executions
                 (id, order_id, exec_id, symbol, side, exec_price, exec_qty,
                  exec_value, exec_fee, exec_pnl, is_maker, exec_time)
@@ -359,9 +359,11 @@ class StateManager:
                 exec_record.is_maker,  # Pass boolean directly
                 exec_record.exec_time,
             ))
-            self._db.commit()
         except Exception as e:
             logger.error(f"Failed to persist execution: {e}")
+        finally:
+            if conn:
+                release_connection(conn)
 
     # ==================== WALLET HANDLING ====================
 

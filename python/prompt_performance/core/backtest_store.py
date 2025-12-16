@@ -28,6 +28,7 @@ from trading_bot.db.client import (
     execute as db_execute,
     query as db_query,
     query_one as db_query_one,
+    release_connection,
     DB_TYPE,
     BACKTEST_DB_PATH,
 )
@@ -874,7 +875,7 @@ class BacktestStore:
                 result = cursor.fetchone()
                 return result[0] if result else 0
         finally:
-            conn.close()
+            release_connection(conn)
 
     def tournament_complete(self, tournament_id: str, finished_at: str, status: str,
                            phase_details: dict, result: dict) -> None:
@@ -897,7 +898,7 @@ class BacktestStore:
                 winner, win_rate, avg_pnl, total_api_calls, duration_sec, tournament_id
             ))
         finally:
-            conn.close()
+            release_connection(conn)
 
     def tournament_list(self, limit: int = 50) -> List[Dict[str, Any]]:
         """List recent tournament runs."""
@@ -926,7 +927,7 @@ class BacktestStore:
                 for r in rows
             ]
         finally:
-            conn.close()
+            release_connection(conn)
 
     def tournament_get(self, tournament_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific tournament run with full details."""
@@ -957,4 +958,4 @@ class BacktestStore:
                 'duration_sec': r['duration_sec']
             }
         finally:
-            conn.close()
+            release_connection(conn)

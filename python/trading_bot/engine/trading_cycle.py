@@ -30,7 +30,7 @@ from trading_bot.core.utils import (  # type: ignore
     normalize_symbol_for_bybit,
 )
 from trading_bot.core.prompts.prompt_registry import get_prompt_function
-from trading_bot.db.client import get_connection, execute, query
+from trading_bot.db.client import get_connection, release_connection, execute, query
 from trading_bot.services.sl_adjuster import StopLossAdjuster
 from openai import OpenAI
 
@@ -94,9 +94,6 @@ class TradingCycle:
         self.instance_id = instance_id
         self.heartbeat_callback = heartbeat_callback  # Callback to update heartbeat
 
-        # Database
-        self._db = get_connection()
-
         # API manager for market data
         self.api_manager = BybitAPIManager(self.config, use_testnet=testnet)  # type: ignore[arg-type]
 
@@ -118,7 +115,7 @@ class TradingCycle:
         )
 
         # SL Adjuster for pre-execution adjustments
-        self.sl_adjuster = StopLossAdjuster(self._db)
+        self.sl_adjuster = StopLossAdjuster()
 
         # Cycle state
         self._running = False
@@ -165,7 +162,9 @@ class TradingCycle:
         Returns:
             Dict mapping symbol -> recommendation_data (empty dict if no recommendation exists)
         """
+        conn = None
         try:
+            conn = get_connection()
             current_boundary = get_current_cycle_boundary(self.timeframe)
             boundary_iso = current_boundary.isoformat()
 
@@ -173,7 +172,7 @@ class TradingCycle:
             # Filter by instance_id if available to ensure instance-specific tracking
             if self.instance_id:
                 # Get cycle_id for this instance's current boundary
-                cycles = query(self._db, """
+                cycles = query(conn, """
                     SELECT id FROM cycles
                     WHERE boundary_time = ? AND run_id IN (
                         SELECT id FROM runs WHERE instance_id = ?
@@ -187,13 +186,13 @@ class TradingCycle:
                 cycle_ids = [c['id'] for c in cycles]
                 placeholders = ','.join(['?' for _ in cycle_ids])
 
-                existing_recs = query(self._db, f"""
+                existing_recs = query(conn, f"""
                     SELECT * FROM recommendations
                     WHERE cycle_id IN ({placeholders}) AND symbol IN ({','.join(['?' for _ in symbols])})
                 """, (*cycle_ids, *symbols))
             else:
                 # No instance filtering - check all recommendations for boundary
-                existing_recs = query(self._db, """
+                existing_recs = query(conn, """
                     SELECT * FROM recommendations
                     WHERE cycle_boundary = ? AND symbol IN ({})
                 """.format(','.join(['?' for _ in symbols])),
@@ -216,6 +215,9 @@ class TradingCycle:
             logger.warning(f"Failed to check existing recommendations: {e}")
             # On error, assume no existing recommendations (proceed with analysis)
             return {symbol: {} for symbol in symbols}
+        finally:
+            if conn:
+                release_connection(conn)
 
     def _print_cycle_summary(self, results: Dict[str, Any], cycle_id: str, cycle_start: datetime, chart_paths: Dict[str, str]) -> None:
         """
@@ -881,7 +883,7 @@ class TradingCycle:
 
                 slot_manager = SlotManager(
                     trader=order_executor,  # OrderExecutor has get_positions() and get_open_orders()
-                    data_agent=self._db,    # Use database connection for data access
+                    data_agent=None,        # SlotManager gets its own connections
                     config=self.config,
                     paper_trading=self.paper_trading,
                     instance_id=self.instance_id
@@ -1028,16 +1030,18 @@ class TradingCycle:
             # Load both settings JSON and config defaults
             instance_settings = {}
             if self.instance_id:
+                conn = None
                 try:
+                    conn = get_connection()
                     # Get settings JSON from instances table
-                    instances = query(self._db, "SELECT settings FROM instances WHERE id = ?", [self.instance_id])
+                    instances = query(conn, "SELECT settings FROM instances WHERE id = ?", [self.instance_id])
                     if instances:
                         import json
                         settings_json = instances[0][0]
                         instance_settings = json.loads(settings_json) if isinstance(settings_json, str) else settings_json or {}
 
                     # Also load config defaults from config table
-                    config_rows = query(self._db, """
+                    config_rows = query(conn, """
                         SELECT key, value FROM config
                         WHERE instance_id = ? AND key LIKE 'trading.sl_adjustment%'
                     """, [self.instance_id])
@@ -1054,6 +1058,9 @@ class TradingCycle:
                                 instance_settings[key] = value
                 except Exception as e:
                     logger.warning(f"Failed to load instance settings for SL adjustment: {e}")
+                finally:
+                    if conn:
+                        release_connection(conn)
 
             # Apply adjustment
             adjusted_result, adjustment_record = self.sl_adjuster.adjust_recommendation(
@@ -1220,36 +1227,42 @@ class TradingCycle:
             # Use consistent ISO timestamp format across all tables
             now_iso = datetime.now(timezone.utc).isoformat()
 
-            execute(self._db, """
-                INSERT INTO recommendations
-                (id, cycle_id, symbol, timeframe, recommendation, confidence,
-                 entry_price, stop_loss, take_profit, risk_reward,
-                 reasoning, chart_path, prompt_name, prompt_version, model_name,
-                 raw_response, analyzed_at, cycle_boundary, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                rec_id,
-                result.get("cycle_id"),  # Link to parent cycle
-                result.get("symbol"),
-                result.get("timeframe"),
-                rec_value,
-                round(result.get("confidence", 0), 3),
-                analysis.get("entry_price"),
-                analysis.get("stop_loss"),
-                analysis.get("take_profit"),
-                analysis.get("risk_reward_ratio", analysis.get("risk_reward")),
-                analysis.get("summary", ""),
-                result.get("chart_path"),
-                prompt_name,
-                prompt_version,
-                model_name,
-                raw_response,
-                now_iso,  # analyzed_at
-                get_current_cycle_boundary(self.timeframe).isoformat(),  # cycle_boundary
-                now_iso,  # created_at - explicit to match format with other tables
-            ))
-            logger.info(f"📝 Recorded recommendation {rec_id} with full audit trail (prompt: {prompt_name}, model: {model_name})")
-            return rec_id
+            conn = None
+            try:
+                conn = get_connection()
+                execute(conn, """
+                    INSERT INTO recommendations
+                    (id, cycle_id, symbol, timeframe, recommendation, confidence,
+                     entry_price, stop_loss, take_profit, risk_reward,
+                     reasoning, chart_path, prompt_name, prompt_version, model_name,
+                     raw_response, analyzed_at, cycle_boundary, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    rec_id,
+                    result.get("cycle_id"),  # Link to parent cycle
+                    result.get("symbol"),
+                    result.get("timeframe"),
+                    rec_value,
+                    round(result.get("confidence", 0), 3),
+                    analysis.get("entry_price"),
+                    analysis.get("stop_loss"),
+                    analysis.get("take_profit"),
+                    analysis.get("risk_reward_ratio", analysis.get("risk_reward")),
+                    analysis.get("summary", ""),
+                    result.get("chart_path"),
+                    prompt_name,
+                    prompt_version,
+                    model_name,
+                    raw_response,
+                    now_iso,  # analyzed_at
+                    get_current_cycle_boundary(self.timeframe).isoformat(),  # cycle_boundary
+                    now_iso,  # created_at - explicit to match format with other tables
+                ))
+                logger.info(f"📝 Recorded recommendation {rec_id} with full audit trail (prompt: {prompt_name}, model: {model_name})")
+                return rec_id
+            finally:
+                if conn:
+                    release_connection(conn)
         except Exception as e:
             # Log detailed error information for debugging
             logger.error(f"Failed to record recommendation {rec_id}: {type(e).__name__}: {e}")
@@ -1265,10 +1278,12 @@ class TradingCycle:
 
     def _record_cycle_start(self, cycle_id: str, cycle_start: datetime) -> None:
         """Record cycle start to database (so recommendations can reference it)."""
+        conn = None
         try:
+            conn = get_connection()
             now_iso = datetime.now(timezone.utc).isoformat()
 
-            execute(self._db, """
+            execute(conn, """
                 INSERT INTO cycles
                 (id, run_id, timeframe, cycle_number, boundary_time, status,
                  charts_captured, analyses_completed, recommendations_generated,
@@ -1290,14 +1305,19 @@ class TradingCycle:
             ))
         except Exception as e:
             logger.error(f"Failed to record cycle start: {e}")
+        finally:
+            if conn:
+                release_connection(conn)
 
     def _record_cycle(self, results: Dict[str, Any]) -> None:
         """Update cycle in database with final results."""
+        conn = None
         try:
+            conn = get_connection()
             # Match the actual cycles table schema
             status = "completed" if not results["errors"] else "failed"
 
-            execute(self._db, """
+            execute(conn, """
                 UPDATE cycles SET
                     status = ?,
                     charts_captured = ?,
@@ -1318,14 +1338,22 @@ class TradingCycle:
 
             # Update run aggregates
             if self.run_id:
-                self._update_run_aggregates(results)
+                self._update_run_aggregates(results, conn)
         except Exception as e:
             logger.error(f"Failed to record cycle: {e}")
+        finally:
+            if conn:
+                release_connection(conn)
 
-    def _update_run_aggregates(self, results: Dict[str, Any]) -> None:
+    def _update_run_aggregates(self, results: Dict[str, Any], conn=None) -> None:
         """Update run's aggregate metrics after cycle completes."""
+        should_release = False
         try:
-            execute(self._db, """
+            if conn is None:
+                conn = get_connection()
+                should_release = True
+
+            execute(conn, """
                 UPDATE runs SET
                     total_cycles = total_cycles + 1,
                     total_recommendations = total_recommendations + ?,
@@ -1338,6 +1366,9 @@ class TradingCycle:
             ))
         except Exception as e:
             logger.error(f"Failed to update run aggregates: {e}")
+        finally:
+            if should_release and conn:
+                release_connection(conn)
 
     def get_status(self) -> Dict[str, Any]:
         """Get trading cycle status."""
