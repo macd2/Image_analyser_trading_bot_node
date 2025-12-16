@@ -21,12 +21,13 @@ interface ConfigItem {
   key: string
   value: string
   hasValue: boolean
-  type: 'string' | 'number' | 'boolean' | 'json'
+  type: 'string' | 'number' | 'boolean' | 'json' | 'select'
   category: string
   group?: string | null
   order?: number
   description: string | null
   tooltip?: string | null
+  options?: Array<{ value: string; label: string }>
 }
 
 export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalProps) {
@@ -37,20 +38,53 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
   const [activeCategory, setActiveCategory] = useState('trading')
   const [prompts, setPrompts] = useState<Array<{ name: string; description: string }>>([])
   const [instancePrompt, setInstancePrompt] = useState<string>('')
+  const [selectedStrategy, setSelectedStrategy] = useState<string>('AiImageAnalyzer')
+  const [availableStrategies, setAvailableStrategies] = useState<Array<{ name: string; class: string }>>([])
+  const [strategiesLoading, setStrategiesLoading] = useState(true)
 
   useEffect(() => {
     if (open) {
       fetchConfig()
       fetchPrompts()
+      fetchAvailableStrategies()
     }
   }, [open, instanceId])
+
+  const fetchAvailableStrategies = async () => {
+    try {
+      setStrategiesLoading(true)
+      const res = await fetch('/api/bot/strategies')
+      if (!res.ok) {
+        console.error('Failed to fetch strategies:', res.status, res.statusText)
+        return
+      }
+      const data = await res.json()
+      console.log('Fetched strategies:', data)
+      if (data.strategies && Array.isArray(data.strategies)) {
+        setAvailableStrategies(data.strategies)
+      } else {
+        console.error('Invalid strategies response:', data)
+      }
+    } catch (err) {
+      console.error('Failed to fetch strategies:', err)
+    } finally {
+      setStrategiesLoading(false)
+    }
+  }
 
   const fetchConfig = async () => {
     setLoading(true)
     try {
       const res = await fetch(`/api/bot/config?instance_id=${instanceId}`)
       const data = await res.json()
-      if (data.config) setConfig(data.config)
+      if (data.config) {
+        setConfig(data.config)
+        // Extract and set the selected strategy
+        const strategyItem = data.config.find((c: ConfigItem) => c.key === 'strategy')
+        if (strategyItem?.value) {
+          setSelectedStrategy(strategyItem.value)
+        }
+      }
     } catch (err) {
       console.error('Failed to fetch config:', err)
     } finally {
@@ -110,8 +144,36 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
     }
   }
 
+  const handleStrategyChange = async (strategy: string) => {
+    try {
+      const updates = [{ key: 'strategy', value: strategy }]
+      await fetch('/api/bot/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates, instance_id: instanceId })
+      })
+      setSelectedStrategy(strategy)
+    } catch (err) {
+      console.error('Failed to update strategy:', err)
+    }
+  }
+
   const categories = [...new Set(config.map(c => c.category))].sort()
-  const filteredConfig = config.filter(c => c.category === activeCategory)
+
+  // Filter config by category and strategy
+  let filteredConfig = config.filter(c => c.category === activeCategory)
+
+  // For AI category, filter based on selected strategy
+  if (activeCategory === 'ai') {
+    filteredConfig = filteredConfig.filter(item => {
+      // Exclude strategy from config list (shown at top)
+      if (item.key === 'strategy') return false
+      // Show OpenAI settings only for AiImageAnalyzer strategy
+      if (item.key.startsWith('openai.')) return selectedStrategy === 'AiImageAnalyzer'
+      return true
+    })
+  }
+
   const hasPendingChanges = Object.keys(pendingChanges).length > 0
 
   // Group settings by their group property
@@ -161,19 +223,46 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
               </TabsList>
 
               <ScrollArea className="h-[400px] pr-4">
+                {/* Strategy Selector - Always visible at top of AI tab */}
                 {activeCategory === 'ai' && (
-                  <div className="mb-4 p-3 bg-blue-900/20 border border-blue-600/50 rounded-lg">
-                    <label className="text-xs text-slate-300 font-medium block mb-2">Instance Prompt</label>
-                    <Select value={instancePrompt} onValueChange={handlePromptChange}>
-                      <SelectTrigger className="bg-slate-800 border-slate-600">
-                        <SelectValue placeholder="Select a prompt..." />
-                      </SelectTrigger>
-                      <SelectContent className="bg-slate-800 border-slate-600">
-                        {prompts.map(p => (
-                          <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="mb-6 space-y-4">
+                    {/* Strategy Selection */}
+                    <div className="p-3 bg-purple-900/20 border border-purple-600/50 rounded-lg">
+                      <label className="text-xs text-slate-300 font-medium block mb-2">Analysis Strategy</label>
+                      {strategiesLoading ? (
+                        <div className="text-xs text-slate-400">Loading strategies...</div>
+                      ) : (
+                        <Select value={selectedStrategy} onValueChange={handleStrategyChange}>
+                          <SelectTrigger className="bg-slate-800 border-slate-600">
+                            <SelectValue placeholder="Select a strategy..." />
+                          </SelectTrigger>
+                          <SelectContent className="bg-slate-800 border-slate-600">
+                            {availableStrategies.map(s => (
+                              <SelectItem key={s.name} value={s.name}>
+                                {s.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+
+                    {/* Prompt Selector - Only show for AiImageAnalyzer strategy */}
+                    {selectedStrategy === 'AiImageAnalyzer' && (
+                      <div className="p-3 bg-blue-900/20 border border-blue-600/50 rounded-lg">
+                        <label className="text-xs text-slate-300 font-medium block mb-2">Instance Prompt</label>
+                        <Select value={instancePrompt} onValueChange={handlePromptChange}>
+                          <SelectTrigger className="bg-slate-800 border-slate-600">
+                            <SelectValue placeholder="Select a prompt..." />
+                          </SelectTrigger>
+                          <SelectContent className="bg-slate-800 border-slate-600">
+                            {prompts.map(p => (
+                              <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -231,6 +320,19 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
                                       checked={currentValue === 'true'}
                                       onCheckedChange={(checked) => handleChange(item.key, checked ? 'true' : 'false')}
                                     />
+                                  ) : item.type === 'select' && item.options ? (
+                                    <Select value={currentValue} onValueChange={(value) => handleChange(item.key, value)}>
+                                      <SelectTrigger className="w-40 bg-slate-900 border-slate-600">
+                                        <SelectValue placeholder="Select..." />
+                                      </SelectTrigger>
+                                      <SelectContent className="bg-slate-800 border-slate-600">
+                                        {item.options.map(opt => (
+                                          <SelectItem key={opt.value} value={opt.value}>
+                                            {opt.label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
                                   ) : (
                                     <input
                                       type="text"
