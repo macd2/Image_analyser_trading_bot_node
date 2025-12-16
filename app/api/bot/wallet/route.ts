@@ -26,7 +26,7 @@ export async function GET(): Promise<Response> {
     const pythonScript = path.join(process.cwd(), 'python', 'get_wallet_balance.py');
 
     return new Promise<Response>((resolve) => {
-      const python = spawn('python', [pythonScript], {
+      const python = spawn('python3', [pythonScript], {
         cwd: process.cwd(),
         env: { ...process.env }
       });

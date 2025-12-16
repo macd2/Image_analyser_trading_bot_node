@@ -35,6 +35,8 @@ from trading_bot.core.error_logger import setup_error_logging, set_run_id, set_c
 from trading_bot.core.event_emitter import get_event_emitter, BotEvent
 from trading_bot.db.init_trading_db import init_database, get_connection
 from trading_bot.db.client import execute, query, query_one, release_connection
+# Import strategies module to register all strategies with StrategyFactory
+import trading_bot.strategies  # noqa: F401
 
 # Configure logging
 # Force unbuffered output to ensure logs appear immediately in Railway/Docker
@@ -223,7 +225,7 @@ class TradingBot:
         logger.info(f"📦 Created new run: {run_id}" + (f" (instance: {self.instance_id})" if self.instance_id else ""))
         return run_id
 
-    def _update_heartbeat(self) -> None:
+    def _update_heartbeat(self, message: str = "", **kwargs) -> None:
         """Update heartbeat timestamp in database to signal bot is alive."""
         try:
             execute(self._db, """
