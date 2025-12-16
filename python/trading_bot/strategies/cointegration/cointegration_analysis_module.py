@@ -12,12 +12,15 @@ Features:
 """
 
 from typing import Dict, Any, List, Optional, Callable
+import logging
 import numpy as np
 import pandas as pd
 from trading_bot.strategies.base import BaseAnalysisModule
 from trading_bot.strategies.cointegration.spread_trading_cointegrated import CointegrationStrategy
 from trading_bot.strategies.cointegration.price_levels import calculate_levels
 from trading_bot.core.utils import normalize_symbol_for_bybit
+
+logger = logging.getLogger(__name__)
 
 
 class CointegrationAnalysisModule(BaseAnalysisModule):
@@ -91,15 +94,18 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         # Completely independent - doesn't use symbols parameter or watchlist
         symbols_to_analyze = list(pairs.keys())
 
+        logger.info(f"🔗 Cointegration Strategy: Starting analysis cycle for {len(symbols_to_analyze)} symbols (timeframe: {analysis_timeframe})", extra={"cycle_id": cycle_id})
         self._heartbeat(f"Starting cointegration analysis for {len(symbols_to_analyze)} symbols (timeframe: {analysis_timeframe})")
 
         for symbol in symbols_to_analyze:
             try:
+                logger.info(f"🔗 Analyzing {symbol} for cointegration", extra={"symbol": symbol, "cycle_id": cycle_id})
                 self._heartbeat(f"Analyzing {symbol}")
 
                 # Get pair symbol from config
                 pair_symbol = pairs.get(symbol)
                 if not pair_symbol:
+                    logger.warning(f"🔗 No pair configured for {symbol}", extra={"symbol": symbol})
                     self._heartbeat(f"No pair configured for {symbol}")
                     results.append({
                         "symbol": symbol,
@@ -236,6 +242,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     continue
 
                 # Run cointegration strategy with config values
+                logger.info(f"🔗 Running cointegration analysis for {symbol}/{pair_symbol}", extra={"symbol": symbol, "pair": pair_symbol})
                 self._heartbeat(f"Running cointegration analysis for {symbol}")
                 strategy = CointegrationStrategy(
                     lookback=self.get_config_value('lookback', 120),
@@ -249,6 +256,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 # Get the last valid signal (skip NaN z_scores)
                 valid_signals = signals[signals['z_score'].notna()]
                 if valid_signals.empty:
+                    logger.warning(f"🔗 No valid signals for {symbol}/{pair_symbol}", extra={"symbol": symbol, "pair": pair_symbol})
                     self._heartbeat(f"No valid signals for {symbol}/{pair_symbol}")
                     results.append({
                         "symbol": symbol,
@@ -270,6 +278,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     continue
 
                 latest_signal = valid_signals.iloc[-1]
+                logger.debug(f"🔗 Latest signal for {symbol}: {latest_signal.to_dict()}", extra={"symbol": symbol})
 
                 # Compute confidence using the strategy's method
                 # Use aligned data from df, not original candles which may have different lengths
@@ -297,10 +306,15 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 )
 
                 self._validate_output(recommendation)
+                logger.info(
+                    f"🔗 {symbol} cointegration result: {recommendation['recommendation']} (confidence: {recommendation['confidence']:.2f})",
+                    extra={"symbol": symbol, "recommendation": recommendation['recommendation'], "confidence": recommendation['confidence']}
+                )
                 results.append(recommendation)
                 self._heartbeat(f"Completed {symbol}: {recommendation['recommendation']}")
 
             except Exception as e:
+                logger.error(f"🔗 Error analyzing {symbol}: {e}", exc_info=True, extra={"symbol": symbol})
                 self.logger.error(f"Error analyzing {symbol}: {e}")
                 self._heartbeat(f"Error analyzing {symbol}: {e}")
                 results.append({
@@ -310,6 +324,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     "cycle_id": cycle_id,
                 })
 
+        logger.info(f"🔗 Cointegration analysis cycle complete: {len(results)} results", extra={"cycle_id": cycle_id, "result_count": len(results)})
         self._heartbeat("Cointegration analysis cycle complete")
         return results
 
