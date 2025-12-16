@@ -118,6 +118,7 @@ interface ClosedTrade {
   fill_time: string | null
   fill_price: number | null
   closed_at: string
+  cancelled_at?: string | null
   timeframe: string | null
   instance_name: string
   instance_id: string

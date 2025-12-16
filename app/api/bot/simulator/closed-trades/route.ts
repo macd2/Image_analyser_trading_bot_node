@@ -18,6 +18,7 @@ interface ClosedTrade {
   fill_time: string | null;
   fill_price: number | null;
   closed_at: string;
+  cancelled_at?: string | null;
   timeframe: string;
   instance_name: string;
   run_id: string;
@@ -53,6 +54,7 @@ export async function GET() {
         t.fill_time,
         t.fill_price,
         t.closed_at,
+        t.cancelled_at,
         COALESCE(t.timeframe, rec.timeframe) as timeframe,
         i.name as instance_name,
         r.id as run_id,
