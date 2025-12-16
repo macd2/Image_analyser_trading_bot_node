@@ -738,7 +738,7 @@ export async function updateInstanceSettings(instanceId: string, updates: Array<
 // group is used to visually group related settings together in the UI
 // Groups starting with "1.", "2.", etc. are sorted in that order
 // Groups with "├─" or "└─" are displayed as child groups (indented)
-type ConfigMeta = { type: 'string' | 'number' | 'boolean' | 'json'; category: string; description: string; tooltip?: string; group?: string; order?: number };
+type ConfigMeta = { type: 'string' | 'number' | 'boolean' | 'json' | 'select'; category: string; description: string; tooltip?: string; group?: string; order?: number; options?: Array<{ value: string; label: string }> };
 const CONFIG_METADATA: Record<string, ConfigMeta> = {
   // Trading Settings - Execution Control
   'trading.paper_trading': { type: 'boolean', category: 'trading', group: '1. Execution Control', description: 'Enable paper trading mode (no real trades)', tooltip: 'When enabled, trades are simulated without real execution', order: 1 },
@@ -769,6 +769,19 @@ const CONFIG_METADATA: Record<string, ConfigMeta> = {
   'trading.sl_adjustment_short_pct': { type: 'number', category: 'trading', group: '5. Stop Loss Adjustment├─ Adjustment Settings', description: 'SL widening percentage for SHORT trades (e.g., 1.5 = 1.5% wider)', tooltip: 'Percentage to widen SL for SHORT positions', order: 42 },
 
   // AI Settings
+  'strategy': {
+    type: 'select',
+    category: 'ai',
+    group: '1. Model Configuration',
+    description: 'Analysis Strategy',
+    tooltip: 'Select the analysis strategy to use for chart analysis',
+    order: 0,
+    options: [
+      { value: 'AiImageAnalyzer', label: 'AI Image Analyzer (Chart-based)' },
+      { value: 'MarketStructure', label: 'Market Structure (Top-down analysis)' },
+      { value: 'CointegrationSpreadTrader', label: 'Cointegration Spread Trader' }
+    ]
+  },
   'openai.assistant_id': { type: 'string', category: 'ai', group: '1. Model Configuration', description: 'OpenAI Assistant ID', tooltip: 'The unique identifier for your OpenAI Assistant', order: 1 },
   'openai.model': { type: 'string', category: 'ai', group: '1. Model Configuration', description: 'OpenAI Model', tooltip: 'AI model to use for analysis (e.g., gpt-4, gpt-3.5-turbo)', order: 2 },
 
@@ -851,6 +864,7 @@ export async function getInstanceConfigAsRows(instanceId: string): Promise<Confi
         description: meta.description || null,
         tooltip: meta.tooltip || null,
         updated_at: instance.updated_at || new Date().toISOString(),
+        options: meta.options,
       });
     }
 
@@ -994,13 +1008,14 @@ export interface ConfigRow {
   key: string;
   value: string;
   hasValue: boolean;  // true if value is from instance settings, false if placeholder
-  type: 'string' | 'number' | 'boolean' | 'json';
+  type: 'string' | 'number' | 'boolean' | 'json' | 'select';
   category: string;
   group?: string | null;  // For grouping related settings in UI
   order?: number;  // For ordering within group
   description: string | null;
   tooltip?: string | null;
   updated_at: string;
+  options?: Array<{ value: string; label: string }>;  // For select type
 }
 
 // ============================================================
