@@ -18,9 +18,15 @@ interface CancelledTrade {
   fill_time: string | null;
   fill_price: number | null;
   closed_at: string | null;
+  cancelled_at: string | null;
   timeframe: string;
   instance_name: string;
   run_id: string;
+  instance_id?: string;
+  bars_open?: number;
+  dry_run?: number | null;
+  position_size_usd?: number;
+  risk_amount_usd?: number;
 }
 
 export async function GET() {
@@ -44,9 +50,14 @@ export async function GET() {
         t.fill_time,
         t.fill_price,
         t.closed_at,
+        t.cancelled_at,
         COALESCE(t.timeframe, rec.timeframe) as timeframe,
         i.name as instance_name,
-        r.id as run_id
+        r.id as run_id,
+        r.instance_id,
+        t.dry_run,
+        t.position_size_usd,
+        t.risk_amount_usd
       FROM trades t
       LEFT JOIN recommendations rec ON t.recommendation_id = rec.id
       LEFT JOIN cycles c ON t.cycle_id = c.id
@@ -54,19 +65,37 @@ export async function GET() {
       LEFT JOIN instances i ON r.instance_id = i.id
       WHERE t.status = 'cancelled'
         AND t.exit_reason = 'max_bars_exceeded'
-      ORDER BY t.closed_at DESC
+      ORDER BY t.created_at DESC
       LIMIT 50
     `);
 
+    // Calculate bars open for each trade
+    const tradesWithBars = cancelledTrades.map((t) => {
+      let barsOpen = 0
+      const cancelTime = t.cancelled_at || t.closed_at
+      if (t.created_at && cancelTime && t.timeframe) {
+        const createdTime = new Date(t.created_at).getTime()
+        const cancelledTime = new Date(cancelTime).getTime()
+        const timeframeMins: Record<string, number> = {
+          '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
+          '1h': 60, '2h': 120, '4h': 240, '6h': 360, '12h': 720, '1d': 1440, '1D': 1440
+        }
+        const mins = timeframeMins[t.timeframe] || 60
+        const diffMs = cancelledTime - createdTime
+        barsOpen = Math.ceil(diffMs / (mins * 60 * 1000))
+      }
+      return { ...t, bars_open: barsOpen }
+    })
+
     // Calculate summary stats
-    const wins = cancelledTrades.filter((t) => t.pnl !== null && t.pnl > 0).length
-    const losses = cancelledTrades.filter((t) => t.pnl !== null && t.pnl < 0).length
-    const totalPnl = cancelledTrades.reduce((sum, t) => sum + (t.pnl || 0), 0)
+    const wins = tradesWithBars.filter((t) => t.pnl !== null && t.pnl > 0).length
+    const losses = tradesWithBars.filter((t) => t.pnl !== null && t.pnl < 0).length
+    const totalPnl = tradesWithBars.reduce((sum, t) => sum + (t.pnl || 0), 0)
 
     return NextResponse.json({
-      trades: cancelledTrades,
+      trades: tradesWithBars,
       stats: {
-        total: cancelledTrades.length,
+        total: tradesWithBars.length,
         wins,
         losses,
         total_pnl: Math.round(totalPnl * 100) / 100,
