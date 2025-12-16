@@ -7,7 +7,11 @@ and saves results as JSON.
 
 Usage:
     source venv/bin/activate
+    cd python/trading_bot/strategies/cointegration
     python run_full_screener.py
+
+Or from project root:
+    PYTHONPATH=python python python/trading_bot/strategies/cointegration/run_full_screener.py
 """
 
 import asyncio
@@ -19,11 +23,14 @@ from datetime import datetime
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'python'))
+# Add python folder to path if not already there
+python_path = os.path.join(os.path.dirname(__file__), '..', '..', '..')
+if python_path not in sys.path:
+    sys.path.insert(0, python_path)
 
 from prompt_performance.core.bybit_symbols import get_bybit_symbols_cached
 from trading_bot.strategies.candle_adapter import CandleAdapter
-from trading_bot.strategies.pair_screener import PairScreener
+from trading_bot.strategies.cointegration.pair_screener import PairScreener
 import pandas as pd
 
 
@@ -119,10 +126,16 @@ def filter_correlated_pairs(results: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(filtered)
 
 
-async def main():
-    """Run full screener."""
+async def main(timeframe: str = "1h"):
+    """
+    Run full screener.
+
+    Args:
+        timeframe: Analysis timeframe (e.g., "1h", "4h", "1d")
+    """
     print("=" * 70)
     print("FULL PAIR SCREENER")
+    print(f"Timeframe: {timeframe}")
     print("=" * 70)
     
     # Step 1: Get all symbols
@@ -187,21 +200,22 @@ async def main():
 
     # Step 7: Save results
     print("\nSTEP 7: Saving results...")
-    output_file = Path(__file__).parent / "screener_results.json"
-    
+    output_file = Path(__file__).parent / "screener_results.json"  # Saves in cointegration/ folder
+
     # Convert to JSON-serializable format
     results_dict = {
         'timestamp': datetime.now().isoformat(),
+        'timeframe': timeframe,
         'total_symbols_screened': len(symbol_candles),
         'total_pairs_found': len(results),
         'independent_pairs': len(final_results),
         'pairs': final_results.to_dict('records')
     }
-    
+
     with open(output_file, 'w') as f:
         json.dump(results_dict, f, indent=2)
-    
-    print(f"✅ Results saved to {output_file}")
+
+    print(f"✅ Results saved to {output_file} (timeframe={timeframe})")
     
     # Display results
     print("\n" + "=" * 70)
@@ -213,8 +227,23 @@ async def main():
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Screen all symbols for cointegrated pairs"
+    )
+    parser.add_argument(
+        "--timeframe",
+        type=str,
+        default="1h",
+        choices=["1m", "5m", "15m", "30m", "1h", "4h", "1d"],
+        help="Analysis timeframe (default: 1h)"
+    )
+
+    args = parser.parse_args()
+
     try:
-        success = asyncio.run(main())
+        success = asyncio.run(main(timeframe=args.timeframe))
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
         print("\n⚠️  Interrupted by user")

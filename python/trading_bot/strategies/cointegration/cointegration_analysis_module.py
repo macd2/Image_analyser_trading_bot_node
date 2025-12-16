@@ -15,7 +15,8 @@ from typing import Dict, Any, List, Optional, Callable
 import numpy as np
 import pandas as pd
 from trading_bot.strategies.base import BaseAnalysisModule
-from trading_bot.strategies.spread_trading_cointegrated import CointegrationStrategy
+from trading_bot.strategies.cointegration.spread_trading_cointegrated import CointegrationStrategy
+from trading_bot.strategies.cointegration.price_levels import calculate_levels
 from trading_bot.core.utils import normalize_symbol_for_bybit
 
 
@@ -154,22 +155,24 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     continue
 
                 # Fetch candles for both symbols using analysis_timeframe from config
-                # Use higher limit to ensure we get enough candles even if some are missing
+                # Use maximum API limit (1000) to ensure we get enough candles for analysis
                 lookback = self.get_config_value('lookback', 120)
                 min_candles_needed = max(lookback + 10, 50)  # Need at least lookback + buffer
                 self._heartbeat(f"Fetching candles for {symbol} and {pair_symbol}")
                 candles1 = await self.candle_adapter.get_candles(
                     normalized_symbol,
                     analysis_timeframe,
-                    limit=500,  # Request more candles to ensure we have enough
+                    limit=1000,  # Request maximum API limit for better analysis
                     min_candles=min_candles_needed,
+                    prefer_source="api",  # Always fetch fresh data from API
                     cache_to_db=False  # Skip caching for faster test execution
                 )
                 candles2 = await self.candle_adapter.get_candles(
                     normalized_pair,
                     analysis_timeframe,
-                    limit=500,  # Request more candles to ensure we have enough
+                    limit=1000,  # Request maximum API limit for better analysis
                     min_candles=min_candles_needed,
+                    prefer_source="api",  # Always fetch fresh data from API
                     cache_to_db=False  # Skip caching for faster test execution
                 )
 
@@ -272,8 +275,10 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 # Use aligned data from df, not original candles which may have different lengths
                 close_1 = np.array(df['close_1'].values, dtype=float)
                 close_2 = np.array(df['close_2'].values, dtype=float)
-                beta = strategy._compute_beta(close_1, close_2)
+                beta = float(strategy._compute_beta(close_1, close_2))
                 spread = close_2 - beta * close_1
+                spread_mean = float(np.mean(spread))
+                spread_std = float(np.std(spread))
                 z_score = latest_signal['z_score']
                 confidence = strategy.compute_confidence(spread, z_score)
 
@@ -284,7 +289,11 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     candles=candles1,
                     cycle_id=cycle_id,
                     analysis_timeframe=analysis_timeframe,
-                    confidence=confidence
+                    confidence=confidence,
+                    pair_candles=candles2,
+                    beta=beta,
+                    spread_mean=spread_mean,
+                    spread_std=spread_std
                 )
 
                 self._validate_output(recommendation)
@@ -312,8 +321,12 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         cycle_id: str,
         analysis_timeframe: str,
         confidence: Optional[float] = None,
+        pair_candles: Optional[List[Dict[str, Any]]] = None,
+        beta: Optional[float] = None,
+        spread_mean: Optional[float] = None,
+        spread_std: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """Convert cointegration signal to analyzer format."""
+        """Convert cointegration signal to analyzer format with calculated price levels."""
         z_score = signal['z_score']
         signal_val = signal['signal']
         current_price = candles[-1]['close']  # Get latest candle's close price
@@ -327,31 +340,65 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         # Map signal to recommendation
         if signal_val == 1:
             recommendation = "BUY"
+            signal_direction = 1  # Long spread
         elif signal_val == -1:
             recommendation = "SELL"
+            signal_direction = -1  # Short spread
         else:
             recommendation = "HOLD"
+            signal_direction = 0
 
-        # Calculate price levels from current price
-        # These are just initial estimates - position sizer will adjust based on risk_percentage
+        # Calculate price levels using cointegration statistics
         entry_price = current_price
-        if recommendation == "BUY":
-            stop_loss = current_price * 0.98  # 2% below entry
-            take_profit = current_price * 1.04  # 4% above entry
-        elif recommendation == "SELL":
-            stop_loss = current_price * 1.02  # 2% above entry
-            take_profit = current_price * 0.96  # 4% below entry
-        else:
-            stop_loss = None
-            take_profit = None
+        stop_loss = None
+        take_profit = None
+        risk_reward = 0
 
-        # Calculate risk-reward
-        if stop_loss and take_profit:
-            risk = abs(entry_price - stop_loss)
-            reward = abs(take_profit - entry_price)
-            risk_reward = reward / risk if risk > 0 else 0
+        if (signal_direction != 0 and pair_candles and beta is not None and
+            spread_mean is not None and spread_std is not None):
+            try:
+                pair_price = pair_candles[-1]['close']
+                z_entry = self.get_config_value('z_entry', 2.0)
+
+                # Calculate levels using cointegration formula
+                levels = calculate_levels(
+                    price_x=current_price,
+                    price_y=pair_price,
+                    beta=beta,
+                    spread_mean=spread_mean,
+                    spread_std=spread_std,
+                    z_entry=z_entry,
+                    signal=signal_direction
+                )
+
+                # Extract price levels for the primary symbol
+                entry_price = levels['entry']['x']
+                stop_loss = levels['stop_loss']['x']
+                take_profit = levels['take_profit_2']['x']  # Use full reversion target
+
+                # Calculate risk-reward
+                if stop_loss and take_profit:
+                    risk = abs(entry_price - stop_loss)
+                    reward = abs(take_profit - entry_price)
+                    risk_reward = reward / risk if risk > 0 else 0
+            except Exception as e:
+                self.logger.warning(f"Failed to calculate levels for {symbol}: {e}")
+                # Fallback to simple percentage-based levels
+                entry_price = current_price
+                if recommendation == "BUY":
+                    stop_loss = current_price * 0.98
+                    take_profit = current_price * 1.04
+                elif recommendation == "SELL":
+                    stop_loss = current_price * 1.02
+                    take_profit = current_price * 0.96
         else:
-            risk_reward = 0
+            # Fallback to simple percentage-based levels
+            if recommendation == "BUY":
+                stop_loss = current_price * 0.98
+                take_profit = current_price * 1.04
+            elif recommendation == "SELL":
+                stop_loss = current_price * 1.02
+                take_profit = current_price * 0.96
 
         return {
             "symbol": symbol,

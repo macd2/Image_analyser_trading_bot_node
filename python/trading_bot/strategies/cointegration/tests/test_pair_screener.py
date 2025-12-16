@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'python'))
 
 from prompt_performance.core.bybit_symbols import get_bybit_symbols_cached
 from trading_bot.strategies.candle_adapter import CandleAdapter
-from trading_bot.strategies.pair_screener import PairScreener
+from trading_bot.strategies.cointegration.pair_screener import PairScreener
 import numpy as np
 import pandas as pd
 

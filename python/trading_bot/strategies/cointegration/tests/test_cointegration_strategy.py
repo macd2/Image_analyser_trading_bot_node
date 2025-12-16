@@ -14,7 +14,7 @@ import os
 # Add project to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from trading_bot.strategies.cointegration_analysis_module import CointegrationAnalysisModule
+from trading_bot.strategies.cointegration.cointegration_analysis_module import CointegrationAnalysisModule
 from trading_bot.config.settings_v2 import ConfigV2
 from trading_bot.db.client import query, get_connection
 

@@ -10,7 +10,7 @@ from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from trading_bot.strategies.alex_analysis_module import AlexAnalysisModule
+from trading_bot.strategies.alex.alex_analysis_module import AlexAnalysisModule
 
 
 async def test_multiframe():

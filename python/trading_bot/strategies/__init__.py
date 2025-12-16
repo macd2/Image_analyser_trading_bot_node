@@ -5,14 +5,14 @@ Provides:
 - BaseAnalysisModule: Abstract base for all strategies
 - CandleAdapter: Unified interface for candle data
 - StrategyFactory: Factory for creating strategies
-- Built-in strategies: PromptAnalysisModule, AlexAnalysisModule, etc.
+- Built-in strategies: AlexAnalysisModule, CointegrationAnalysisModule, etc.
 """
 
 from trading_bot.strategies.base import BaseAnalysisModule
 from trading_bot.strategies.candle_adapter import CandleAdapter
 from trading_bot.strategies.factory import StrategyFactory
-from trading_bot.strategies.alex_analysis_module import AlexAnalysisModule
-from trading_bot.strategies.cointegration_analysis_module import CointegrationAnalysisModule
+from trading_bot.strategies.alex.alex_analysis_module import AlexAnalysisModule
+from trading_bot.strategies.cointegration.cointegration_analysis_module import CointegrationAnalysisModule
 
 __all__ = [
     "BaseAnalysisModule",

@@ -20,7 +20,7 @@ import pandas as pd
 from trading_bot.strategies.base import BaseAnalysisModule
 from trading_bot.strategies.candle_adapter import CandleAdapter
 from trading_bot.strategies.factory import StrategyFactory
-from trading_bot.strategies.alex_analysis_module import AlexAnalysisModule
+from trading_bot.strategies.alex.alex_analysis_module import AlexAnalysisModule
 
 
 class TestBaseAnalysisModule:

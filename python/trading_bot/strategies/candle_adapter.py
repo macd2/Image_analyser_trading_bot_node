@@ -183,6 +183,7 @@ class CandleAdapter:
                             if len(cached) >= limit * 0.8:  # Got at least 80% of requested
                                 # Reverse to get chronological order
                                 cached = list(reversed(cached))
+                                print(f"[CandleAdapter] Got {len(cached)} candles from cache", flush=True)
                                 self.logger.debug(
                                     f"Got {len(cached)} candles from cache for {symbol} {timeframe}",
                                     extra={"symbol": symbol, "instance_id": self.instance_id}
@@ -198,12 +199,13 @@ class CandleAdapter:
                 # Fall through to try API
 
             elif source == "api":
-                # Fetch from API
+                # Fetch from API with rate limit handling
                 try:
                     print(f"[CandleAdapter] Fetching from API...", flush=True)
 
                     # Try to use pybit directly (simpler than BybitAPIManager which needs full config)
                     from pybit.unified_trading import HTTP
+                    import time
 
                     # Get API credentials from environment
                     api_key = os.getenv('BYBIT_API_KEY')
@@ -231,21 +233,49 @@ class CandleAdapter:
                     }
                     interval = interval_map.get(timeframe, "60")
 
-                    # Run blocking API call in thread pool
+                    # Run blocking API call in thread pool with rate limit handling
                     print(f"[CandleAdapter] Calling get_kline({api_symbol}, {interval})...", flush=True)
-                    response = await asyncio.get_event_loop().run_in_executor(
-                        _executor,
-                        lambda: session.get_kline(
-                            category="linear",
-                            symbol=api_symbol,
-                            interval=interval,
-                            limit=limit
-                        )
-                    )
+
+                    max_retries = 3
+                    retry_count = 0
+                    response = None
+
+                    while retry_count < max_retries:
+                        try:
+                            response = await asyncio.get_event_loop().run_in_executor(
+                                _executor,
+                                lambda: session.get_kline(
+                                    category="linear",
+                                    symbol=api_symbol,
+                                    interval=interval,
+                                    limit=limit
+                                )
+                            )
+                            break  # Success, exit retry loop
+                        except Exception as e:
+                            error_str = str(e)
+                            # Check for rate limit error
+                            if "10006" in error_str or "rate limit" in error_str.lower():
+                                retry_count += 1
+                                if retry_count < max_retries:
+                                    wait_time = 2 ** retry_count  # Exponential backoff: 2, 4, 8 seconds
+                                    print(f"[CandleAdapter] Rate limited, waiting {wait_time}s before retry {retry_count}/{max_retries}...", flush=True)
+                                    await asyncio.sleep(wait_time)
+                                else:
+                                    print(f"[CandleAdapter] Rate limit exceeded after {max_retries} retries", flush=True)
+                                    raise
+                            else:
+                                raise
+
+                    if response is None:
+                        print(f"[CandleAdapter] Failed to get response after retries", flush=True)
+                        continue
+
                     print(f"[CandleAdapter] Got response: retCode={response.get('retCode')}", flush=True)
 
                     if response.get('retCode') == 0:
                         candles = response.get('result', {}).get('list', [])
+                        print(f"[CandleAdapter] Got {len(candles)} candles from API", flush=True)
                         # Convert Bybit format to standard format
                         candles = [
                             {
@@ -261,6 +291,7 @@ class CandleAdapter:
                         ]
                     else:
                         candles = []
+                        print(f"[CandleAdapter] API error: retCode={response.get('retCode')}", flush=True)
 
                     # Check minimum candles requirement
                     if candles and len(candles) < min_candles:
