@@ -231,7 +231,9 @@ class BybitWebSocketManager:
                     self._reconnect()
 
             except Exception as e:
-                logger.error(f"Keep-alive error: {e}")
+                # Suppress WebSocket connection closed errors - they're expected during shutdown
+                if "Connection is already closed" not in str(e):
+                    logger.error(f"Keep-alive error: {e}")
 
     def _reconnect(self) -> None:
         """Attempt to reconnect with exponential backoff."""
@@ -277,10 +279,17 @@ class BybitWebSocketManager:
 
         if self._ws:
             try:
+                # Close the WebSocket connection properly
+                # pybit's WebSocket has internal threads that need to be stopped
+                # Call exit() which stops the internal ping thread and closes the connection
                 self._ws.exit()
+                # Give the internal threads time to shut down gracefully
+                import time
+                time.sleep(0.5)
             except Exception as e:
                 logger.debug(f"Error closing WebSocket: {e}")
-            self._ws = None
+            finally:
+                self._ws = None
 
         with self._lock:
             self._state = ConnectionState.DISCONNECTED

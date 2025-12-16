@@ -144,6 +144,9 @@ class SharedWebSocketManager:
         if self._ws:
             try:
                 self._ws.exit()
+                # Give internal threads time to shut down gracefully
+                import time
+                time.sleep(0.5)
                 logger.info("Shared WebSocket disconnected")
             except Exception as e:
                 logger.error(f"Error disconnecting WebSocket: {e}")
