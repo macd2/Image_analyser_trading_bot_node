@@ -775,12 +775,15 @@ export async function POST() {
           if ((trade.status === 'pending_fill' || trade.status === 'paper_trade') && maxOpenBars > 0 && barsPending >= maxOpenBars) {
             // Cancel trade - been pending fill too long
             // NOTE: Never filled = never opened, so NO closed_at, exit_price, or PnL
+            const cancelTime = new Date().toISOString();
             await dbExecute(`
               UPDATE trades SET
                 exit_reason = 'max_bars_exceeded',
-                status = 'cancelled'
+                status = 'cancelled',
+                cancelled_at = ?
               WHERE id = ?
             `, [
+              cancelTime,
               trade.id
             ]);
 
@@ -1098,12 +1101,14 @@ export async function POST() {
             exit_price = ?,
             exit_reason = 'max_bars_exceeded',
             closed_at = ?,
+            cancelled_at = ?,
             pnl = ?,
             pnl_percent = ?,
             status = 'cancelled'
           WHERE id = ?
         `, [
           currentPrice,
+          cancelTime,
           cancelTime,
           Math.round(pnl * 100) / 100,
           Math.round(pnlPercent * 100) / 100,

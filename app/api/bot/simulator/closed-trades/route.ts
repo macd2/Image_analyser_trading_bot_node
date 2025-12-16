@@ -71,7 +71,7 @@ export async function GET() {
       WHERE t.status = 'closed'
         AND t.pnl IS NOT NULL
         AND t.exit_reason IN ('tp_hit', 'sl_hit')
-      ORDER BY t.closed_at DESC
+      ORDER BY t.created_at DESC
       LIMIT 50
     `);
 

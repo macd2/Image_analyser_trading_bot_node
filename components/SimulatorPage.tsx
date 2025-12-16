@@ -1297,7 +1297,7 @@ export function SimulatorPage() {
           ) : (
             <div className="space-y-3">
               {[...closedTrades]
-                .sort((a, b) => new Date(b.closed_at).getTime() - new Date(a.closed_at).getTime())
+                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                 .map(trade => {
                   const isWin = trade.pnl > 0
                   const isLong = trade.side === 'Buy'
@@ -1523,7 +1523,7 @@ export function SimulatorPage() {
           <CardContent>
             <div className="space-y-3">
               {[...cancelledTrades]
-                .sort((a, b) => new Date(b.closed_at).getTime() - new Date(a.closed_at).getTime())
+                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                 .map(trade => {
                   const isWin = trade.pnl > 0
                   const isLong = trade.side === 'Buy'
@@ -1642,14 +1642,23 @@ export function SimulatorPage() {
                           <span className="text-slate-300">{new Date(trade.created_at).toLocaleString()}</span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="text-orange-400">⏱️ Cancelled:</span>
-                          <span className={trade.closed_at ? "text-slate-300" : "text-orange-500 font-semibold"}>
-                            {trade.closed_at ? new Date(trade.closed_at).toLocaleString() : "--"}
+                          <span className="text-orange-500 font-semibold">⏱️ Cancelled:</span>
+                          <span className="text-orange-500 font-semibold">
+                            {trade.cancelled_at ? new Date(trade.cancelled_at).toLocaleString() : "--"}
                           </span>
-                          {!trade.closed_at && (
-                            <span className="text-orange-500 text-xs ml-1">(before fill)</span>
-                          )}
                         </div>
+                        {trade.bars_open !== undefined && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-slate-400">-</span>
+                            <span className="text-slate-300">{trade.bars_open} bars</span>
+                          </div>
+                        )}
+                        {!trade.closed_at && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-slate-400">-</span>
+                            <span className="text-orange-500 text-xs font-semibold">(before fill)</span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Row 3: Prices */}
