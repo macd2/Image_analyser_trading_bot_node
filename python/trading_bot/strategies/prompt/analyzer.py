@@ -243,7 +243,7 @@ class ChartAnalyzer:
                     return None # No candles returned
 
                 # Get server time for comparison
-                from .utils import get_bybit_server_time, parse_timeframe_to_minutes
+                from trading_bot.core.utils import get_bybit_server_time, parse_timeframe_to_minutes
                 server_time_ms = get_bybit_server_time(self.bybit_api_manager.session)
 
                 # If server time is not available, or only one candle is returned,
@@ -349,7 +349,7 @@ class ChartAnalyzer:
 
             with Image.open(io.BytesIO(image_data)) as img:
                 # For autotrader: use filename timestamp instead of image extraction to avoid timezone issues
-                from .utils import extract_timestamp_from_filename
+                from trading_bot.core.utils import extract_timestamp_from_filename
                 filename_timestamp = extract_timestamp_from_filename(image_path)
 
                 if filename_timestamp:
@@ -551,7 +551,7 @@ class ChartAnalyzer:
         if not self.skip_boundary_validation:
             # Validate file timestamp against current boundary
             from pathlib import Path
-            from .utils import extract_timeframe_from_filename, validate_file_timestamp_against_current_boundary
+            from trading_bot.core.utils import extract_timeframe_from_filename, validate_file_timestamp_against_current_boundary
 
             # Extract timeframe from filename if not provided
             if not target_timeframe:
@@ -666,7 +666,7 @@ class ChartAnalyzer:
 
             with Image.open(io.BytesIO(image_data)) as img:
                 # For autotrader: use filename timestamp instead of image extraction to avoid timezone issues
-                from .utils import extract_timestamp_from_filename
+                from trading_bot.core.utils import extract_timestamp_from_filename
                 filename_timestamp = extract_timestamp_from_filename(image_path)
 
                 if filename_timestamp:
@@ -835,7 +835,7 @@ class ChartAnalyzer:
             try:
                 # Use a more descriptive name for the volatility variable
                 # Extract base coin using utility function for consistent formatting
-                from .utils import extract_base_coin_for_historical_volatility
+                from trading_bot.core.utils import extract_base_coin_for_historical_volatility
                 base_coin = extract_base_coin_for_historical_volatility(symbol)
                 vol_data = self.bybit_api_manager.get_historical_volatility(baseCoin=base_coin)
                 if vol_data and vol_data.get("retCode") == 0 and vol_data.get("result", []):
