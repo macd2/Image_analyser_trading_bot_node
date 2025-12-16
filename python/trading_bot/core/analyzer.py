@@ -302,25 +302,41 @@ class ChartAnalyzer:
         if stored_analysis:
             print(f"         ♻️ Using cached analysis for {image_path}")
             # Parse analysis_data (raw_response) if it's a JSON string
+            # This contains the FULL analysis response from the assistant
             analysis_data = stored_analysis.get("analysis_data") or "{}"
             if isinstance(analysis_data, str):
                 try:
                     analysis_data = json.loads(analysis_data)
                 except json.JSONDecodeError:
                     analysis_data = {}
-            return {
-                "recommendation": stored_analysis.get("recommendation", "hold"),
-                "confidence": stored_analysis.get("confidence", 0.0),
-                "summary": stored_analysis.get("summary", ""),
-                "analysis": analysis_data if isinstance(analysis_data, dict) else {},
-                "entry_price": stored_analysis.get("entry_price"),
-                "stop_loss": stored_analysis.get("stop_loss"),
-                "take_profit": stored_analysis.get("take_profit"),
-                "risk_reward": stored_analysis.get("risk_reward"),
-                "skipped": False,  # NOT skipped - we have valid cached data to use
-                "cached": True,
-                "error": False
-            }
+
+            # Return the full analysis object in the same format as fresh analysis
+            # The raw_response contains all the fields from the assistant handler
+            if isinstance(analysis_data, dict):
+                # Merge database fields with the full analysis data
+                # Database fields take precedence for critical trading fields
+                result = analysis_data.copy()
+                result["entry_price"] = stored_analysis.get("entry_price")
+                result["stop_loss"] = stored_analysis.get("stop_loss")
+                result["take_profit"] = stored_analysis.get("take_profit")
+                result["risk_reward"] = stored_analysis.get("risk_reward")
+                result["cached"] = True
+                result["timestamp"] = stored_analysis.get("timestamp")
+                return result
+            else:
+                # Fallback if analysis_data is not a dict
+                return {
+                    "recommendation": stored_analysis.get("recommendation", "hold"),
+                    "confidence": stored_analysis.get("confidence", 0.0),
+                    "summary": stored_analysis.get("summary", ""),
+                    "analysis": {},
+                    "entry_price": stored_analysis.get("entry_price"),
+                    "stop_loss": stored_analysis.get("stop_loss"),
+                    "take_profit": stored_analysis.get("take_profit"),
+                    "risk_reward": stored_analysis.get("risk_reward"),
+                    "cached": True,
+                    "error": False
+                }
 
         try:
             from trading_bot.core.storage import read_file
@@ -603,25 +619,41 @@ class ChartAnalyzer:
         if stored_analysis:
             print(f"         ♻️ Using cached analysis for {image_path}")
             # Parse analysis_data (raw_response) if it's a JSON string
+            # This contains the FULL analysis response from the assistant
             analysis_data = stored_analysis.get("analysis_data") or "{}"
             if isinstance(analysis_data, str):
                 try:
                     analysis_data = json.loads(analysis_data)
                 except json.JSONDecodeError:
                     analysis_data = {}
-            return {
-                "recommendation": stored_analysis.get("recommendation", "hold"),
-                "confidence": stored_analysis.get("confidence", 0.0),
-                "summary": stored_analysis.get("summary", ""),
-                "analysis": analysis_data if isinstance(analysis_data, dict) else {},
-                "entry_price": stored_analysis.get("entry_price"),
-                "stop_loss": stored_analysis.get("stop_loss"),
-                "take_profit": stored_analysis.get("take_profit"),
-                "risk_reward": stored_analysis.get("risk_reward"),
-                "skipped": False,  # NOT skipped - we have valid cached data to use
-                "cached": True,
-                "error": False
-            }
+
+            # Return the full analysis object in the same format as fresh analysis
+            # The raw_response contains all the fields from the assistant handler
+            if isinstance(analysis_data, dict):
+                # Merge database fields with the full analysis data
+                # Database fields take precedence for critical trading fields
+                result = analysis_data.copy()
+                result["entry_price"] = stored_analysis.get("entry_price")
+                result["stop_loss"] = stored_analysis.get("stop_loss")
+                result["take_profit"] = stored_analysis.get("take_profit")
+                result["risk_reward"] = stored_analysis.get("risk_reward")
+                result["cached"] = True
+                result["timestamp"] = stored_analysis.get("timestamp")
+                return result
+            else:
+                # Fallback if analysis_data is not a dict
+                return {
+                    "recommendation": stored_analysis.get("recommendation", "hold"),
+                    "confidence": stored_analysis.get("confidence", 0.0),
+                    "summary": stored_analysis.get("summary", ""),
+                    "analysis": {},
+                    "entry_price": stored_analysis.get("entry_price"),
+                    "stop_loss": stored_analysis.get("stop_loss"),
+                    "take_profit": stored_analysis.get("take_profit"),
+                    "risk_reward": stored_analysis.get("risk_reward"),
+                    "cached": True,
+                    "error": False
+                }
 
         try:
             from trading_bot.core.storage import read_file
