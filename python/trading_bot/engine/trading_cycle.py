@@ -19,20 +19,15 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, Callable, List, Tuple
 
 from trading_bot.config.settings_v2 import Config
-from trading_bot.core.analyzer import ChartAnalyzer
-from trading_bot.core.sourcer import ChartSourcer
 from trading_bot.core.bybit_api_manager import BybitAPIManager
-from trading_bot.core.cleaner import ChartCleaner
 from trading_bot.core.error_logger import set_cycle_id, clear_cycle_id
 from trading_bot.core.utils import (  # type: ignore
     get_current_cycle_boundary,  # type: ignore
     seconds_until_next_boundary,  # type: ignore
-    normalize_symbol_for_bybit,
 )
-from trading_bot.core.prompts.prompt_registry import get_prompt_function
+from trading_bot.strategies.factory import StrategyFactory
 from trading_bot.db.client import get_connection, release_connection, execute, query
 from trading_bot.services.sl_adjuster import StopLossAdjuster
-from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +75,7 @@ class TradingCycle:
             execute_signal_callback: Callback to execute signals (from TradingEngine)
             testnet: Use testnet if True
             run_id: Parent run UUID for audit trail
-            prompt_name: Name of the prompt function to use for analysis
+            prompt_name: Name of the prompt function to use for analysis (deprecated - use database config)
             paper_trading: Whether in paper trading mode (for database-based position checks)
             instance_id: Instance ID for filtering database queries in paper trading mode
             heartbeat_callback: Callback to update heartbeat after each step
@@ -89,7 +84,7 @@ class TradingCycle:
         self.testnet = testnet
         self.execute_signal = execute_signal_callback
         self.run_id = run_id  # Track parent run for audit trail
-        self.prompt_name = prompt_name  # Instance-level prompt selection
+        self.prompt_name = prompt_name  # Instance-level prompt selection (deprecated)
         self.paper_trading = paper_trading
         self.instance_id = instance_id
         self.heartbeat_callback = heartbeat_callback  # Callback to update heartbeat
@@ -97,21 +92,12 @@ class TradingCycle:
         # API manager for market data
         self.api_manager = BybitAPIManager(self.config, use_testnet=testnet)  # type: ignore[arg-type]
 
-        # Initialize OpenAI client
-        self.openai_client = OpenAI(api_key=self.config.openai.api_key)
-
-        # Core components
-        self.sourcer = ChartSourcer(config=self.config)  # type: ignore[arg-type]
-        self.analyzer = ChartAnalyzer(
-            openai_client=self.openai_client,
+        # Initialize strategy using factory (loads strategy from database config)
+        self.strategy = StrategyFactory.create(
+            instance_id=instance_id or "default",
             config=self.config,
-            api_manager=self.api_manager,
-        )
-        self.cleaner = ChartCleaner(
-            enable_backup=True,
-            enable_age_based_cleaning=True,
-            max_file_age_hours=24,
-            enable_cycle_based_cleaning=True,
+            run_id=run_id,
+            heartbeat_callback=heartbeat_callback,
         )
 
         # SL Adjuster for pre-execution adjustments
@@ -121,12 +107,6 @@ class TradingCycle:
         self._running = False
         self._cycle_count = 0
         self._last_cycle_time: Optional[datetime] = None
-
-        # Resolve prompt function from prompt_name - REQUIRED, no defaults
-        if not self.prompt_name:
-            raise ValueError("prompt_name is required. Configure prompt in instance settings before starting bot.")
-        self._prompt_function = get_prompt_function(self.prompt_name)
-        logger.info(f"📝 Using prompt: {self.prompt_name}")
 
         # Symbols come from TradingView watchlist (captured at runtime)
         self.timeframe = self._load_timeframe()
@@ -319,46 +299,7 @@ class TradingCycle:
         status = "✅ Success" if len(results['errors']) == 0 else "⚠️ Completed with errors"
         logger.info(f"[CYCLE_SUMMARY]    └─ Status: {status}")
 
-    def _print_step_0_summary(self, cleaned_count: int, duration: float) -> None:
-        """Print summary for STEP 0: Chart Cleanup"""
-        boundary = get_current_cycle_boundary(self.timeframe)
-        boundary_end = boundary + timedelta(hours=int(self.timeframe.rstrip('h')))
 
-        logger.info(f"[STEP_0_SUMMARY] 🧹 STEP 0 COMPLETE: Chart Cleanup")
-        logger.info(f"[STEP_0_SUMMARY]    ├─ Timeframe: {self.timeframe}")
-        logger.info(f"[STEP_0_SUMMARY]    ├─ Boundary: {boundary.strftime('%Y-%m-%d %H:%M:%S')} UTC to {boundary_end.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-        logger.info(f"[STEP_0_SUMMARY]    ├─ Cleaned: {cleaned_count} outdated charts")
-        logger.info(f"[STEP_0_SUMMARY]    ├─ Duration: {duration:.1f}s")
-        logger.info(f"[STEP_0_SUMMARY]    └─ Status: ✅ Success")
-
-    def _print_step_1_summary(self, chart_count: int, chart_paths: Dict[str, str], duration: float) -> None:
-        """Print summary for STEP 1: Capture Charts"""
-        boundary = get_current_cycle_boundary(self.timeframe)
-        boundary_end = boundary + timedelta(hours=int(self.timeframe.rstrip('h')))
-        target_chart = self.config.tradingview.target_chart if self.config.tradingview else None
-
-        logger.info(f"[STEP_1_SUMMARY] 📷 STEP 1 COMPLETE: Capturing Charts")
-        logger.info(f"[STEP_1_SUMMARY]    ├─ Timeframe: {self.timeframe}")
-        logger.info(f"[STEP_1_SUMMARY]    ├─ Boundary: {boundary.strftime('%Y-%m-%d %H:%M:%S')} UTC to {boundary_end.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-        logger.info(f"[STEP_1_SUMMARY]    ├─ Charts captured: {chart_count}")
-        logger.info(f"[STEP_1_SUMMARY]    ├─ Target chart: {target_chart or 'None (using default)'}")
-        if chart_paths:
-            symbols_list = ', '.join(sorted(chart_paths.keys()))
-            logger.info(f"[STEP_1_SUMMARY]    ├─ Watchlist symbols: {symbols_list}")
-        logger.info(f"[STEP_1_SUMMARY]    ├─ Duration: {duration:.1f}s")
-        logger.info(f"[STEP_1_SUMMARY]    └─ Status: ✅ Success")
-
-    def _print_step_1_5_summary(self, total_symbols: int, symbols_needing_analysis: List[str], symbols_with_existing: List[str]) -> None:
-        """Print summary for STEP 1.5: Check Existing Recommendations"""
-        logger.info(f"[STEP_1.5_SUMMARY] 🔍 STEP 1.5 COMPLETE: Checking Existing Recommendations")
-        logger.info(f"[STEP_1.5_SUMMARY]    ├─ Total symbols: {total_symbols}")
-        logger.info(f"[STEP_1.5_SUMMARY]    ├─ Newly need analysis: {len(symbols_needing_analysis)}")
-        if symbols_needing_analysis:
-            logger.info(f"[STEP_1.5_SUMMARY]    │  ├─ {', '.join(symbols_needing_analysis[:10])}{'...' if len(symbols_needing_analysis) > 10 else ''}")
-        logger.info(f"[STEP_1.5_SUMMARY]    ├─ Already have recommendations: {len(symbols_with_existing)}")
-        if symbols_with_existing:
-            logger.info(f"[STEP_1.5_SUMMARY]    │  ├─ {', '.join(symbols_with_existing[:10])}{'...' if len(symbols_with_existing) > 10 else ''}")
-        logger.info(f"[STEP_1.5_SUMMARY]    └─ Status: ✅ Success")
 
     def _print_step_2_summary(self, analyzed_count: int, successful_count: int, failed_count: int, duration: float, analysis_results: List[Dict[str, Any]]) -> None:
         """Print summary for STEP 2: Parallel Analysis"""
@@ -495,220 +436,175 @@ class TradingCycle:
         self._record_cycle_start(cycle_id, cycle_start)
 
         try:
-            # STEP 0: Clean outdated charts
-            charts_dir = self.config.paths.charts if self.config.paths else "data/charts"
-            step_0_start = datetime.now(timezone.utc)
-            cleaned_count = 0
-            try:
-                # Pass timeframe filter to prevent multi-instance interference
-                # Only clean files matching this instance's timeframe
-                moved = self.cleaner.clean_outdated_files(
-                    charts_dir,
-                    dry_run=False,
-                    timeframe_filter=self.timeframe
-                )
-                cleaned_count = len(moved) if moved else 0
-            except Exception as e:
-                logger.warning(f"Chart cleanup failed (non-fatal): {e}")
+            # STEP 0-2: Run strategy analysis cycle (handles chart capture, cleaning, and analysis)
+            logger.info(f"\n🤖 STEP 0-2: Running strategy analysis cycle...")
+            analysis_start = datetime.now(timezone.utc)
 
-            step_0_duration = (datetime.now(timezone.utc) - step_0_start).total_seconds()
-            self._print_step_0_summary(cleaned_count, step_0_duration)
+            # Get all symbols from watchlist (strategy will capture charts for these)
+            # For now, we get symbols from config - strategy will handle chart capture
+            try:
+                # Run strategy analysis cycle (handles steps 0-2 internally)
+                newly_analyzed = await self.strategy.run_analysis_cycle(
+                    symbols=[],  # Strategy uses watchlist symbols internally
+                    timeframe=self.timeframe,
+                    cycle_id=cycle_id,
+                )
+
+                # Extract chart_paths from results for logging purposes
+                chart_paths = {r.get("symbol"): r.get("chart_path") for r in newly_analyzed if r.get("chart_path")}
+
+            except Exception as e:
+                logger.error(f"Strategy analysis cycle failed: {e}", extra={
+                    'event': 'strategy_cycle_failed',
+                    'cycle_id': cycle_id,
+                }, exc_info=True)
+                results["errors"].append({"error": f"Strategy analysis failed: {str(e)}"})
+                return results
+
+            analysis_duration = (datetime.now(timezone.utc) - analysis_start).total_seconds()
+
+            # Count successful and failed analyses
+            successful_analyses = [a for a in newly_analyzed if not a.get("error")]
+            failed_analyses = [a for a in newly_analyzed if a.get("error")]
+            self._print_step_2_summary(len(newly_analyzed), len(successful_analyses), len(failed_analyses), analysis_duration, successful_analyses)
             if self.heartbeat_callback:
                 self.heartbeat_callback()
 
-            # STEP 1: Capture all charts from watchlist
-            target_chart = self.config.tradingview.target_chart if self.config.tradingview else None
-            logger.info(f"\n📷 STEP 1: Capturing charts via watchlist...")
-            logger.info(f"   Target chart: {target_chart or 'None (using default)'}")
-            logger.info(f"   Timeframe: {self.timeframe}")
+            # STEP 3: Collect all recommendations (both newly analyzed and existing)
+            logger.info(f"\n📊 STEP 3: Collecting recommendations...")
+            actionable_signals: List[Dict[str, Any]] = []
 
-            step_1_start = datetime.now(timezone.utc)
+            # Get symbols that were analyzed
+            analyzed_symbols = [r.get("symbol") for r in newly_analyzed if r.get("symbol")]
 
-            if not await self.sourcer.setup_browser_session():
-                logger.error("Failed to setup browser session", extra={
-                    'event': 'browser_setup_failed',
-                    'cycle_id': cycle_id,
-                })
-                results["errors"].append({"error": "Browser setup failed"})
-                return results
+            # Check for existing recommendations for symbols not analyzed
+            existing_recs_map = self._get_existing_recommendations_for_boundary(analyzed_symbols)
+            symbols_with_existing_recs = [s for s in analyzed_symbols if existing_recs_map.get(s)]
 
-            try:
-                chart_paths = await self.sourcer.capture_all_watchlist_screenshots(
-                    target_chart=target_chart,
-                    timeframe=self.timeframe,
-                )
+            # Combine newly analyzed results with existing recommendations
+            all_analyses = newly_analyzed if newly_analyzed else []
 
-                if not chart_paths:
-                    logger.warning("No charts captured from watchlist")
-                    results["errors"].append({"error": "No charts captured"})
-                    return results
+            # Process newly analyzed results
+            for analysis_result in all_analyses:
+                if analysis_result.get("error"):
+                    results["errors"].append({
+                        "symbol": analysis_result.get("symbol"),
+                        "error": analysis_result.get("error")
+                    })
+                    continue
 
-                step_1_duration = (datetime.now(timezone.utc) - step_1_start).total_seconds()
-                self._print_step_1_summary(len(chart_paths), chart_paths, step_1_duration)
-                if self.heartbeat_callback:
-                    self.heartbeat_callback()
+                if analysis_result.get("recommendation"):
+                    # Record recommendation to database
+                    rec_id = self._record_recommendation(analysis_result, analysis_result.get("analysis", {}))
+                    if rec_id:
+                        analysis_result["recommendation_id"] = rec_id
 
-                # STEP 1.5: Check for existing recommendations for current boundary (instance-aware)
-                logger.info(f"\n🔍 STEP 1.5: Checking for existing recommendations for current boundary...")
-                instance_label = f" (instance: {self.instance_id})" if self.instance_id else ""
-                logger.info(f"   Instance{instance_label}")
+                    results["recommendations"].append(analysis_result)
 
-                symbols_to_analyze = list(chart_paths.keys())
-                existing_recs_map = self._get_existing_recommendations_for_boundary(symbols_to_analyze)
+                    # Collect actionable signals (BUY/SELL/LONG/SHORT)
+                    rec = analysis_result.get("recommendation", "").upper()
+                    if rec in ("BUY", "SELL", "LONG", "SHORT"):
+                        actionable_signals.append(analysis_result)
 
-                # Filter out symbols that already have recommendations
-                symbols_needing_analysis = [s for s in symbols_to_analyze if not existing_recs_map.get(s)]
-                symbols_with_existing_recs = [s for s in symbols_to_analyze if existing_recs_map.get(s)]
+            # Add existing recommendations to results (so they're available for processing)
+            for symbol in symbols_with_existing_recs:
+                rec_data = existing_recs_map[symbol]
+                if rec_data:
+                    # Parse raw_response to extract market_data_snapshot and other analysis data
+                    market_data_snapshot = {}
+                    analysis_data = {}
+                    raw_response_str = rec_data.get("raw_response", "{}")
 
-                self._print_step_1_5_summary(len(symbols_to_analyze), symbols_needing_analysis, symbols_with_existing_recs)
+                    if raw_response_str:
+                        try:
+                            if isinstance(raw_response_str, str):
+                                analysis_data = json.loads(raw_response_str)
+                            else:
+                                analysis_data = raw_response_str
 
-                # STEP 2: Analyze only symbols needing new recommendations
-                logger.info(f"\n🤖 STEP 2: Analyzing {len(symbols_needing_analysis)} charts in PARALLEL...")
-                analysis_start = datetime.now(timezone.utc)
+                            # Extract market_data_snapshot from the parsed JSON
+                            market_data_snapshot = analysis_data.get("market_data_snapshot", {})
+                        except (json.JSONDecodeError, TypeError) as e:
+                            logger.warning(f"Could not parse raw_response for {symbol}: {e}")
+                            market_data_snapshot = {}
 
-                # Filter chart_paths to only include symbols needing analysis
-                filtered_chart_paths = {s: chart_paths[s] for s in symbols_needing_analysis}
+                    # Convert database record to analysis result format
+                    rec_result = {
+                        "symbol": symbol,
+                        "recommendation": rec_data.get("recommendation", "HOLD"),
+                        "confidence": rec_data.get("confidence", 0),
+                        "entry_price": rec_data.get("entry_price"),
+                        "stop_loss": rec_data.get("stop_loss"),
+                        "take_profit": rec_data.get("take_profit"),
+                        "risk_reward": rec_data.get("risk_reward"),
+                        "reasoning": rec_data.get("reasoning", ""),
+                        "chart_path": rec_data.get("chart_path"),
+                        "timeframe": rec_data.get("timeframe"),
+                        "cycle_id": cycle_id,
+                        "recommendation_id": rec_data.get("id"),  # Already has ID from DB
+                        "from_existing": True,  # Mark as existing recommendation
+                        "market_data_snapshot": market_data_snapshot,  # Include for price sanity check
+                        "raw_response": analysis_data,  # Include full analysis data
+                    }
+                    results["recommendations"].append(rec_result)
 
-                if filtered_chart_paths:
-                    newly_analyzed = await self._analyze_all_charts_parallel(filtered_chart_paths, cycle_id)
-                else:
-                    newly_analyzed = []
+                    # Collect actionable signals from existing recs too
+                    rec = rec_data.get("recommendation", "HOLD").upper()
+                    if rec in ("BUY", "SELL", "LONG", "SHORT"):
+                        actionable_signals.append(rec_result)
 
-                analysis_duration = (datetime.now(timezone.utc) - analysis_start).total_seconds()
+            # symbols_analyzed = ALL symbols with recommendations for current boundary
+            # (both newly analyzed + existing from previous analysis in same boundary)
+            # This is instance-specific - each instance tracks its own boundary analysis
+            results["symbols_analyzed"] = len(analyzed_symbols)
 
-                # Count successful and failed analyses
-                successful_analyses = [a for a in newly_analyzed if not a.get("error")]
-                failed_analyses = [a for a in newly_analyzed if a.get("error")]
-                self._print_step_2_summary(len(newly_analyzed), len(successful_analyses), len(failed_analyses), analysis_duration, successful_analyses)
-                if self.heartbeat_callback:
-                    self.heartbeat_callback()
+            results["actionable_signals"] = actionable_signals
 
-                # STEP 3: Collect all recommendations (both newly analyzed and existing)
-                logger.info(f"\n📊 STEP 3: Collecting recommendations...")
-                actionable_signals: List[Dict[str, Any]] = []
+            # Count recommendations by type
+            buy_recs = [r for r in results["recommendations"] if r.get("recommendation", "").upper() == "BUY"]
+            sell_recs = [r for r in results["recommendations"] if r.get("recommendation", "").upper() == "SELL"]
+            hold_recs = [r for r in results["recommendations"] if r.get("recommendation", "").upper() == "HOLD"]
 
-                # Combine newly analyzed results with existing recommendations
-                all_analyses = newly_analyzed if newly_analyzed else []
+            self._print_step_3_summary(len(results["recommendations"]), len(actionable_signals), len(buy_recs), len(sell_recs), len(hold_recs))
+            if self.heartbeat_callback:
+                self.heartbeat_callback()
 
-                # Process newly analyzed results
-                for analysis_result in all_analyses:
-                    if analysis_result.get("error"):
-                        results["errors"].append({
-                            "symbol": analysis_result.get("symbol"),
-                            "error": analysis_result.get("error")
-                        })
-                        continue
+            # STEP 4: Rank signals by quality
+            logger.info(f"\n🏆 STEP 4: Ranking {len(actionable_signals)} signals by quality...")
+            ranked_signals = self._rank_signals_by_quality(actionable_signals)
+            results["ranked_signals"] = ranked_signals
 
-                    if analysis_result.get("recommendation"):
-                        results["recommendations"].append(analysis_result)
+            self._print_step_4_summary(ranked_signals)
+            if self.heartbeat_callback:
+                self.heartbeat_callback()
 
-                        # Collect actionable signals (BUY/SELL/LONG/SHORT)
-                        rec = analysis_result.get("recommendation", "").upper()
-                        if rec in ("BUY", "SELL", "LONG", "SHORT"):
-                            actionable_signals.append(analysis_result)
+            # STEP 5: Check available slots
+            logger.info(f"\n📦 STEP 5: Checking available slots...")
+            available_slots = self._get_available_slots()
+            max_trades = self.config.trading.max_concurrent_trades if self.config and self.config.trading else 0
+            self._print_step_5_summary(available_slots, max_trades)
+            if self.heartbeat_callback:
+                self.heartbeat_callback()
 
-                # Add existing recommendations to results (so they're available for processing)
-                for symbol in symbols_with_existing_recs:
-                    rec_data = existing_recs_map[symbol]
-                    if rec_data:
-                        # Parse raw_response to extract market_data_snapshot and other analysis data
-                        market_data_snapshot = {}
-                        analysis_data = {}
-                        raw_response_str = rec_data.get("raw_response", "{}")
+            # STEP 6: Select best signals for available slots
+            logger.info(f"\n🎯 STEP 6: Selecting best {available_slots} signal(s)...")
+            selected_signals = ranked_signals[:available_slots] if available_slots > 0 else []
+            results["selected_signals"] = selected_signals
 
-                        if raw_response_str:
-                            try:
-                                if isinstance(raw_response_str, str):
-                                    analysis_data = json.loads(raw_response_str)
-                                else:
-                                    analysis_data = raw_response_str
+            self._print_step_6_summary(selected_signals, available_slots)
+            if self.heartbeat_callback:
+                self.heartbeat_callback()
 
-                                # Extract market_data_snapshot from the parsed JSON
-                                market_data_snapshot = analysis_data.get("market_data_snapshot", {})
-                            except (json.JSONDecodeError, TypeError) as e:
-                                logger.warning(f"Could not parse raw_response for {symbol}: {e}")
-                                market_data_snapshot = {}
+            # STEP 7: Execute selected signals
+            logger.info(f"\n🚀 STEP 7: Executing {len(selected_signals)} selected signal(s)...")
+            for signal in selected_signals:
+                trade_result = await self._execute_selected_signal(signal, cycle_id)
+                if trade_result:
+                    results["trades_executed"].append(trade_result)
 
-                        # Convert database record to analysis result format
-                        rec_result = {
-                            "symbol": symbol,
-                            "recommendation": rec_data.get("recommendation", "HOLD"),
-                            "confidence": rec_data.get("confidence", 0),
-                            "entry_price": rec_data.get("entry_price"),
-                            "stop_loss": rec_data.get("stop_loss"),
-                            "take_profit": rec_data.get("take_profit"),
-                            "risk_reward": rec_data.get("risk_reward"),
-                            "reasoning": rec_data.get("reasoning", ""),
-                            "chart_path": rec_data.get("chart_path"),
-                            "timeframe": rec_data.get("timeframe"),
-                            "cycle_id": cycle_id,
-                            "recommendation_id": rec_data.get("id"),  # Already has ID from DB
-                            "from_existing": True,  # Mark as existing recommendation
-                            "market_data_snapshot": market_data_snapshot,  # Include for price sanity check
-                            "raw_response": analysis_data,  # Include full analysis data
-                        }
-                        results["recommendations"].append(rec_result)
-
-                        # Collect actionable signals from existing recs too
-                        rec = rec_data.get("recommendation", "HOLD").upper()
-                        if rec in ("BUY", "SELL", "LONG", "SHORT"):
-                            actionable_signals.append(rec_result)
-
-                # symbols_analyzed = ALL symbols with recommendations for current boundary
-                # (both newly analyzed + existing from previous analysis in same boundary)
-                # This is instance-specific - each instance tracks its own boundary analysis
-                results["symbols_analyzed"] = len(symbols_to_analyze)
-
-                results["actionable_signals"] = actionable_signals
-
-                # Count recommendations by type
-                buy_recs = [r for r in results["recommendations"] if r.get("recommendation", "").upper() == "BUY"]
-                sell_recs = [r for r in results["recommendations"] if r.get("recommendation", "").upper() == "SELL"]
-                hold_recs = [r for r in results["recommendations"] if r.get("recommendation", "").upper() == "HOLD"]
-
-                self._print_step_3_summary(len(results["recommendations"]), len(actionable_signals), len(buy_recs), len(sell_recs), len(hold_recs))
-                if self.heartbeat_callback:
-                    self.heartbeat_callback()
-
-                # STEP 4: Rank signals by quality
-                logger.info(f"\n🏆 STEP 4: Ranking {len(actionable_signals)} signals by quality...")
-                ranked_signals = self._rank_signals_by_quality(actionable_signals)
-                results["ranked_signals"] = ranked_signals
-
-                self._print_step_4_summary(ranked_signals)
-                if self.heartbeat_callback:
-                    self.heartbeat_callback()
-
-                # STEP 5: Check available slots
-                logger.info(f"\n📦 STEP 5: Checking available slots...")
-                available_slots = self._get_available_slots()
-                max_trades = self.config.trading.max_concurrent_trades if self.config and self.config.trading else 0
-                self._print_step_5_summary(available_slots, max_trades)
-                if self.heartbeat_callback:
-                    self.heartbeat_callback()
-
-                # STEP 6: Select best signals for available slots
-                logger.info(f"\n🎯 STEP 6: Selecting best {available_slots} signal(s)...")
-                selected_signals = ranked_signals[:available_slots] if available_slots > 0 else []
-                results["selected_signals"] = selected_signals
-
-                self._print_step_6_summary(selected_signals, available_slots)
-                if self.heartbeat_callback:
-                    self.heartbeat_callback()
-
-                # STEP 7: Execute selected signals
-                logger.info(f"\n🚀 STEP 7: Executing {len(selected_signals)} selected signal(s)...")
-                for signal in selected_signals:
-                    trade_result = await self._execute_selected_signal(signal, cycle_id)
-                    if trade_result:
-                        results["trades_executed"].append(trade_result)
-
-                self._print_step_7_summary(results["trades_executed"], len(selected_signals))
-                if self.heartbeat_callback:
-                    self.heartbeat_callback()
-
-            finally:
-                await self.sourcer.cleanup_browser_session()
+            self._print_step_7_summary(results["trades_executed"], len(selected_signals))
+            if self.heartbeat_callback:
+                self.heartbeat_callback()
 
         except Exception as e:
             logger.error(f"Cycle error: {e}", extra={
@@ -729,100 +625,7 @@ class TradingCycle:
 
         return results
 
-    async def _analyze_all_charts_parallel(
-        self, chart_paths: Dict[str, str], cycle_id: str
-    ) -> List[Dict[str, Any]]:
-        """
-        Analyze ALL charts in PARALLEL using asyncio.gather().
 
-        This is the key optimization - instead of sequential processing,
-        we launch all AI analyses concurrently and wait for all to complete.
-
-        Args:
-            chart_paths: Dict of {symbol: chart_path}
-            cycle_id: Current cycle ID
-
-        Returns:
-            List of analysis results (one per symbol)
-        """
-        async def analyze_single(symbol: str, chart_path: str) -> Dict[str, Any]:
-            """Wrapper to analyze a single chart with error handling."""
-            try:
-                return await self._analyze_chart_async(symbol, chart_path, cycle_id)
-            except Exception as e:
-                logger.error(f"Error analyzing {symbol}: {e}", exc_info=True)
-                return {
-                    "symbol": symbol,
-                    "error": str(e),
-                    "chart_path": chart_path,
-                }
-
-        # Create tasks for all charts
-        tasks = [
-            analyze_single(symbol, chart_path)
-            for symbol, chart_path in chart_paths.items()
-        ]
-
-        # Run ALL analyses in parallel
-        results = await asyncio.gather(*tasks, return_exceptions=False)
-        return list(results)
-
-    async def _analyze_chart_async(
-        self, symbol: str, chart_path: str, cycle_id: str
-    ) -> Dict[str, Any]:
-        """
-        Async wrapper for chart analysis.
-
-        Runs the synchronous analyzer in executor to not block the event loop.
-        """
-        normalized_symbol = normalize_symbol_for_bybit(symbol)
-
-        result: Dict[str, Any] = {
-            "symbol": normalized_symbol,
-            "timeframe": self.timeframe,
-            "cycle_id": cycle_id,
-            "chart_path": chart_path,
-        }
-
-        # Run sync analyzer in thread pool to not block
-        loop = asyncio.get_event_loop()
-        analysis = await loop.run_in_executor(
-            None,
-            lambda: self.analyzer.analyze_chart(
-                image_path=chart_path,
-                use_assistant=True,
-                target_timeframe=self.timeframe,
-                prompt_function=self._prompt_function,
-            )
-        )
-
-        if not analysis or analysis.get("error") or analysis.get("skipped"):
-            skip_reason = analysis.get("skip_reason", "unknown") if analysis else "analysis_failed"
-            result["skipped"] = True
-            result["skip_reason"] = skip_reason
-            return result
-
-        # Extract key fields
-        recommendation = analysis.get("recommendation", "hold").upper()
-        confidence = float(analysis.get("confidence", 0))
-
-        result["recommendation"] = recommendation
-        result["confidence"] = confidence
-        result["analysis"] = analysis
-        result["risk_reward"] = float(analysis.get("risk_reward_ratio", analysis.get("risk_reward", 0)) or 0)
-        result["setup_quality"] = float(analysis.get("setup_quality", 0.5) or 0.5)
-        result["market_environment"] = float(analysis.get("market_environment", 0.5) or 0.5)
-        result["entry_price"] = analysis.get("entry_price")
-        result["stop_loss"] = analysis.get("stop_loss")
-        result["take_profit"] = analysis.get("take_profit")
-
-        # Record recommendation to DB
-        rec_id = self._record_recommendation(result, analysis)
-        result["recommendation_id"] = rec_id
-
-        logger.info(f"   📊 {normalized_symbol}: {recommendation} (conf: {confidence:.2%}, RR: {result['risk_reward']:.2f})")
-
-        return result
 
     def _rank_signals_by_quality(self, signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -949,153 +752,6 @@ class TradingCycle:
             logger.info(f"   ✅ {symbol} submitted: {trade_result.get('id')}")
 
         return trade_result
-
-    async def _process_captured_chart(self, symbol: str, chart_path: str, cycle_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Process an already-captured chart: analyze and generate signal.
-
-        Args:
-            symbol: Trading symbol from watchlist
-            chart_path: Path to captured chart image
-            cycle_id: Current cycle ID
-
-        Returns:
-            Processing result with recommendation and trade info
-        """
-        normalized_symbol = normalize_symbol_for_bybit(symbol)
-        logger.info(f"\n📈 Analyzing {normalized_symbol} ({self.timeframe})")
-
-        result: Dict[str, Any] = {
-            "symbol": normalized_symbol,
-            "timeframe": self.timeframe,
-            "cycle_id": cycle_id,
-            "chart_path": chart_path,
-        }
-
-        # Analyze chart with AI
-        logger.info(f"   🤖 Analyzing with AI...")
-        analysis = self.analyzer.analyze_chart(
-            image_path=chart_path,
-            use_assistant=True,
-            target_timeframe=self.timeframe,
-            prompt_function=self._prompt_function,
-        )
-
-        if not analysis or analysis.get("error") or analysis.get("skipped"):
-            skip_reason = analysis.get("skip_reason", "unknown") if analysis else "analysis_failed"
-            logger.info(f"   ⏭️ Skipped: {skip_reason}")
-            result["skipped"] = True
-            result["skip_reason"] = skip_reason
-            return result
-
-        # Extract recommendation
-        recommendation = analysis.get("recommendation", "hold").upper()
-        confidence = float(analysis.get("confidence", 0))
-
-        logger.info(f"   📊 Analysis: {recommendation} (confidence: {confidence:.2%})")
-
-        result["recommendation"] = recommendation
-        result["confidence"] = confidence
-        result["analysis"] = analysis
-
-        # Record recommendation - CRITICAL: Must succeed before trade execution
-        # Retry up to 3 times to ensure data integrity
-        rec_id = None
-        max_retries = 3
-        for attempt in range(max_retries):
-            rec_id = self._record_recommendation(result, analysis)
-            if rec_id is not None:
-                break
-            if attempt < max_retries - 1:
-                logger.warning(f"   ⚠️ Recommendation recording failed (attempt {attempt + 1}/{max_retries}), retrying...")
-                import time
-                time.sleep(0.5)  # Brief delay before retry
-
-        if rec_id is None:
-            logger.error(f"   ❌ CRITICAL: Failed to record recommendation after {max_retries} attempts - cannot proceed with trade")
-            result["skipped"] = True
-            result["skip_reason"] = "recommendation_recording_failed"
-            return result
-
-        result["recommendation_id"] = rec_id
-
-        # Check if actionable signal
-        if recommendation in ("BUY", "SELL", "LONG", "SHORT"):
-            # Apply SL adjustment if configured
-            result_for_adjustment = result.copy()
-            result_for_adjustment['recommendation_id'] = rec_id
-            result_for_adjustment['symbol'] = normalized_symbol
-
-            # Get instance settings for adjustment config
-            # Load both settings JSON and config defaults
-            instance_settings = {}
-            if self.instance_id:
-                conn = None
-                try:
-                    conn = get_connection()
-                    # Get settings JSON from instances table
-                    instances = query(conn, "SELECT settings FROM instances WHERE id = ?", [self.instance_id])
-                    if instances:
-                        import json
-                        settings_json = instances[0][0]
-                        instance_settings = json.loads(settings_json) if isinstance(settings_json, str) else settings_json or {}
-
-                    # Also load config defaults from config table
-                    config_rows = query(conn, """
-                        SELECT key, value FROM config
-                        WHERE instance_id = ? AND key LIKE 'trading.sl_adjustment%'
-                    """, [self.instance_id])
-
-                    for row in config_rows:
-                        key, value = row[0], row[1]
-                        # Convert string values to appropriate types
-                        if value.lower() in ('true', 'false'):
-                            instance_settings[key] = value.lower() == 'true'
-                        else:
-                            try:
-                                instance_settings[key] = float(value)
-                            except (ValueError, TypeError):
-                                instance_settings[key] = value
-                except Exception as e:
-                    logger.warning(f"Failed to load instance settings for SL adjustment: {e}")
-                finally:
-                    if conn:
-                        release_connection(conn)
-
-            # Apply adjustment
-            adjusted_result, adjustment_record = self.sl_adjuster.adjust_recommendation(
-                result_for_adjustment,
-                instance_settings
-            )
-
-            # Update analysis with adjusted SL if adjustment was applied
-            if adjustment_record:
-                analysis['stop_loss'] = adjusted_result['stop_loss']
-                result['adjustment_applied'] = True
-                result['adjustment_id'] = adjustment_record['id']
-
-            # Build signal for trading engine
-            signal = self._build_signal(analysis, recommendation, confidence)
-
-            if signal and self.execute_signal:
-                logger.info(f"   🚀 Executing signal: {recommendation}")
-                trade_result = self.execute_signal(
-                    symbol=normalized_symbol,
-                    signal=signal,
-                    recommendation_id=rec_id,
-                    cycle_id=cycle_id,  # Pass cycle_id for audit trail
-                )
-                result["trade_executed"] = True
-                result["trade_result"] = trade_result
-
-                if trade_result.get("status") == "rejected":
-                    logger.info(f"   ❌ Trade rejected: {trade_result.get('error')}")
-                else:
-                    logger.info(f"   ✅ Trade submitted: {trade_result.get('id')}")
-        else:
-            logger.info(f"   ⏸️ Hold signal - no trade action")
-
-        return result
 
     def _build_signal(self, analysis: Dict[str, Any], recommendation: str, confidence: float) -> Optional[Dict[str, Any]]:
         """Build trading signal from analysis with price sanity check."""

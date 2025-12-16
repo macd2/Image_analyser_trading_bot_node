@@ -75,9 +75,15 @@ class StrategyFactory:
             
             if not instance:
                 raise ValueError(f"Instance not found: {instance_id}")
-            
-            settings = json.loads(instance.get('settings', '{}'))
-            strategy_name = settings.get('strategy', 'prompt')  # Default to prompt
+
+            # Handle both string (SQLite) and dict (PostgreSQL JSONB) formats
+            settings_raw = instance.get('settings', '{}')
+            if isinstance(settings_raw, str):
+                settings = json.loads(settings_raw)
+            else:
+                settings = settings_raw if isinstance(settings_raw, dict) else {}
+
+            strategy_name = settings.get('strategy', 'AiImageAnalyzer')  # Default to AiImageAnalyzer
             strategy_config = settings.get('strategy_config', {})
             
         finally:
