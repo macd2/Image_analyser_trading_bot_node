@@ -587,6 +587,7 @@ class TradingEngine:
             "strategy_type": signal.get("strategy_type"),
             "strategy_name": signal.get("strategy_name"),
             "ranking_context": signal.get("ranking_context"),
+            "strategy_metadata": signal.get("strategy_metadata"),  # For exit logic and monitoring
             "wallet_balance_at_trade": wallet.get("available"),
             "kelly_metrics": sizing.get("kelly_metrics"),  # From position sizer
         }
@@ -638,6 +639,7 @@ class TradingEngine:
             strategy_type = trade.get("strategy_type")
             strategy_name = trade.get("strategy_name")
             ranking_context = trade.get("ranking_context")  # JSON string
+            strategy_metadata = trade.get("strategy_metadata")  # JSON dict for exit logic
             wallet_balance_at_trade = trade.get("wallet_balance_at_trade")
             kelly_metrics = trade.get("kelly_metrics")  # JSON string
 
@@ -676,16 +678,22 @@ class TradingEngine:
                 "order_id": trade.get("order_id"),
             })
 
+            # Convert strategy_metadata dict to JSON string if present
+            strategy_metadata_json = None
+            if strategy_metadata:
+                import json
+                strategy_metadata_json = json.dumps(strategy_metadata)
+
             execute(self._db, """
                 INSERT INTO trades
                 (id, recommendation_id, run_id, cycle_id, symbol, side, entry_price, take_profit,
                  stop_loss, quantity, status, order_id, confidence, rr_ratio, timeframe, dry_run, created_at,
                  position_size_usd, risk_amount_usd, risk_percentage, confidence_weight, risk_per_unit, sizing_method, risk_pct_used,
-                 strategy_uuid, strategy_type, strategy_name, ranking_context, wallet_balance_at_trade, kelly_metrics,
+                 strategy_uuid, strategy_type, strategy_name, ranking_context, strategy_metadata, wallet_balance_at_trade, kelly_metrics,
                  position_sizing_inputs, position_sizing_outputs, order_parameters, execution_timestamp)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?)
             """, (
                 trade["id"],
@@ -718,6 +726,7 @@ class TradingEngine:
                 strategy_type,
                 strategy_name,
                 ranking_context,
+                strategy_metadata_json,
                 wallet_balance_at_trade,
                 kelly_metrics,
                 # Reproducibility data
