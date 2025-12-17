@@ -5,7 +5,7 @@
 
 -- Tournaments: Each tournament run to find the best prompt
 CREATE TABLE IF NOT EXISTS tournaments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending', -- pending, running, completed, failed, cancelled
     
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS tournaments (
 
 -- Tournament Phases: Each elimination round
 CREATE TABLE IF NOT EXISTS tournament_phases (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
     phase_number INTEGER NOT NULL,           -- 1, 2, 3, ...
     status TEXT NOT NULL DEFAULT 'pending',  -- pending, running, completed
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS tournament_phases (
 
 -- Tournament Prompts: Track each prompt's journey through tournament
 CREATE TABLE IF NOT EXISTS tournament_prompts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
     prompt_name TEXT NOT NULL,
     
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS tournament_prompts (
 
 -- Phase Results: Per-prompt performance in each phase
 CREATE TABLE IF NOT EXISTS phase_results (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     phase_id INTEGER NOT NULL REFERENCES tournament_phases(id) ON DELETE CASCADE,
     tournament_prompt_id INTEGER NOT NULL REFERENCES tournament_prompts(id) ON DELETE CASCADE,
     
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS phase_results (
 
 -- Phase Images: Which images were used (for reproducibility)
 CREATE TABLE IF NOT EXISTS phase_images (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     phase_id INTEGER NOT NULL REFERENCES tournament_phases(id) ON DELETE CASCADE,
     image_path TEXT NOT NULL,
     symbol TEXT NOT NULL,

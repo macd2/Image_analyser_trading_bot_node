@@ -3,7 +3,7 @@
 -- settings: JSON object containing all settings for that instance
 
 CREATE TABLE IF NOT EXISTS settings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     instance_id TEXT NOT NULL UNIQUE,
     settings TEXT NOT NULL DEFAULT '{}',  -- JSON stored as TEXT (SQLite doesn't have native JSONB)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
