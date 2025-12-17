@@ -3,6 +3,9 @@ FROM node:20-slim AS base
 
 # Install Python 3.12 and dependencies for native modules + PostgreSQL client + Playwright/Chromium dependencies + VNC
 RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y \
     python3.12 \
     python3.12-venv \
     python3-pip \
