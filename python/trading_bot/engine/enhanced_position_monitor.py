@@ -379,6 +379,71 @@ class EnhancedPositionMonitor:
         if self.age_tightening_config.enabled:
             self._check_age_tightening(position, state, instance_id, run_id, trade_id)
 
+    def check_strategy_exit(
+        self,
+        trade: Dict[str, Any],
+        current_candle: Dict[str, Any],
+        pair_candle: Optional[Dict[str, Any]] = None,
+        strategy: Optional[Any] = None,
+        instance_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+        trade_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Check if position should exit using strategy.should_exit().
+
+        This method is called by real-time monitoring to check if a position
+        should be closed based on strategy-specific exit conditions.
+
+        Args:
+            trade: Trade record with entry_price, stop_loss, take_profit, strategy_metadata
+            current_candle: Current candle {timestamp, open, high, low, close}
+            pair_candle: Pair candle for spread-based strategies (optional)
+            strategy: Strategy instance with should_exit() method
+            instance_id: Instance ID for logging
+            run_id: Run ID for logging
+            trade_id: Trade ID for logging
+
+        Returns:
+            Dict with exit details if should exit, None otherwise
+        """
+        if not strategy:
+            return None
+
+        try:
+            # Call strategy.should_exit()
+            exit_result = strategy.should_exit(
+                trade=trade,
+                current_candle=current_candle,
+                pair_candle=pair_candle,
+            )
+
+            # Check if should exit
+            if exit_result.get("should_exit"):
+                exit_details = exit_result.get("exit_details", {})
+                reason = exit_details.get("reason", "strategy_exit")
+
+                # Log the exit decision
+                if instance_id and run_id and trade_id:
+                    self._log_position_action(
+                        instance_id, run_id, trade_id, trade.get("symbol", "unknown"),
+                        "strategy_exit_triggered",
+                        f"Strategy exit: {reason} - Details: {exit_details}"
+                    )
+
+                return {
+                    "should_exit": True,
+                    "exit_price": current_candle.get("close"),
+                    "exit_reason": reason,
+                    "exit_details": exit_details,
+                }
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error checking strategy exit: {e}")
+            return None
+
     def _check_rr_tightening(
         self,
         position: PositionState,
