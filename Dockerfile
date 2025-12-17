@@ -1,14 +1,16 @@
-# Multi-runtime: Node.js + Python
-FROM node:20-slim AS base
+# Multi-runtime: Node.js + Python 3.12
+# Start with Python 3.12 slim image, then add Node.js
+FROM python:3.12-slim AS base
 
-# Install Python 3.12 and dependencies for native modules + PostgreSQL client + Playwright/Chromium dependencies + VNC
+# Install Node.js 20
 RUN apt-get update && apt-get install -y \
-    software-properties-common \
-    && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update && apt-get install -y \
-    python3.12 \
-    python3.12-venv \
-    python3-pip \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install remaining dependencies for native modules + PostgreSQL client + Playwright/Chromium dependencies + VNC
+RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
     # Playwright/Chromium system dependencies
@@ -47,9 +49,7 @@ RUN apt-get update && apt-get install -y \
     x11vnc \
     supervisor \
     net-tools \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/bin/python3.12 /usr/bin/python \
-    && ln -sf /usr/bin/python3.12 /usr/bin/python3
+    && rm -rf /var/lib/apt/lists/*
 
 # Enable corepack for pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
