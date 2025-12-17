@@ -224,6 +224,12 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
           'CointegrationSpreadTrader': 'spread_based',
         }
         const strategyType = strategyTypeMap[selectedStrategy] || selectedStrategy.toLowerCase()
+
+        // For spread_based strategies, also show cointegration-specific settings if CointegrationSpreadTrader is selected
+        if (selectedStrategy === 'CointegrationSpreadTrader') {
+          return item.key.startsWith(`strategy_specific.${strategyType}.`) || item.key.startsWith('strategy_specific.cointegration.')
+        }
+
         return item.key.startsWith(`strategy_specific.${strategyType}.`)
       }
       return true
