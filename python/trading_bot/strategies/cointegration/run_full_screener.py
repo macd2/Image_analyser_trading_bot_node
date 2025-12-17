@@ -126,16 +126,22 @@ def filter_correlated_pairs(results: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(filtered)
 
 
-async def main(timeframe: str = "1h"):
+async def main(timeframe: str = "1h", instance_id: str = "default", min_volume_usd: int = 1_000_000, batch_size: int = 15):
     """
     Run full screener.
 
     Args:
         timeframe: Analysis timeframe (e.g., "1h", "4h", "1d")
+        instance_id: Instance ID for cache file naming (default: "default")
+        min_volume_usd: Minimum 24h volume in USD for filtering (default: 1M)
+        batch_size: Number of symbols per batch for parallel fetching (default: 15)
     """
     print("=" * 70)
     print("FULL PAIR SCREENER")
     print(f"Timeframe: {timeframe}")
+    print(f"Instance ID: {instance_id}")
+    print(f"Min Volume: ${min_volume_usd/1e6:.1f}M")
+    print(f"Batch Size: {batch_size}")
     print("=" * 70)
     
     # Step 1: Get all symbols
@@ -159,20 +165,19 @@ async def main(timeframe: str = "1h"):
     print(f"After basic filters: {len(filtered)} symbols")
 
     # Step 3: Fetch tickers and filter by volume
-    print("\nSTEP 3: Fetching tickers and filtering by volume ($50M minimum)...")
+    print(f"\nSTEP 3: Fetching tickers and filtering by volume (${min_volume_usd/1e6:.1f}M minimum)...")
     symbol_volumes = fetch_tickers_for_volume(filtered)
 
-    min_volume_usd = 50_000_000  # $50M
     filtered_by_volume = [
         s for s in filtered
         if symbol_volumes.get(s, 0) >= min_volume_usd
     ]
 
-    print(f"After volume filter: {len(filtered_by_volume)} symbols (>= ${min_volume_usd/1e6:.0f}M)")
-    
+    print(f"After volume filter: {len(filtered_by_volume)} symbols (>= ${min_volume_usd/1e6:.1f}M)")
+
     # Step 4: Fetch candles in parallel
     print("\nSTEP 4: Fetching candles in parallel...")
-    symbol_candles = await fetch_all_candles(filtered_by_volume, batch_size=15)
+    symbol_candles = await fetch_all_candles(filtered_by_volume, batch_size=batch_size)
     print(f"\nSuccessfully fetched {len(symbol_candles)} symbols")
     
     if len(symbol_candles) < 2:
@@ -184,7 +189,7 @@ async def main(timeframe: str = "1h"):
     screener = PairScreener(lookback_days=120, min_data_points=100)
     results = screener.screen_pairs(
         symbol_candles=symbol_candles,
-        min_volume_usd=1_000_000
+        min_volume_usd=min_volume_usd
     )
 
     if results.empty:
@@ -200,7 +205,9 @@ async def main(timeframe: str = "1h"):
 
     # Step 7: Save results
     print("\nSTEP 7: Saving results...")
-    output_file = Path(__file__).parent / "screener_results.json"  # Saves in cointegration/ folder
+    cache_dir = Path(__file__).parent / "screener_cache"
+    cache_dir.mkdir(exist_ok=True)
+    output_file = cache_dir / f"{instance_id}_{timeframe}.json"
 
     # Convert to JSON-serializable format
     results_dict = {
@@ -215,7 +222,7 @@ async def main(timeframe: str = "1h"):
     with open(output_file, 'w') as f:
         json.dump(results_dict, f, indent=2)
 
-    print(f"✅ Results saved to {output_file} (timeframe={timeframe})")
+    print(f"✅ Results saved to {output_file} (instance={instance_id}, timeframe={timeframe})")
     
     # Display results
     print("\n" + "=" * 70)
@@ -239,11 +246,34 @@ if __name__ == "__main__":
         choices=["1m", "5m", "15m", "30m", "1h", "4h", "1d"],
         help="Analysis timeframe (default: 1h)"
     )
+    parser.add_argument(
+        "--instance-id",
+        type=str,
+        default="default",
+        help="Instance ID for cache file naming (default: default)"
+    )
+    parser.add_argument(
+        "--min-volume-usd",
+        type=int,
+        default=1_000_000,
+        help="Minimum 24h volume in USD for filtering (default: 1000000)"
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=15,
+        help="Number of symbols per batch for parallel fetching (default: 15)"
+    )
 
     args = parser.parse_args()
 
     try:
-        success = asyncio.run(main(timeframe=args.timeframe))
+        success = asyncio.run(main(
+            timeframe=args.timeframe,
+            instance_id=args.instance_id,
+            min_volume_usd=args.min_volume_usd,
+            batch_size=args.batch_size
+        ))
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
         print("\n⚠️  Interrupted by user")
