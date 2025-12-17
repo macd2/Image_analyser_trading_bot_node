@@ -928,6 +928,12 @@ class TradingCycle:
                 market_environment_components = json.dumps(reproducibility_data.get('market_environment_components', {}))
                 validation_results = json.dumps(reproducibility_data.get('validation_results', {}))
 
+                # Extract strategy metadata for exit logic and monitoring
+                strategy_metadata = result.get("strategy_metadata")
+                strategy_metadata_json = None
+                if strategy_metadata:
+                    strategy_metadata_json = json.dumps(strategy_metadata)
+
                 execute(conn, """
                     INSERT INTO recommendations
                     (id, cycle_id, symbol, timeframe, recommendation, confidence,
@@ -936,9 +942,9 @@ class TradingCycle:
                      raw_response, analyzed_at, cycle_boundary, created_at,
                      chart_hash, model_version, model_params, market_data_snapshot,
                      strategy_config_snapshot, confidence_components, setup_quality_components,
-                     market_environment_components, validation_results)
+                     market_environment_components, validation_results, strategy_metadata)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                            ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     rec_id,
                     result.get("cycle_id"),  # Link to parent cycle
@@ -969,6 +975,7 @@ class TradingCycle:
                     setup_quality_components,
                     market_environment_components,
                     validation_results,
+                    strategy_metadata_json,
                 ))
                 logger.info(f"📝 Recorded recommendation {rec_id} with full audit trail (prompt: {prompt_name}, model: {model_name})")
                 return rec_id
