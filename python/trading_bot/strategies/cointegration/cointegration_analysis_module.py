@@ -305,6 +305,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     analysis_timeframe=analysis_timeframe,
                     confidence=confidence,
                     pair_candles=candles2,
+                    pair_symbol=pair_symbol,
                     beta=beta,
                     spread_mean=spread_mean,
                     spread_std=spread_std
@@ -342,6 +343,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         analysis_timeframe: str,
         confidence: Optional[float] = None,
         pair_candles: Optional[List[Dict[str, Any]]] = None,
+        pair_symbol: Optional[str] = None,
         beta: Optional[float] = None,
         spread_mean: Optional[float] = None,
         spread_std: Optional[float] = None,
@@ -420,6 +422,19 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 stop_loss = current_price * 1.02
                 take_profit = current_price * 0.96
 
+        # Build strategy metadata for exit logic and monitoring
+        strategy_metadata = None
+        if beta is not None and spread_mean is not None and spread_std is not None:
+            z_exit = self.get_config_value('z_exit', 0.5)
+            strategy_metadata = {
+                "beta": float(beta),
+                "spread_mean": float(spread_mean),
+                "spread_std": float(spread_std),
+                "z_score_at_entry": float(z_score),
+                "pair_symbol": pair_symbol,
+                "z_exit_threshold": float(z_exit),
+            }
+
         return {
             "symbol": symbol,
             "recommendation": recommendation,
@@ -443,6 +458,8 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             "strategy_uuid": self.strategy_uuid,
             "strategy_type": self.STRATEGY_TYPE,
             "strategy_name": self.STRATEGY_NAME,
+            # Add strategy metadata for exit logic and monitoring
+            "strategy_metadata": strategy_metadata,
         }
 
     def validate_signal(self, signal: Dict[str, Any]) -> bool:
@@ -561,6 +578,110 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             "z_score_monitoring_interval": self.get_config_value("z_score_monitoring_interval", 60),
             "spread_reversion_threshold": self.get_config_value("spread_reversion_threshold", 0.1),
         }
+
+    def should_exit(
+        self,
+        trade: Dict[str, Any],
+        current_candle: Dict[str, Any],
+        pair_candle: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Check if spread-based trade should exit.
+
+        For spread-based strategies, exit when z-score crosses the exit threshold.
+
+        Args:
+            trade: Trade record with strategy_metadata containing beta, spread_mean, spread_std, z_exit_threshold, pair_symbol
+            current_candle: Current candle for main symbol {timestamp, open, high, low, close}
+            pair_candle: Current candle for pair symbol {timestamp, open, high, low, close}
+
+        Returns:
+            Dict with 'should_exit' bool and 'exit_details' dict
+        """
+        try:
+            # Get strategy metadata stored during trade creation
+            metadata = trade.get("strategy_metadata", {})
+            beta = metadata.get("beta")
+            spread_mean = metadata.get("spread_mean")
+            spread_std = metadata.get("spread_std")
+            z_exit_threshold = metadata.get("z_exit_threshold")
+            pair_symbol = metadata.get("pair_symbol")
+
+            # Validate we have all needed data (use 'is not None' to allow 0 values)
+            if beta is None or spread_mean is None or spread_std is None or z_exit_threshold is None:
+                return {
+                    "should_exit": False,
+                    "exit_details": {
+                        "reason": "no_exit",
+                        "error": "Missing strategy metadata for z-score calculation",
+                    }
+                }
+
+            # Get current prices
+            current_price = current_candle.get("close")
+            pair_price = pair_candle.get("close") if pair_candle else None
+
+            if not current_price or not pair_price:
+                return {
+                    "should_exit": False,
+                    "exit_details": {
+                        "reason": "no_exit",
+                        "error": "Missing candle data for z-score calculation",
+                    }
+                }
+
+            # Recalculate z-score with current prices
+            spread = pair_price - beta * current_price
+            z_score = (spread - spread_mean) / spread_std if spread_std > 0 else 0
+
+            # Check if z-score crossed exit threshold
+            threshold_crossed = abs(z_score) <= z_exit_threshold
+
+            if threshold_crossed:
+                return {
+                    "should_exit": True,
+                    "exit_details": {
+                        "reason": "z_score_exit",
+                        "z_score": float(z_score),
+                        "spread": float(spread),
+                        "threshold": float(z_exit_threshold),
+                        "threshold_crossed": True,
+                        "beta": float(beta),
+                        "spread_mean": float(spread_mean),
+                        "spread_std": float(spread_std),
+                        "pair_symbol": pair_symbol,
+                        "current_price": float(current_price),
+                        "pair_price": float(pair_price),
+                    }
+                }
+
+            # No exit condition met
+            return {
+                "should_exit": False,
+                "exit_details": {
+                    "reason": "no_exit",
+                    "z_score": float(z_score),
+                    "spread": float(spread),
+                    "threshold": float(z_exit_threshold),
+                    "threshold_crossed": False,
+                    "beta": float(beta),
+                    "spread_mean": float(spread_mean),
+                    "spread_std": float(spread_std),
+                    "pair_symbol": pair_symbol,
+                    "current_price": float(current_price),
+                    "pair_price": float(pair_price),
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error in should_exit: {e}")
+            return {
+                "should_exit": False,
+                "exit_details": {
+                    "reason": "error",
+                    "error": str(e),
+                }
+            }
 
     @classmethod
     def get_required_settings(cls) -> Dict[str, Any]:
