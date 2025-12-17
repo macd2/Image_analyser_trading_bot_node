@@ -15,6 +15,11 @@ from typing import Dict, Any, List, Optional, Callable
 import logging
 import numpy as np
 import pandas as pd
+import json
+import subprocess
+import sys
+from pathlib import Path
+from datetime import datetime, timedelta
 from trading_bot.strategies.base import BaseAnalysisModule
 from trading_bot.strategies.cointegration.spread_trading_cointegrated import CointegrationStrategy
 from trading_bot.strategies.cointegration.price_levels import calculate_levels
@@ -34,10 +39,13 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
     # Strategy-specific configuration (ready to move to instances.settings.strategy_config)
     # Later: This will be read from instances.settings.strategy_config in database
     STRATEGY_CONFIG = {
+        # Pair discovery mode: "static" (use pairs from config) or "auto_screen" (discover pairs dynamically)
+        "pair_discovery_mode": "static",
+
         # Analysis timeframe (NOT the cycle timeframe)
         "analysis_timeframe": "1h",
 
-        # Pair mappings: symbol -> pair_symbol
+        # Pair mappings: symbol -> pair_symbol (used only if pair_discovery_mode="static")
         "pairs": {
             "RENDER": "AKT",
             "FIL": "AR",
@@ -45,6 +53,11 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             "AAVE": "COMP",
             "OP": "ARB",
         },
+
+        # Screener settings (used only if pair_discovery_mode="auto_screen")
+        "screener_cache_hours": 24,
+        "min_volume_usd": 1_000_000,
+        "batch_size": 15,
 
         # Cointegration parameters (strategy-specific)
         "lookback": 120,           # Lookback period for cointegration analysis
@@ -70,6 +83,140 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         """Initialize cointegration strategy."""
         super().__init__(config, instance_id, run_id, strategy_config, heartbeat_callback)
 
+    def _get_screener_cache_path(self, timeframe: str) -> Path:
+        """Get the path to the screener cache file for this instance and timeframe."""
+        cache_dir = Path(__file__).parent / "screener_cache"
+        cache_dir.mkdir(exist_ok=True)
+
+        # Use instance_id if available, otherwise use a default name
+        instance_name = self.instance_id or "default"
+        filename = f"{instance_name}_{timeframe}.json"
+        return cache_dir / filename
+
+    def _load_screener_cache(self, timeframe: str) -> Optional[Dict[str, Any]]:
+        """Load screener results from cache file if it exists and is fresh."""
+        cache_path = self._get_screener_cache_path(timeframe)
+
+        if not cache_path.exists():
+            logger.debug(f"📊 No screener cache found at {cache_path}")
+            return None
+
+        try:
+            with open(cache_path, 'r') as f:
+                cache_data = json.load(f)
+
+            # Check if cache is fresh
+            cache_hours = self.get_config_value('screener_cache_hours', 24)
+            screened_at = datetime.fromisoformat(cache_data.get('timestamp', ''))
+            cache_age = datetime.now() - screened_at
+
+            if cache_age > timedelta(hours=cache_hours):
+                logger.info(f"📊 Screener cache is {cache_age.total_seconds()/3600:.1f}h old (max: {cache_hours}h), will refresh")
+                return None
+
+            # Verify timeframe matches
+            cached_timeframe = cache_data.get('timeframe')
+            if cached_timeframe != timeframe:
+                logger.info(f"📊 Screener cache has different timeframe ({cached_timeframe} vs {timeframe}), will refresh")
+                return None
+
+            logger.info(f"✅ Using cached screener results ({cache_age.total_seconds()/3600:.1f}h old, timeframe={timeframe})")
+            return cache_data
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to load screener cache: {e}")
+            return None
+
+    def _save_screener_cache(self, timeframe: str, screener_data: Dict[str, Any]) -> bool:
+        """Save screener results to cache file."""
+        cache_path = self._get_screener_cache_path(timeframe)
+
+        try:
+            with open(cache_path, 'w') as f:
+                json.dump(screener_data, f, indent=2)
+            logger.info(f"✅ Screener results saved to cache: {cache_path}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to save screener cache: {e}")
+            return False
+
+    async def _get_or_refresh_screener_results(self, timeframe: str) -> Dict[str, str]:
+        """
+        Get screener results from cache or run screener if cache is stale.
+        Returns a dict mapping symbol1 -> symbol2 (pairs).
+        """
+        # Try to load from cache
+        cache_data = self._load_screener_cache(timeframe)
+
+        if cache_data:
+            # Convert pairs array to dict format
+            pairs_dict = {}
+            for pair_info in cache_data.get('pairs', []):
+                symbol1 = pair_info.get('symbol1')
+                symbol2 = pair_info.get('symbol2')
+                if symbol1 and symbol2:
+                    pairs_dict[symbol1] = symbol2
+            return pairs_dict
+
+        # Cache is stale or doesn't exist, run screener
+        logger.info(f"📊 Running screener for timeframe {timeframe}...")
+        self._heartbeat(f"Running screener for timeframe {timeframe}")
+
+        try:
+            screener_script = Path(__file__).parent / "run_full_screener.py"
+            instance_name = self.instance_id or "default"
+
+            # Get screener settings from config
+            min_volume_usd = self.get_config_value('min_volume_usd', 1_000_000)
+            batch_size = self.get_config_value('batch_size', 15)
+
+            result = subprocess.run(
+                [
+                    sys.executable, str(screener_script),
+                    "--timeframe", timeframe,
+                    "--instance-id", instance_name,
+                    "--min-volume-usd", str(min_volume_usd),
+                    "--batch-size", str(batch_size)
+                ],
+                cwd=Path(__file__).parent,
+                capture_output=True,
+                text=True,
+                timeout=600  # 10 minute timeout
+            )
+
+            if result.returncode != 0:
+                logger.error(f"❌ Screener failed: {result.stderr}")
+                self._heartbeat(f"Screener failed for timeframe {timeframe}")
+                return {}
+
+            # Load the newly generated results
+            cache_path = self._get_screener_cache_path(timeframe)
+            if cache_path.exists():
+                with open(cache_path, 'r') as f:
+                    screener_data = json.load(f)
+
+                # Convert pairs array to dict format
+                pairs_dict = {}
+                for pair_info in screener_data.get('pairs', []):
+                    symbol1 = pair_info.get('symbol1')
+                    symbol2 = pair_info.get('symbol2')
+                    if symbol1 and symbol2:
+                        pairs_dict[symbol1] = symbol2
+
+                logger.info(f"✅ Screener completed: found {len(pairs_dict)} pairs")
+                self._heartbeat(f"Screener found {len(pairs_dict)} pairs")
+                return pairs_dict
+            else:
+                logger.error(f"❌ Screener results file not found at {cache_path}")
+                return {}
+        except subprocess.TimeoutExpired:
+            logger.error(f"❌ Screener timed out after 10 minutes")
+            self._heartbeat(f"Screener timed out")
+            return {}
+        except Exception as e:
+            logger.error(f"❌ Error running screener: {e}")
+            self._heartbeat(f"Screener error: {e}")
+            return {}
+
     async def run_analysis_cycle(
         self,
         symbols: List[str],
@@ -91,9 +238,18 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         """
         results = []
 
-        # Get configuration (will be read from instance settings later)
-        pairs = self.get_config_value('pairs', {})
+        # Get configuration
         analysis_timeframe = self.get_config_value('analysis_timeframe', '1h')
+        pair_discovery_mode = self.get_config_value('pair_discovery_mode', 'static')
+
+        # Get pairs based on discovery mode
+        if pair_discovery_mode == 'auto_screen':
+            logger.info(f"🔗 Pair discovery mode: AUTO_SCREEN (timeframe: {analysis_timeframe})")
+            self._heartbeat(f"Auto-screening for pairs (timeframe: {analysis_timeframe})")
+            pairs = await self._get_or_refresh_screener_results(analysis_timeframe)
+        else:
+            logger.info(f"🔗 Pair discovery mode: STATIC")
+            pairs = self.get_config_value('pairs', {})
 
         # Cointegration strategy analyzes ONLY symbols in pairs config
         # Completely independent - doesn't use symbols parameter or watchlist
@@ -715,6 +871,69 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             Dict with settings schema for CointegrationAnalysisModule
         """
         return {
+            # Pair discovery settings
+            "pair_discovery_mode": {
+                "type": "select",
+                "options": [
+                    {"value": "static", "label": "Static (predefined pairs)"},
+                    {"value": "auto_screen", "label": "Auto-Screen (discover pairs)"},
+                ],
+                "default": "static",
+                "description": "How to discover trading pairs: static (use configured pairs) or auto_screen (run screener)",
+            },
+            "analysis_timeframe": {
+                "type": "select",
+                "options": [
+                    {"value": "1m", "label": "1 minute"},
+                    {"value": "5m", "label": "5 minutes"},
+                    {"value": "15m", "label": "15 minutes"},
+                    {"value": "30m", "label": "30 minutes"},
+                    {"value": "1h", "label": "1 hour"},
+                    {"value": "4h", "label": "4 hours"},
+                    {"value": "1d", "label": "1 day"},
+                ],
+                "default": "1h",
+                "description": "Timeframe for cointegration analysis (independent of cycle timeframe)",
+            },
+            "screener_cache_hours": {
+                "type": "number",
+                "default": 24,
+                "description": "How long to cache screener results before refreshing (hours)",
+            },
+            "min_volume_usd": {
+                "type": "number",
+                "default": 1000000,
+                "description": "Minimum 24h trading volume in USD for pair screening",
+            },
+            "batch_size": {
+                "type": "number",
+                "default": 15,
+                "description": "Number of symbols to process per batch during screening",
+            },
+
+            # Cointegration analysis settings
+            "lookback": {
+                "type": "number",
+                "default": 120,
+                "description": "Lookback period (candles) for cointegration analysis",
+            },
+            "z_entry": {
+                "type": "float",
+                "default": 2.0,
+                "description": "Z-score threshold for entry signal",
+            },
+            "z_exit": {
+                "type": "float",
+                "default": 0.5,
+                "description": "Z-score threshold for exit signal",
+            },
+            "use_soft_vol": {
+                "type": "boolean",
+                "default": False,
+                "description": "Use soft volatility adjustment for cointegration",
+            },
+
+            # Risk management settings
             "max_spread_deviation": {
                 "type": "float",
                 "default": 3.0,
