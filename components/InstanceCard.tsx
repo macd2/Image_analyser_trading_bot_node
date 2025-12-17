@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Play, Square, Skull, ChevronRight, RefreshCw, FileText, Clock, Target, Activity, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
-import { useBotState } from '@/lib/context/BotStateContext'
+import { useLogs } from '@/lib/context/LogsContext'
 
 type LogLevel = 'error' | 'warning' | 'info' | 'debug' | 'all'
 
@@ -87,7 +87,7 @@ interface InstanceCardProps {
 }
 
 function RecentLogsSection({ instance }: { instance: InstanceCardData }) {
-  const { logs } = useBotState()
+  const { logs } = useLogs()
   const liveLogs = logs[instance.id] || []
 
   // Parse live logs

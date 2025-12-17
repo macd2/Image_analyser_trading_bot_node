@@ -6,7 +6,7 @@ import { LoadingState, ErrorState } from '@/components/shared'
 import TradeChartModal from '@/components/shared/TradeChartModal'
 import StatsBar, { StatsScope } from '@/components/StatsBar'
 import { UnifiedCycleCard } from '@/components/instance/UnifiedCycleCard'
-import { useBotState } from '@/lib/context/BotStateContext'
+import { useLogs } from '@/lib/context/LogsContext'
 import { useRealtime } from '@/hooks/useRealtime'
 import VncLoginModal from '@/components/VncLoginModal'
 
@@ -108,7 +108,7 @@ interface MonitorStatus {
 
 export function OverviewTab({ instanceId }: OverviewTabProps) {
   // Use shared context for logs (populated by GlobalLogListener)
-  const { logs, setLogs } = useBotState()
+  const { logs, setLogs } = useLogs()
   // Get logs for this specific instance
   const instanceLogs = useMemo(() => {
     const logsArray = logs[instanceId] || []

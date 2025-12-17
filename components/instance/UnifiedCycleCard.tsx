@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Camera, Eye, Shield, Zap, Coffee, Circle, CheckCircle, TrendingUp, BarChart3, Power, ChevronDown, ChevronUp, Clock } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { useBotState } from '@/lib/context/BotStateContext'
+import { useLogs } from '@/lib/context/LogsContext'
 import { useRealtime } from '@/hooks/useRealtime'
 
 interface UnifiedCycleCardProps {
@@ -73,7 +73,7 @@ const stepBgColors = {
 
 export function UnifiedCycleCard({ instanceId }: UnifiedCycleCardProps) {
   useRealtime()
-  const { logs } = useBotState()
+  const { logs } = useLogs()
   const [status, setStatus] = useState<CycleStatus | null>(null)
   const [, setLoading] = useState(true)
   const [, setError] = useState<string | null>(null)

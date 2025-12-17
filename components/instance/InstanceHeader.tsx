@@ -5,7 +5,7 @@ import { ArrowLeft, Play, Square, Settings, Clock, Wifi, WifiOff, RefreshCw, Sku
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/shared'
-import { useBotState } from '@/lib/context/BotStateContext'
+import { useLogs } from '@/lib/context/LogsContext'
 import { useRealtime } from '@/hooks/useRealtime'
 
 interface InstanceHeaderProps {
@@ -58,7 +58,7 @@ function formatUptime(seconds: number | null): string {
 
 export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderProps) {
   // Use shared context for logs persistence
-  const { setLogs } = useBotState()
+  const { setLogs } = useLogs()
 
   // Use socket for real-time status updates
   const { socket } = useRealtime()

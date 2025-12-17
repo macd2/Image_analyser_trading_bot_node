@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useCallback } from 'react'
 import { useRealtime } from '@/hooks/useRealtime'
-import { useBotState } from '@/lib/context/BotStateContext'
+import { useLogs } from '@/lib/context/LogsContext'
 
 /**
  * GlobalLogListener - Subscribes to Socket.IO bot_log events at the app level
- * and populates BotStateContext with logs for all instances.
+ * and populates LogsContext with logs for all instances.
  *
  * This ensures that:
  * 1. Logs are captured in real-time as they arrive via Socket.IO
@@ -16,7 +16,7 @@ import { useBotState } from '@/lib/context/BotStateContext'
  */
 export function GlobalLogListener() {
   const { socket } = useRealtime()
-  const { addLog } = useBotState()
+  const { addLog } = useLogs()
   const logsPerInstanceRef = useRef<Record<string, string[]>>({})
 
   // Fetch recent logs from database for an instance (on first connection)

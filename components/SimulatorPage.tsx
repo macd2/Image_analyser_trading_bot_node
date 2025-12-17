@@ -133,8 +133,10 @@ interface ClosedTrade {
   risk_pct_used?: number
 }
 
-// Cancelled trades have same structure as closed trades
-type CancelledTrade = ClosedTrade
+// Cancelled trades have same structure as closed trades but with cancelled_at instead of closed_at
+interface CancelledTrade extends ClosedTrade {
+  cancelled_at: string | null
+}
 
 // Timeframes we support for max open bars config
 const TIMEFRAMES = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d', '1D'] as const

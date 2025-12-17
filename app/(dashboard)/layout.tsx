@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { BotStateProvider } from '@/lib/context/BotStateContext'
+import { LogsProvider } from '@/lib/context/LogsContext'
 import { GlobalLogListener } from '@/components/GlobalLogListener'
 import { OpenAIRateLimitBanner } from '@/components/OpenAIRateLimitBanner'
 
@@ -19,18 +20,20 @@ export default function DashboardLayout({
 
   return (
     <BotStateProvider>
-      {/* Global listener for Socket.IO bot logs - populates BotStateContext */}
-      <GlobalLogListener />
+      <LogsProvider>
+        {/* Global listener for Socket.IO bot logs - populates LogsContext */}
+        <GlobalLogListener />
 
-      {/* Show OpenAI rate limit banner if viewing an instance */}
-      {instanceId && <OpenAIRateLimitBanner instanceId={instanceId} />}
+        {/* Show OpenAI rate limit banner if viewing an instance */}
+        {instanceId && <OpenAIRateLimitBanner instanceId={instanceId} />}
 
-      <div className="flex h-screen bg-slate-950">
-        <Sidebar />
-        <main className="flex-1 overflow-auto p-6">
-          {children}
-        </main>
-      </div>
+        <div className="flex h-screen bg-slate-950">
+          <Sidebar />
+          <main className="flex-1 overflow-auto p-6">
+            {children}
+          </main>
+        </div>
+      </LogsProvider>
     </BotStateProvider>
   )
 }
