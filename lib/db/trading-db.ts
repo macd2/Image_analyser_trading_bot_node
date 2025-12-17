@@ -836,6 +836,13 @@ const CONFIG_METADATA: Record<string, ConfigMeta> = {
   'strategy_specific.spread_based.max_spread_deviation': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings', description: 'Max spread deviation', tooltip: 'Current: 3.0 | Maximum z-score deviation before force-closing position. Range: 2.0-5.0', order: 23 },
   'strategy_specific.spread_based.min_z_distance': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings', description: 'Min z-distance to SL', tooltip: 'Current: 0.5 | Minimum z-score distance to stop loss for signal validation. Range: 0.3-1.0', order: 27 },
 
+  // Strategy-Specific Settings - Cointegration Strategy
+  'strategy_specific.cointegration.pair_discovery_mode': { type: 'select', category: 'ai', group: '3. Spread-Based Strategy Settings├─ Cointegration Pair Discovery', description: 'Pair discovery mode', tooltip: 'static: Use predefined pairs from configuration | auto_screen: Dynamically discover pairs using screener', order: 24, options: [{ value: 'static', label: 'Static (predefined pairs)' }, { value: 'auto_screen', label: 'Auto-Screen (discover pairs)' }] },
+  'strategy_specific.cointegration.analysis_timeframe': { type: 'select', category: 'ai', group: '3. Spread-Based Strategy Settings├─ Cointegration Pair Discovery', description: 'Analysis timeframe', tooltip: 'Timeframe for cointegration analysis (independent of cycle timeframe). Examples: 1h, 4h, 1d', order: 25, options: [{ value: '1m', label: '1 minute' }, { value: '5m', label: '5 minutes' }, { value: '15m', label: '15 minutes' }, { value: '30m', label: '30 minutes' }, { value: '1h', label: '1 hour' }, { value: '4h', label: '4 hours' }, { value: '1d', label: '1 day' }] },
+  'strategy_specific.cointegration.screener_cache_hours': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings├─ Cointegration Pair Discovery', description: 'Screener cache duration (hours)', tooltip: 'How long to cache screener results before refreshing. Range: 1-168 (1 hour to 1 week)', order: 26 },
+  'strategy_specific.cointegration.min_volume_usd': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings├─ Cointegration Pair Discovery', description: 'Minimum 24h volume (USD)', tooltip: 'Minimum 24h trading volume in USD for pair screening. Filters out low-volume assets. Range: 100000-10000000', order: 28 },
+  'strategy_specific.cointegration.batch_size': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings├─ Cointegration Pair Discovery', description: 'Screener batch size', tooltip: 'Number of symbols to process per batch during screening. Affects API call efficiency. Range: 5-50', order: 29 },
+
 };
 
 /**
