@@ -110,6 +110,9 @@ CREATE TABLE IF NOT EXISTS recommendations (
     setup_quality REAL,
     market_environment REAL,
 
+    -- Strategy metadata (for exit logic and monitoring)
+    strategy_metadata TEXT,      -- JSON: beta, spread_mean, spread_std, z_score_at_entry, pair_symbol, z_exit_threshold
+
     -- Timestamps
     analyzed_at TEXT NOT NULL,
     cycle_boundary TEXT,
@@ -187,6 +190,9 @@ CREATE TABLE IF NOT EXISTS trades (
     -- Execution context (for reproducibility)
     wallet_balance_at_trade REAL,
     kelly_metrics TEXT,          -- JSON: kelly_fraction_used, win_rate, avg_win_percent, avg_loss_percent, trade_history_count
+
+    -- Strategy metadata (for exit logic and monitoring)
+    strategy_metadata TEXT,      -- JSON: beta, spread_mean, spread_std, z_score_at_entry, pair_symbol, z_exit_threshold
 
     -- Timestamps
     submitted_at TEXT,
@@ -395,6 +401,27 @@ def run_migrations(conn) -> None:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_cycle ON trades(cycle_id)")
             conn.commit()
             print("✅ Migration complete: cycle_id added to trades")
+
+        # Migration 5: Add strategy_metadata to trades if missing
+        try:
+            cursor.execute("SELECT strategy_metadata FROM trades LIMIT 1")
+        except sqlite3.OperationalError:
+            print("🔄 Migration: Adding strategy_metadata column to trades...")
+            cursor.execute("ALTER TABLE trades ADD COLUMN strategy_metadata TEXT")
+            conn.commit()
+            print("✅ Migration complete: strategy_metadata added to trades")
+
+    # Check if recommendations table exists
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='recommendations'")
+    if cursor.fetchone():
+        # Migration 6: Add strategy_metadata to recommendations if missing
+        try:
+            cursor.execute("SELECT strategy_metadata FROM recommendations LIMIT 1")
+        except sqlite3.OperationalError:
+            print("🔄 Migration: Adding strategy_metadata column to recommendations...")
+            cursor.execute("ALTER TABLE recommendations ADD COLUMN strategy_metadata TEXT")
+            conn.commit()
+            print("✅ Migration complete: strategy_metadata added to recommendations")
 
     cursor.close()
 
