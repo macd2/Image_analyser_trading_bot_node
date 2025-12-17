@@ -57,17 +57,21 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
       const res = await fetch('/api/bot/strategies')
       if (!res.ok) {
         console.error('Failed to fetch strategies:', res.status, res.statusText)
+        setAvailableStrategies([])
         return
       }
       const data = await res.json()
       console.log('Fetched strategies:', data)
       if (data.strategies && Array.isArray(data.strategies)) {
+        console.log('Setting available strategies:', data.strategies)
         setAvailableStrategies(data.strategies)
       } else {
         console.error('Invalid strategies response:', data)
+        setAvailableStrategies([])
       }
     } catch (err) {
       console.error('Failed to fetch strategies:', err)
+      setAvailableStrategies([])
     } finally {
       setStrategiesLoading(false)
     }
@@ -280,11 +284,15 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
                             <SelectValue placeholder="Select a strategy..." />
                           </SelectTrigger>
                           <SelectContent className="bg-slate-800 border-slate-600">
-                            {availableStrategies.map(s => (
-                              <SelectItem key={s.name} value={s.name}>
-                                {s.name}
-                              </SelectItem>
-                            ))}
+                            {availableStrategies && availableStrategies.length > 0 ? (
+                              availableStrategies.map(s => (
+                                <SelectItem key={s.name} value={s.name}>
+                                  {s.name}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <div className="text-xs text-slate-400 p-2">No strategies available</div>
+                            )}
                           </SelectContent>
                         </Select>
                       )}
