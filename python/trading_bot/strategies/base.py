@@ -250,6 +250,57 @@ class BaseAnalysisModule(ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def should_exit(
+        self,
+        trade: Dict[str, Any],
+        current_candle: Dict[str, Any],
+        pair_candle: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Check if a trade should exit based on strategy-specific logic.
+
+        Args:
+            trade: Trade record with entry_price, stop_loss, take_profit, strategy_metadata
+            current_candle: Current candle data {timestamp, open, high, low, close}
+            pair_candle: Optional pair candle (for spread-based strategies)
+
+        Returns:
+            Dict with:
+            - 'should_exit': bool - whether to exit the trade
+            - 'exit_details': dict - detailed exit context for logging
+              - 'reason': str - why exit was triggered (e.g., 'tp_touched', 'sl_touched', 'z_score_exit', 'no_exit')
+              - Additional fields depend on strategy type (price, z_score, spread, etc.)
+
+        Examples:
+            Price-based: {
+                'should_exit': True,
+                'exit_details': {
+                    'reason': 'tp_touched',
+                    'price': 101.5,
+                    'tp': 101.5,
+                    'sl': 99.5,
+                    'distance_to_tp': 0.0,
+                    'distance_to_sl': 2.0
+                }
+            }
+            Spread-based: {
+                'should_exit': True,
+                'exit_details': {
+                    'reason': 'z_score_exit',
+                    'z_score': 0.45,
+                    'spread': 0.5,
+                    'threshold': 0.5,
+                    'threshold_crossed': True,
+                    'beta': 1.2,
+                    'spread_mean': 0.0,
+                    'spread_std': 0.1,
+                    'pair_symbol': 'ETHUSDT'
+                }
+            }
+        """
+        raise NotImplementedError
+
     def capture_reproducibility_data(
         self,
         analysis_result: Dict[str, Any],
