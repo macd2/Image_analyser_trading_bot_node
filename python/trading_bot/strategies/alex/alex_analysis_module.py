@@ -20,7 +20,12 @@ logger = None  # Set in __init__
 
 class AlexAnalysisModule(BaseAnalysisModule):
     """Alex's Top-Down Analysis Strategy"""
-    
+
+    # Strategy type identification
+    STRATEGY_TYPE = "price_based"
+    STRATEGY_NAME = "AlexAnalysisModule"
+    STRATEGY_VERSION = "1.0"
+
     # Default configuration
     DEFAULT_CONFIG = {
         "timeframes": ["1h", "4h", "1d"],

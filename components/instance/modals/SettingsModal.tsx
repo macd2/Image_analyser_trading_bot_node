@@ -215,8 +215,8 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
       if (item.key.startsWith('strategy_specific.')) {
         const strategyTypeMap: Record<string, string> = {
           'AiImageAnalyzer': 'price_based',
-          'PromptStrategy': 'price_based',
-          'CointegrationStrategy': 'spread_based',
+          'MarketStructure': 'price_based',
+          'CointegrationSpreadTrader': 'spread_based',
         }
         const strategyType = strategyTypeMap[selectedStrategy] || selectedStrategy.toLowerCase()
         return item.key.startsWith(`strategy_specific.${strategyType}.`)

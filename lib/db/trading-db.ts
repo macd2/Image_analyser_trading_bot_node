@@ -824,6 +824,17 @@ const CONFIG_METADATA: Record<string, ConfigMeta> = {
   'tradingview.target_chart': { type: 'string', category: 'Tradingview', group: '5. Chart Capture', description: 'Target chart URL or identifier', tooltip: 'The TradingView chart URL or identifier to capture (e.g., "BTCUSDT" or full URL)', order: 41 },
   'trading.timeframe': { type: 'string', category: 'Tradingview', group: '5. Chart Capture', description: 'Trading timeframe', tooltip: 'Chart timeframe for analysis (e.g., 1h, 4h, 1d). Affects candle data and age-based calculations', order: 42 },
 
+  // Strategy-Specific Settings - Price-Based Strategies
+  'strategy_specific.price_based.enable_position_tightening': { type: 'boolean', category: 'ai', group: '2. Price-Based Strategy Settings', description: 'Enable position tightening for price-based strategies', tooltip: 'Automatically tighten stop loss as profit increases', order: 10 },
+  'strategy_specific.price_based.min_rr': { type: 'number', category: 'ai', group: '2. Price-Based Strategy Settings', description: 'Minimum risk-reward ratio for price-based strategies', tooltip: 'Minimum RR ratio required for price-based strategy signals', order: 11 },
+  'strategy_specific.price_based.enable_spread_monitoring': { type: 'boolean', category: 'ai', group: '2. Price-Based Strategy Settings', description: 'Enable spread monitoring', tooltip: 'Monitor bid-ask spread for entry/exit optimization', order: 12 },
+
+  // Strategy-Specific Settings - Spread-Based Strategies
+  'strategy_specific.spread_based.z_score_entry_threshold': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings', description: 'Z-score entry threshold for spread-based strategies', tooltip: 'Z-score level at which to enter spread-based trades', order: 20 },
+  'strategy_specific.spread_based.z_score_exit_threshold': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings', description: 'Z-score exit threshold for spread-based strategies', tooltip: 'Z-score level at which to exit spread-based trades', order: 21 },
+  'strategy_specific.spread_based.enable_spread_monitoring': { type: 'boolean', category: 'ai', group: '3. Spread-Based Strategy Settings', description: 'Enable spread monitoring for spread-based strategies', tooltip: 'Monitor spread volatility and mean reversion', order: 22 },
+  'strategy_specific.spread_based.z_score_monitoring_interval': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings', description: 'Z-score monitoring interval (seconds)', tooltip: 'How often to check z-score for position monitoring', order: 23 },
+
 };
 
 /**
