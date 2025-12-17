@@ -285,27 +285,6 @@ export const DEFAULT_CONFIG: ConfigDefault[] = [
     description: "Lookback period (bars) for cointegration analysis"
   },
   {
-    key: "strategy_specific.spread_based.enable_spread_monitoring",
-    value: true,
-    type: "boolean",
-    category: "ai",
-    description: "Enable spread monitoring for spread-based strategies"
-  },
-  {
-    key: "strategy_specific.spread_based.z_score_monitoring_interval",
-    value: 60,
-    type: "number",
-    category: "ai",
-    description: "Z-score monitoring interval in seconds"
-  },
-  {
-    key: "strategy_specific.spread_based.spread_reversion_threshold",
-    value: 0.1,
-    type: "number",
-    category: "ai",
-    description: "Threshold for detecting mean reversion in spread"
-  },
-  {
     key: "strategy_specific.spread_based.max_spread_deviation",
     value: 3.0,
     type: "number",

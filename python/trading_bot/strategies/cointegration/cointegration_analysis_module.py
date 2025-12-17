@@ -567,16 +567,13 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         Get spread-based monitoring metadata.
 
         Returns:
-            Dict with spread dynamics and z-score parameters for position monitor
+            Dict with z-score exit parameters for position monitor
         """
         z_exit = self.get_config_value("z_exit", 0.5)
 
         return {
             "type": "z_score",
             "z_exit": z_exit,
-            "enable_spread_monitoring": self.get_config_value("enable_spread_monitoring", True),
-            "z_score_monitoring_interval": self.get_config_value("z_score_monitoring_interval", 60),
-            "spread_reversion_threshold": self.get_config_value("spread_reversion_threshold", 0.1),
         }
 
     def should_exit(
@@ -692,21 +689,6 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             Dict with settings schema for CointegrationAnalysisModule
         """
         return {
-            "enable_spread_monitoring": {
-                "type": "bool",
-                "default": True,
-                "description": "Enable spread monitoring and reversion detection",
-            },
-            "z_score_monitoring_interval": {
-                "type": "int",
-                "default": 60,
-                "description": "Interval (in seconds) for z-score monitoring checks",
-            },
-            "spread_reversion_threshold": {
-                "type": "float",
-                "default": 0.1,
-                "description": "Threshold for detecting mean reversion in spread",
-            },
             "max_spread_deviation": {
                 "type": "float",
                 "default": 3.0,
