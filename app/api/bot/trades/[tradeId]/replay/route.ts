@@ -59,7 +59,7 @@ export interface ReplayData {
 }
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: { tradeId: string } }
 ) {
   const tradeId = params.tradeId;
@@ -143,40 +143,40 @@ export async function GET(
 
     const replayData: ReplayData = {
       trade: {
-        id: trade.id,
-        symbol: trade.symbol,
-        side: trade.side,
-        entry_price: trade.entry_price,
-        stop_loss: trade.stop_loss,
-        take_profit: trade.take_profit,
-        status: trade.status,
-        created_at: trade.created_at,
+        id: String(trade.id),
+        symbol: String(trade.symbol),
+        side: String(trade.side),
+        entry_price: Number(trade.entry_price),
+        stop_loss: Number(trade.stop_loss),
+        take_profit: Number(trade.take_profit),
+        status: String(trade.status),
+        created_at: String(trade.created_at),
       },
       recommendation: {
-        id: recommendation.id,
-        symbol: recommendation.symbol,
-        recommendation: recommendation.recommendation,
-        confidence: recommendation.confidence,
-        entry_price: recommendation.entry_price,
-        stop_loss: recommendation.stop_loss,
-        take_profit: recommendation.take_profit,
-        chart_hash: recommendation.chart_hash,
-        model_version: recommendation.model_version,
+        id: String(recommendation.id),
+        symbol: String(recommendation.symbol),
+        recommendation: String(recommendation.recommendation),
+        confidence: Number(recommendation.confidence),
+        entry_price: Number(recommendation.entry_price),
+        stop_loss: Number(recommendation.stop_loss),
+        take_profit: Number(recommendation.take_profit),
+        chart_hash: recommendation.chart_hash ? String(recommendation.chart_hash) : undefined,
+        model_version: recommendation.model_version ? String(recommendation.model_version) : undefined,
         model_params: parseJson(recommendation.model_params),
         market_data_snapshot: parseJson(recommendation.market_data_snapshot),
         strategy_config_snapshot: parseJson(recommendation.strategy_config_snapshot),
         confidence_components: parseJson(recommendation.confidence_components),
         setup_quality_components: parseJson(recommendation.setup_quality_components),
         market_environment_components: parseJson(recommendation.market_environment_components),
-        prompt_version: recommendation.prompt_version,
-        prompt_content: recommendation.prompt_content,
+        prompt_version: recommendation.prompt_version ? String(recommendation.prompt_version) : undefined,
+        prompt_content: recommendation.prompt_content ? String(recommendation.prompt_content) : undefined,
         validation_results: parseJson(recommendation.validation_results),
       },
       execution: {
         position_sizing_inputs: parseJson(execution.position_sizing_inputs),
         position_sizing_outputs: parseJson(execution.position_sizing_outputs),
         order_parameters: parseJson(execution.order_parameters),
-        execution_timestamp: execution.execution_timestamp,
+        execution_timestamp: execution.execution_timestamp ? String(execution.execution_timestamp) : undefined,
       },
       ranking,
     };

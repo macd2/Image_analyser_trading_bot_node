@@ -42,7 +42,6 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
   const [availableStrategies, setAvailableStrategies] = useState<Array<{ name: string; class: string }>>([])
   const [strategiesLoading, setStrategiesLoading] = useState(true)
   const [strategySettingsSchema, setStrategySettingsSchema] = useState<Record<string, any> | null>(null)
-  const [strategySettingsLoading, setStrategySettingsLoading] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -76,7 +75,6 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
 
   const fetchStrategySettingsSchema = async (strategyType: string) => {
     try {
-      setStrategySettingsLoading(true)
       const res = await fetch(`/api/strategies/${strategyType}/settings-schema`)
       if (!res.ok) {
         console.error('Failed to fetch strategy settings schema:', res.status, res.statusText)
@@ -94,8 +92,6 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
     } catch (err) {
       console.error('Failed to fetch strategy settings schema:', err)
       setStrategySettingsSchema(null)
-    } finally {
-      setStrategySettingsLoading(false)
     }
   }
 

@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { X, TrendingUp, TrendingDown, Loader2 } from 'lucide-react'
+import { X, TrendingUp, TrendingDown, Loader2, RotateCcw } from 'lucide-react'
 import { createChart, IChartApi, CandlestickSeries, CandlestickData, Time, ISeriesApi, createSeriesMarkers } from 'lightweight-charts'
 import { Card, CardContent } from '@/components/ui/card'
+import { TradeReplayModal } from '@/components/trades/TradeReplayModal'
 
 interface TradeRow {
   id: string
@@ -60,6 +61,7 @@ function calculateRR(trade: TradeRow): number | null {
 export function TradeDetailModal({ isOpen, onClose, trade }: TradeDetailModalProps) {
   const [candles, setCandles] = useState<Candle[]>([])
   const [loading, setLoading] = useState(false)
+  const [replayModalOpen, setReplayModalOpen] = useState(false)
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -326,7 +328,12 @@ export function TradeDetailModal({ isOpen, onClose, trade }: TradeDetailModalPro
                 {trade.status === 'paper_trade' ? 'Paper' : trade.status.toUpperCase()}
               </span>
             </div>
-            <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setReplayModalOpen(true)} className="text-purple-400 hover:text-purple-300 transition-colors p-2" title="Replay this trade">
+                <RotateCcw size={20} />
+              </button>
+              <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
+            </div>
           </div>
 
           {/* Rejection Reason Alert */}
@@ -407,6 +414,7 @@ export function TradeDetailModal({ isOpen, onClose, trade }: TradeDetailModalPro
           )}
         </CardContent>
       </Card>
+      <TradeReplayModal tradeId={trade?.id || ''} isOpen={replayModalOpen} onClose={() => setReplayModalOpen(false)} />
     </div>
   )
 }

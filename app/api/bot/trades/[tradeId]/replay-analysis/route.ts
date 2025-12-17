@@ -94,7 +94,7 @@ except Exception as e:
 }
 
 export async function POST(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: { tradeId: string } }
 ) {
   const tradeId = params.tradeId;

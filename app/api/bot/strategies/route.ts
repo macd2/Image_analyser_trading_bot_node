@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { spawn } from 'child_process'
 import path from 'path'
 
@@ -6,8 +6,8 @@ import path from 'path'
  * GET /api/bot/strategies
  * Returns list of available strategies from the Python backend
  */
-export async function GET(request: NextRequest) {
-  return new Promise((resolve) => {
+export async function GET(): Promise<Response> {
+  return new Promise((resolve: (value: Response) => void) => {
     const pythonScript = path.join(process.cwd(), 'python', 'get_available_strategies.py')
 
     let output = ''

@@ -11,9 +11,9 @@ import { spawn } from 'child_process';
 import path from 'path';
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: { strategy: string } }
-) {
+): Promise<Response> {
   const strategy = params.strategy;
 
   if (!strategy) {
@@ -23,7 +23,7 @@ export async function GET(
     );
   }
 
-  return new Promise((resolve) => {
+  return new Promise((resolve: (value: Response) => void) => {
     const pythonScript = path.join(
       process.cwd(),
       'python',

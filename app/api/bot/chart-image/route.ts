@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
 
     // Return image with proper headers
     // Set Content-Length explicitly to avoid header mismatch
-    return new NextResponse(imageBuffer, {
+    return new NextResponse(imageBuffer as any, {
       headers: {
         'Content-Type': contentType,
         'Content-Length': imageBuffer.length.toString(),

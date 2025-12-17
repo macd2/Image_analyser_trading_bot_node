@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { TrendingUp, TrendingDown, RefreshCw, ChevronDown, ChevronRight, Clock, Activity, Eye } from 'lucide-react'
+import { TrendingUp, TrendingDown, RefreshCw, ChevronDown, ChevronRight, Clock, Activity, Eye, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { LoadingState, ErrorState } from '@/components/shared'
 import { TradeDetailModal } from '@/components/instance/TradeDetailModal'
+import { TradeReplayModal } from '@/components/trades/TradeReplayModal'
 
 interface TradesTabProps {
   instanceId: string
@@ -93,6 +94,8 @@ export function TradesTab({ instanceId }: TradesTabProps) {
   const [expandedCycles, setExpandedCycles] = useState<Set<string>>(new Set())
   const [selectedTrade, setSelectedTrade] = useState<TradeRow | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [replayModalOpen, setReplayModalOpen] = useState(false)
+  const [selectedTradeForReplay, setSelectedTradeForReplay] = useState<string | null>(null)
 
   const refetch = useCallback(async (isManualRefresh = false) => {
     if (isManualRefresh) setRefreshing(true)
@@ -158,6 +161,7 @@ export function TradesTab({ instanceId }: TradesTabProps) {
   return (
     <>
       <TradeDetailModal isOpen={modalOpen} onClose={() => setModalOpen(false)} trade={selectedTrade} />
+      <TradeReplayModal tradeId={selectedTradeForReplay || ''} isOpen={replayModalOpen} onClose={() => { setReplayModalOpen(false); setSelectedTradeForReplay(null); }} />
       <div className="p-6 space-y-4">
         {/* Stats Row */}
         <div className="grid grid-cols-5 gap-3">
@@ -301,9 +305,14 @@ export function TradesTab({ instanceId }: TradesTabProps) {
                                 </div>
                               </TableCell>
                               <TableCell className="text-center">
-                                <button onClick={() => { setSelectedTrade(trade); setModalOpen(true); }} className="text-blue-400 hover:text-blue-300 transition-colors">
-                                  <Eye size={16} />
-                                </button>
+                                <div className="flex items-center justify-center gap-2">
+                                  <button onClick={() => { setSelectedTrade(trade); setModalOpen(true); }} className="text-blue-400 hover:text-blue-300 transition-colors" title="View details">
+                                    <Eye size={16} />
+                                  </button>
+                                  <button onClick={() => { setSelectedTradeForReplay(trade.id); setReplayModalOpen(true); }} className="text-purple-400 hover:text-purple-300 transition-colors" title="Replay trade">
+                                    <RotateCcw size={16} />
+                                  </button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}
