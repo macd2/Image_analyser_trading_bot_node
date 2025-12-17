@@ -39,8 +39,12 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
   const [prompts, setPrompts] = useState<Array<{ name: string; description: string }>>([])
   const [instancePrompt, setInstancePrompt] = useState<string>('')
   const [selectedStrategy, setSelectedStrategy] = useState<string>('AiImageAnalyzer')
-  const [availableStrategies, setAvailableStrategies] = useState<Array<{ name: string; class: string }>>([])
-  const [strategiesLoading, setStrategiesLoading] = useState(true)
+  const [availableStrategies, setAvailableStrategies] = useState<Array<{ name: string; class: string }>>([
+    { name: 'AiImageAnalyzer', class: 'PromptStrategy' },
+    { name: 'MarketStructure', class: 'AlexAnalysisModule' },
+    { name: 'CointegrationSpreadTrader', class: 'CointegrationAnalysisModule' }
+  ])
+  const [strategiesLoading, setStrategiesLoading] = useState(false)
   const [strategySettingsSchema, setStrategySettingsSchema] = useState<Record<string, any> | null>(null)
 
   useEffect(() => {
