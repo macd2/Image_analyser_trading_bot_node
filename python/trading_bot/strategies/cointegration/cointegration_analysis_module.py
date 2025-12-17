@@ -16,13 +16,13 @@ import logging
 import numpy as np
 import pandas as pd
 import json
-import subprocess
-import sys
+import asyncio
 from pathlib import Path
 from datetime import datetime, timedelta
 from trading_bot.strategies.base import BaseAnalysisModule
 from trading_bot.strategies.cointegration.spread_trading_cointegrated import CointegrationStrategy
 from trading_bot.strategies.cointegration.price_levels import calculate_levels
+from trading_bot.strategies.cointegration.run_full_screener import run_screener
 from trading_bot.core.utils import normalize_symbol_for_bybit
 
 logger = logging.getLogger(__name__)
@@ -158,63 +158,42 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             return pairs_dict
 
         # Cache is stale or doesn't exist, run screener
-        logger.info(f"📊 Running screener for timeframe {timeframe}...")
+        instance_name = self.instance_id or "default"
+        min_volume_usd = self.get_config_value('min_volume_usd', 1_000_000)
+        batch_size = self.get_config_value('batch_size', 15)
+
+        logger.info(f"🔍 [SCREENER] Starting auto-screening for {instance_name}")
+        logger.info(f"   Timeframe: {timeframe}")
+        logger.info(f"   Min Volume: ${min_volume_usd/1e6:.1f}M")
+        logger.info(f"   Batch Size: {batch_size}")
         self._heartbeat(f"Running screener for timeframe {timeframe}")
 
         try:
-            screener_script = Path(__file__).parent / "run_full_screener.py"
-            instance_name = self.instance_id or "default"
+            # Call screener directly (not via subprocess)
+            logger.info(f"📊 [SCREENER] Executing pair discovery...")
+            pairs_dict = asyncio.run(run_screener(
+                timeframe=timeframe,
+                instance_id=instance_name,
+                min_volume_usd=min_volume_usd,
+                batch_size=batch_size,
+                verbose=False  # Suppress screener's own logging
+            ))
 
-            # Get screener settings from config
-            min_volume_usd = self.get_config_value('min_volume_usd', 1_000_000)
-            batch_size = self.get_config_value('batch_size', 15)
-
-            result = subprocess.run(
-                [
-                    sys.executable, str(screener_script),
-                    "--timeframe", timeframe,
-                    "--instance-id", instance_name,
-                    "--min-volume-usd", str(min_volume_usd),
-                    "--batch-size", str(batch_size)
-                ],
-                cwd=Path(__file__).parent,
-                capture_output=True,
-                text=True,
-                timeout=600  # 10 minute timeout
-            )
-
-            if result.returncode != 0:
-                logger.error(f"❌ Screener failed: {result.stderr}")
-                self._heartbeat(f"Screener failed for timeframe {timeframe}")
+            if not pairs_dict:
+                logger.warning(f"⚠️  [SCREENER] No cointegrated pairs found for {timeframe}")
+                self._heartbeat(f"No pairs found for timeframe {timeframe}")
                 return {}
 
-            # Load the newly generated results
-            cache_path = self._get_screener_cache_path(timeframe)
-            if cache_path.exists():
-                with open(cache_path, 'r') as f:
-                    screener_data = json.load(f)
+            logger.info(f"✅ [SCREENER] Found {len(pairs_dict)} independent pairs:")
+            for symbol1, symbol2 in pairs_dict.items():
+                logger.info(f"   • {symbol1} <-> {symbol2}")
 
-                # Convert pairs array to dict format
-                pairs_dict = {}
-                for pair_info in screener_data.get('pairs', []):
-                    symbol1 = pair_info.get('symbol1')
-                    symbol2 = pair_info.get('symbol2')
-                    if symbol1 and symbol2:
-                        pairs_dict[symbol1] = symbol2
+            self._heartbeat(f"Found {len(pairs_dict)} pairs for timeframe {timeframe}")
+            return pairs_dict
 
-                logger.info(f"✅ Screener completed: found {len(pairs_dict)} pairs")
-                self._heartbeat(f"Screener found {len(pairs_dict)} pairs")
-                return pairs_dict
-            else:
-                logger.error(f"❌ Screener results file not found at {cache_path}")
-                return {}
-        except subprocess.TimeoutExpired:
-            logger.error(f"❌ Screener timed out after 10 minutes")
-            self._heartbeat(f"Screener timed out")
-            return {}
         except Exception as e:
-            logger.error(f"❌ Error running screener: {e}")
-            self._heartbeat(f"Screener error: {e}")
+            logger.error(f"❌ [SCREENER] Error running screener: {e}", exc_info=True)
+            self._heartbeat(f"Error running screener: {e}")
             return {}
 
     async def run_analysis_cycle(
@@ -244,12 +223,14 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
 
         # Get pairs based on discovery mode
         if pair_discovery_mode == 'auto_screen':
-            logger.info(f"🔗 Pair discovery mode: AUTO_SCREEN (timeframe: {analysis_timeframe})")
+            logger.info(f"🔗 [PAIR DISCOVERY] Mode: AUTO_SCREEN (timeframe: {analysis_timeframe})")
             self._heartbeat(f"Auto-screening for pairs (timeframe: {analysis_timeframe})")
             pairs = await self._get_or_refresh_screener_results(analysis_timeframe)
+            logger.info(f"🔗 [PAIR DISCOVERY] Screener returned {len(pairs)} pairs")
         else:
-            logger.info(f"🔗 Pair discovery mode: STATIC")
+            logger.info(f"🔗 [PAIR DISCOVERY] Mode: STATIC (predefined pairs)")
             pairs = self.get_config_value('pairs', {})
+            logger.info(f"🔗 [PAIR DISCOVERY] Using {len(pairs)} static pairs")
 
         # Cointegration strategy analyzes ONLY symbols in pairs config
         # Completely independent - doesn't use symbols parameter or watchlist

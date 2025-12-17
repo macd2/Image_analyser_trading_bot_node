@@ -20,6 +20,7 @@ import os
 import json
 from pathlib import Path
 from datetime import datetime
+from typing import Dict
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -126,23 +127,34 @@ def filter_correlated_pairs(results: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(filtered)
 
 
-async def main(timeframe: str = "1h", instance_id: str = "default", min_volume_usd: int = 1_000_000, batch_size: int = 15):
+async def run_screener(
+    timeframe: str = "1h",
+    instance_id: str = "default",
+    min_volume_usd: int = 1_000_000,
+    batch_size: int = 15,
+    verbose: bool = True,
+) -> Dict[str, str]:
     """
-    Run full screener.
+    Run full screener and return discovered pairs.
 
     Args:
         timeframe: Analysis timeframe (e.g., "1h", "4h", "1d")
         instance_id: Instance ID for cache file naming (default: "default")
         min_volume_usd: Minimum 24h volume in USD for filtering (default: 1M)
         batch_size: Number of symbols per batch for parallel fetching (default: 15)
+        verbose: Print progress messages (default: True)
+
+    Returns:
+        Dictionary mapping symbol1 -> symbol2 for discovered pairs
     """
-    print("=" * 70)
-    print("FULL PAIR SCREENER")
-    print(f"Timeframe: {timeframe}")
-    print(f"Instance ID: {instance_id}")
-    print(f"Min Volume: ${min_volume_usd/1e6:.1f}M")
-    print(f"Batch Size: {batch_size}")
-    print("=" * 70)
+    if verbose:
+        print("=" * 70)
+        print("FULL PAIR SCREENER")
+        print(f"Timeframe: {timeframe}")
+        print(f"Instance ID: {instance_id}")
+        print(f"Min Volume: ${min_volume_usd/1e6:.1f}M")
+        print(f"Batch Size: {batch_size}")
+        print("=" * 70)
     
     # Step 1: Get all symbols
     print("\nSTEP 1: Fetching available symbols...")
@@ -225,12 +237,21 @@ async def main(timeframe: str = "1h", instance_id: str = "default", min_volume_u
     print(f"✅ Results saved to {output_file} (instance={instance_id}, timeframe={timeframe})")
     
     # Display results
-    print("\n" + "=" * 70)
-    print("FINAL INDEPENDENT PAIRS")
-    print("=" * 70)
-    print(final_results[['pair', 'adf_p', 'hurst', 'half_life', 'cv', 'confidence_score']].to_string(index=False))
-    
-    return True
+    if verbose:
+        print("\n" + "=" * 70)
+        print("FINAL INDEPENDENT PAIRS")
+        print("=" * 70)
+        print(final_results[['pair', 'adf_p', 'hurst', 'half_life', 'cv', 'confidence_score']].to_string(index=False))
+
+    # Convert pairs to dictionary format (symbol1 -> symbol2)
+    pairs_dict = {}
+    for _, row in final_results.iterrows():
+        pair = row['pair']
+        if '|' in pair:
+            symbol1, symbol2 = pair.split('|')
+            pairs_dict[symbol1] = symbol2
+
+    return pairs_dict
 
 
 if __name__ == "__main__":
@@ -268,13 +289,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
-        success = asyncio.run(main(
+        pairs = asyncio.run(run_screener(
             timeframe=args.timeframe,
             instance_id=args.instance_id,
             min_volume_usd=args.min_volume_usd,
-            batch_size=args.batch_size
+            batch_size=args.batch_size,
+            verbose=True
         ))
-        sys.exit(0 if success else 1)
+        sys.exit(0 if pairs else 1)
     except KeyboardInterrupt:
         print("\n⚠️  Interrupted by user")
         sys.exit(1)
