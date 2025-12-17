@@ -585,7 +585,9 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         """
         Check if spread-based trade should exit.
 
-        For spread-based strategies, exit when z-score crosses the exit threshold.
+        Exit conditions (checked in order):
+        1. Z-score crosses exit threshold (mean reversion)
+        2. Z-score exceeds max_spread_deviation (risk management - if enabled)
 
         Args:
             trade: Trade record with strategy_metadata containing beta, spread_mean, spread_std, z_exit_threshold, pair_symbol
@@ -631,7 +633,10 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             spread = pair_price - beta * current_price
             z_score = (spread - spread_mean) / spread_std if spread_std > 0 else 0
 
-            # Check if z-score crossed exit threshold
+            # Get max_spread_deviation setting (0 = disabled)
+            max_spread_deviation = self.get_config_value("max_spread_deviation", 3.0)
+
+            # Check if z-score crossed exit threshold (mean reversion)
             threshold_crossed = abs(z_score) <= z_exit_threshold
 
             if threshold_crossed:
@@ -652,6 +657,25 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     }
                 }
 
+            # Check if z-score exceeded max_spread_deviation (force-close for risk management)
+            if max_spread_deviation > 0 and abs(z_score) >= max_spread_deviation:
+                return {
+                    "should_exit": True,
+                    "exit_details": {
+                        "reason": "max_spread_deviation_exceeded",
+                        "z_score": float(z_score),
+                        "spread": float(spread),
+                        "max_deviation": float(max_spread_deviation),
+                        "deviation_exceeded": True,
+                        "beta": float(beta),
+                        "spread_mean": float(spread_mean),
+                        "spread_std": float(spread_std),
+                        "pair_symbol": pair_symbol,
+                        "current_price": float(current_price),
+                        "pair_price": float(pair_price),
+                    }
+                }
+
             # No exit condition met
             return {
                 "should_exit": False,
@@ -661,6 +685,8 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     "spread": float(spread),
                     "threshold": float(z_exit_threshold),
                     "threshold_crossed": False,
+                    "max_deviation": float(max_spread_deviation) if max_spread_deviation > 0 else None,
+                    "deviation_exceeded": False if max_spread_deviation > 0 else None,
                     "beta": float(beta),
                     "spread_mean": float(spread_mean),
                     "spread_std": float(spread_std),
