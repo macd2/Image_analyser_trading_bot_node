@@ -41,6 +41,8 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
   const [selectedStrategy, setSelectedStrategy] = useState<string>('AiImageAnalyzer')
   const [availableStrategies, setAvailableStrategies] = useState<Array<{ name: string; class: string }>>([])
   const [strategiesLoading, setStrategiesLoading] = useState(true)
+  const [strategySettingsSchema, setStrategySettingsSchema] = useState<Record<string, any> | null>(null)
+  const [strategySettingsLoading, setStrategySettingsLoading] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -69,6 +71,31 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
       console.error('Failed to fetch strategies:', err)
     } finally {
       setStrategiesLoading(false)
+    }
+  }
+
+  const fetchStrategySettingsSchema = async (strategyType: string) => {
+    try {
+      setStrategySettingsLoading(true)
+      const res = await fetch(`/api/strategies/${strategyType}/settings-schema`)
+      if (!res.ok) {
+        console.error('Failed to fetch strategy settings schema:', res.status, res.statusText)
+        setStrategySettingsSchema(null)
+        return
+      }
+      const data = await res.json()
+      console.log('Fetched strategy settings schema:', data)
+      if (data.schema) {
+        setStrategySettingsSchema(data.schema)
+      } else {
+        console.error('Invalid schema response:', data)
+        setStrategySettingsSchema(null)
+      }
+    } catch (err) {
+      console.error('Failed to fetch strategy settings schema:', err)
+      setStrategySettingsSchema(null)
+    } finally {
+      setStrategySettingsLoading(false)
     }
   }
 
@@ -153,6 +180,16 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
         body: JSON.stringify({ updates, instance_id: instanceId })
       })
       setSelectedStrategy(strategy)
+
+      // Fetch settings schema for the new strategy
+      // Map strategy names to strategy types
+      const strategyTypeMap: Record<string, string> = {
+        'AiImageAnalyzer': 'price_based',
+        'PromptStrategy': 'price_based',
+        'CointegrationStrategy': 'spread_based',
+      }
+      const strategyType = strategyTypeMap[strategy] || strategy.toLowerCase()
+      await fetchStrategySettingsSchema(strategyType)
     } catch (err) {
       console.error('Failed to update strategy:', err)
     }
@@ -170,6 +207,16 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
       if (item.key === 'strategy') return false
       // Show OpenAI settings only for AiImageAnalyzer strategy
       if (item.key.startsWith('openai.')) return selectedStrategy === 'AiImageAnalyzer'
+      // Show strategy-specific settings based on selected strategy
+      if (item.key.startsWith('strategy_specific.')) {
+        const strategyTypeMap: Record<string, string> = {
+          'AiImageAnalyzer': 'price_based',
+          'PromptStrategy': 'price_based',
+          'CointegrationStrategy': 'spread_based',
+        }
+        const strategyType = strategyTypeMap[selectedStrategy] || selectedStrategy.toLowerCase()
+        return item.key.startsWith(`strategy_specific.${strategyType}.`)
+      }
       return true
     })
   }
@@ -261,6 +308,21 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
                             ))}
                           </SelectContent>
                         </Select>
+                      </div>
+                    )}
+
+                    {/* Strategy-Specific Settings Schema Info */}
+                    {strategySettingsSchema && (
+                      <div className="p-3 bg-green-900/20 border border-green-600/50 rounded-lg">
+                        <label className="text-xs text-slate-300 font-medium block mb-2">Strategy Settings</label>
+                        <div className="text-xs text-slate-400 space-y-1">
+                          {Object.entries(strategySettingsSchema).map(([key, setting]: [string, any]) => (
+                            <div key={key} className="flex justify-between items-start gap-2">
+                              <span className="font-mono text-slate-300">{key}</span>
+                              <span className="text-slate-500">({setting.type})</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>

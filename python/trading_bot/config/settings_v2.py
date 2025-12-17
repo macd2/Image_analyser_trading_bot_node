@@ -143,6 +143,9 @@ class TradingConfig:
     age_cancellation_enabled: bool = False
     age_cancellation_max_bars: Dict[str, float] = field(default_factory=dict)
 
+    # Strategy-specific settings (loaded dynamically based on strategy type)
+    strategy_specific_settings: Dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass
 class TradingViewBrowserConfig:
@@ -421,6 +424,9 @@ class ConfigV2:
         if isinstance(age_cancellation_bars_raw, dict):
             age_cancellation_bars = {k: float(v) for k, v in age_cancellation_bars_raw.items()}
 
+        # Load strategy-specific settings (optional)
+        strategy_specific_settings = cls._load_strategy_specific_settings(db_config)
+
         return TradingConfig(
             paper_trading=cls._require(db_config, 'trading.paper_trading', "Set via dashboard."),
             auto_approve_trades=cls._require(db_config, 'trading.auto_approve_trades', "Set via dashboard."),
@@ -451,7 +457,34 @@ class ConfigV2:
             use_kelly_criterion=db_config.get('trading.use_kelly_criterion', False),
             kelly_fraction=db_config.get('trading.kelly_fraction', 0.3),
             kelly_window=db_config.get('trading.kelly_window', 30),
+            strategy_specific_settings=strategy_specific_settings,
         )
+
+    @staticmethod
+    def _load_strategy_specific_settings(db_config: dict) -> Dict[str, Any]:
+        """
+        Load strategy-specific settings from database config.
+
+        Returns a dict with strategy-specific settings for each strategy type.
+        These are loaded from instances.settings['strategy_specific'][STRATEGY_TYPE]
+        """
+        strategy_specific = {}
+
+        # Extract strategy_specific settings from db_config
+        # Keys are like: strategy_specific.price_based.enable_position_tightening
+        for key, value in db_config.items():
+            if key.startswith('strategy_specific.'):
+                parts = key.split('.')
+                if len(parts) >= 3:
+                    strategy_type = parts[1]  # e.g., 'price_based' or 'spread_based'
+                    setting_name = '.'.join(parts[2:])  # e.g., 'enable_position_tightening'
+
+                    if strategy_type not in strategy_specific:
+                        strategy_specific[strategy_type] = {}
+
+                    strategy_specific[strategy_type][setting_name] = value
+
+        return strategy_specific
 
     @staticmethod
     def _load_file_management(yaml_data: dict) -> FileManagementConfig:
