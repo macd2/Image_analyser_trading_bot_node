@@ -1,11 +1,11 @@
 # Multi-runtime: Node.js + Python
 FROM node:20-slim AS base
 
-# Install Python and dependencies for native modules + PostgreSQL client + Playwright/Chromium dependencies + VNC
+# Install Python 3.12 and dependencies for native modules + PostgreSQL client + Playwright/Chromium dependencies + VNC
 RUN apt-get update && apt-get install -y \
-    python3 \
+    python3.12 \
+    python3.12-venv \
     python3-pip \
-    python3-venv \
     build-essential \
     libpq-dev \
     # Playwright/Chromium system dependencies
@@ -45,7 +45,8 @@ RUN apt-get update && apt-get install -y \
     supervisor \
     net-tools \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/bin/python3 /usr/bin/python
+    && ln -sf /usr/bin/python3.12 /usr/bin/python \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python3
 
 # Enable corepack for pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
