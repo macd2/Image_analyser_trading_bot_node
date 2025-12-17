@@ -61,7 +61,7 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
       const res = await fetch('/api/bot/strategies')
       if (!res.ok) {
         console.error('Failed to fetch strategies:', res.status, res.statusText)
-        setAvailableStrategies([])
+        // Keep default strategies on error
         return
       }
       const data = await res.json()
@@ -71,11 +71,11 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
         setAvailableStrategies(data.strategies)
       } else {
         console.error('Invalid strategies response:', data)
-        setAvailableStrategies([])
+        // Keep default strategies on invalid response
       }
     } catch (err) {
       console.error('Failed to fetch strategies:', err)
-      setAvailableStrategies([])
+      // Keep default strategies on error
     } finally {
       setStrategiesLoading(false)
     }
@@ -282,23 +282,21 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
                       <label className="text-xs text-slate-300 font-medium block mb-2">Analysis Strategy</label>
                       {strategiesLoading ? (
                         <div className="text-xs text-slate-400">Loading strategies...</div>
-                      ) : (
+                      ) : availableStrategies && availableStrategies.length > 0 ? (
                         <Select value={selectedStrategy} onValueChange={handleStrategyChange}>
                           <SelectTrigger className="bg-slate-800 border-slate-600">
                             <SelectValue placeholder="Select a strategy..." />
                           </SelectTrigger>
                           <SelectContent className="bg-slate-800 border-slate-600">
-                            {availableStrategies && availableStrategies.length > 0 ? (
-                              availableStrategies.map(s => (
-                                <SelectItem key={s.name} value={s.name}>
-                                  {s.name}
-                                </SelectItem>
-                              ))
-                            ) : (
-                              <div className="text-xs text-slate-400 p-2">No strategies available</div>
-                            )}
+                            {availableStrategies.map(s => (
+                              <SelectItem key={s.name} value={s.name}>
+                                {s.name}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
+                      ) : (
+                        <div className="text-xs text-slate-400 p-2">No strategies available</div>
                       )}
                     </div>
 
