@@ -399,6 +399,103 @@ class PromptStrategy(BaseAnalysisModule):
             "rr_tightening_steps": self.get_config_value("rr_tightening_steps", []),
         }
 
+    def should_exit(
+        self,
+        trade: Dict[str, Any],
+        current_candle: Dict[str, Any],
+        pair_candle: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Check if price-based trade should exit.
+
+        For price-based strategies, exit when price touches TP or SL.
+
+        Args:
+            trade: Trade record with entry_price, stop_loss, take_profit
+            current_candle: Current candle {timestamp, open, high, low, close}
+            pair_candle: Not used for price-based (None)
+
+        Returns:
+            Dict with 'should_exit' bool and 'exit_details' dict
+        """
+        try:
+            entry_price = trade.get("entry_price")
+            stop_loss = trade.get("stop_loss")
+            take_profit = trade.get("take_profit")
+            current_price = current_candle.get("close")
+
+            if not all([entry_price, stop_loss, take_profit, current_price]):
+                return {
+                    "should_exit": False,
+                    "exit_details": {
+                        "reason": "no_exit",
+                        "error": "Missing required price data",
+                    }
+                }
+
+            # Determine direction
+            is_long = entry_price > stop_loss
+
+            # Check if price touched TP or SL
+            if is_long:
+                tp_touched = current_price >= take_profit
+                sl_touched = current_price <= stop_loss
+            else:
+                tp_touched = current_price <= take_profit
+                sl_touched = current_price >= stop_loss
+
+            if tp_touched:
+                return {
+                    "should_exit": True,
+                    "exit_details": {
+                        "reason": "tp_touched",
+                        "price": current_price,
+                        "tp": take_profit,
+                        "sl": stop_loss,
+                        "distance_to_tp": abs(current_price - take_profit),
+                        "distance_to_sl": abs(current_price - stop_loss),
+                        "direction": "long" if is_long else "short",
+                    }
+                }
+
+            if sl_touched:
+                return {
+                    "should_exit": True,
+                    "exit_details": {
+                        "reason": "sl_touched",
+                        "price": current_price,
+                        "tp": take_profit,
+                        "sl": stop_loss,
+                        "distance_to_tp": abs(current_price - take_profit),
+                        "distance_to_sl": abs(current_price - stop_loss),
+                        "direction": "long" if is_long else "short",
+                    }
+                }
+
+            # No exit condition met
+            return {
+                "should_exit": False,
+                "exit_details": {
+                    "reason": "no_exit",
+                    "price": current_price,
+                    "tp": take_profit,
+                    "sl": stop_loss,
+                    "distance_to_tp": abs(current_price - take_profit),
+                    "distance_to_sl": abs(current_price - stop_loss),
+                    "direction": "long" if is_long else "short",
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error in should_exit: {e}")
+            return {
+                "should_exit": False,
+                "exit_details": {
+                    "reason": "error",
+                    "error": str(e),
+                }
+            }
+
     @classmethod
     def get_required_settings(cls) -> Dict[str, Any]:
         """
