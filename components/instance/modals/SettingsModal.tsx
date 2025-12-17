@@ -58,7 +58,12 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
   const fetchAvailableStrategies = async () => {
     try {
       setStrategiesLoading(true)
-      const res = await fetch('/api/bot/strategies')
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+
+      const res = await fetch('/api/bot/strategies', { signal: controller.signal })
+      clearTimeout(timeoutId)
+
       if (!res.ok) {
         console.error('Failed to fetch strategies:', res.status, res.statusText)
         // Keep default strategies on error
@@ -66,11 +71,11 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
       }
       const data = await res.json()
       console.log('Fetched strategies:', data)
-      if (data.strategies && Array.isArray(data.strategies)) {
+      if (data.strategies && Array.isArray(data.strategies) && data.strategies.length > 0) {
         console.log('Setting available strategies:', data.strategies)
         setAvailableStrategies(data.strategies)
       } else {
-        console.error('Invalid strategies response:', data)
+        console.error('Invalid strategies response or empty:', data)
         // Keep default strategies on invalid response
       }
     } catch (err) {

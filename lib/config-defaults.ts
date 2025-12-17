@@ -238,6 +238,87 @@ export const DEFAULT_CONFIG: ConfigDefault[] = [
     category: "tradingview",
     description: "Target chart URL for TradingView navigation"
   },
+
+  // Strategy-Specific Settings - Price-Based Strategies (3 settings)
+  {
+    key: "strategy_specific.price_based.enable_position_tightening",
+    value: true,
+    type: "boolean",
+    category: "ai",
+    description: "Enable position tightening for price-based strategies"
+  },
+  {
+    key: "strategy_specific.price_based.min_rr",
+    value: 1.0,
+    type: "number",
+    category: "ai",
+    description: "Minimum risk-reward ratio for price-based strategies"
+  },
+  {
+    key: "strategy_specific.price_based.enable_spread_monitoring",
+    value: true,
+    type: "boolean",
+    category: "ai",
+    description: "Enable spread monitoring for price-based strategies"
+  },
+
+  // Strategy-Specific Settings - Spread-Based Strategies (8 settings)
+  {
+    key: "strategy_specific.spread_based.z_score_entry_threshold",
+    value: 2.0,
+    type: "number",
+    category: "ai",
+    description: "Z-score entry threshold for spread-based strategies"
+  },
+  {
+    key: "strategy_specific.spread_based.z_score_exit_threshold",
+    value: 0.5,
+    type: "number",
+    category: "ai",
+    description: "Z-score exit threshold for spread-based strategies"
+  },
+  {
+    key: "strategy_specific.spread_based.lookback_period",
+    value: 120,
+    type: "number",
+    category: "ai",
+    description: "Lookback period (bars) for cointegration analysis"
+  },
+  {
+    key: "strategy_specific.spread_based.enable_spread_monitoring",
+    value: true,
+    type: "boolean",
+    category: "ai",
+    description: "Enable spread monitoring for spread-based strategies"
+  },
+  {
+    key: "strategy_specific.spread_based.z_score_monitoring_interval",
+    value: 60,
+    type: "number",
+    category: "ai",
+    description: "Z-score monitoring interval in seconds"
+  },
+  {
+    key: "strategy_specific.spread_based.spread_reversion_threshold",
+    value: 0.1,
+    type: "number",
+    category: "ai",
+    description: "Threshold for detecting mean reversion in spread"
+  },
+  {
+    key: "strategy_specific.spread_based.max_spread_deviation",
+    value: 3.0,
+    type: "number",
+    category: "ai",
+    description: "Maximum z-score deviation before force-closing position"
+  },
+  {
+    key: "strategy_specific.spread_based.min_z_distance",
+    value: 0.5,
+    type: "number",
+    category: "ai",
+    description: "Minimum z-score distance to stop loss for signal validation"
+  },
 ];
 
 /**
