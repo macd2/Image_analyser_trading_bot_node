@@ -98,10 +98,11 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         cache_path = self._get_screener_cache_path(timeframe)
 
         if not cache_path.exists():
-            logger.debug(f"📊 No screener cache found at {cache_path}")
+            logger.info(f"📊 [CACHE] No screener cache found at {cache_path}")
             return None
 
         try:
+            logger.info(f"📊 [CACHE] Loading screener cache from {cache_path}")
             with open(cache_path, 'r') as f:
                 cache_data = json.load(f)
 
@@ -109,21 +110,23 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             cache_hours = self.get_config_value('screener_cache_hours', 24)
             screened_at = datetime.fromisoformat(cache_data.get('timestamp', ''))
             cache_age = datetime.now() - screened_at
+            cache_age_hours = cache_age.total_seconds() / 3600
 
             if cache_age > timedelta(hours=cache_hours):
-                logger.info(f"📊 Screener cache is {cache_age.total_seconds()/3600:.1f}h old (max: {cache_hours}h), will refresh")
+                logger.info(f"📊 [CACHE] Cache is {cache_age_hours:.1f}h old (max: {cache_hours}h), will refresh")
                 return None
 
             # Verify timeframe matches
             cached_timeframe = cache_data.get('timeframe')
             if cached_timeframe != timeframe:
-                logger.info(f"📊 Screener cache has different timeframe ({cached_timeframe} vs {timeframe}), will refresh")
+                logger.info(f"📊 [CACHE] Cache has different timeframe ({cached_timeframe} vs {timeframe}), will refresh")
                 return None
 
-            logger.info(f"✅ Using cached screener results ({cache_age.total_seconds()/3600:.1f}h old, timeframe={timeframe})")
+            num_pairs = len(cache_data.get('pairs', []))
+            logger.info(f"✅ [CACHE] Using cached screener results: {num_pairs} pairs, age={cache_age_hours:.1f}h, timeframe={timeframe}")
             return cache_data
         except Exception as e:
-            logger.warning(f"⚠️  Failed to load screener cache: {e}")
+            logger.warning(f"⚠️  [CACHE] Failed to load screener cache: {e}")
             return None
 
     def _save_screener_cache(self, timeframe: str, screener_data: Dict[str, Any]) -> bool:
@@ -131,12 +134,14 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         cache_path = self._get_screener_cache_path(timeframe)
 
         try:
+            num_pairs = len(screener_data.get('pairs', []))
+            logger.info(f"📊 [CACHE] Saving screener cache to {cache_path}")
             with open(cache_path, 'w') as f:
                 json.dump(screener_data, f, indent=2)
-            logger.info(f"✅ Screener results saved to cache: {cache_path}")
+            logger.info(f"✅ [CACHE] Screener cache saved: {num_pairs} pairs, timeframe={timeframe}, file={cache_path}")
             return True
         except Exception as e:
-            logger.error(f"❌ Failed to save screener cache: {e}")
+            logger.error(f"❌ [CACHE] Failed to save screener cache: {e}")
             return False
 
     async def _get_or_refresh_screener_results(self, timeframe: str) -> Dict[str, str]:
