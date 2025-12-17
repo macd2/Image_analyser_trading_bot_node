@@ -10,8 +10,11 @@ Features:
 """
 from typing import Dict, Any, List
 import pandas as pd
-import pandas_ta as ta
+import pandas_ta
 from trading_bot.services.base_strategy import BaseStrategy
+
+# Alias for compatibility with code using 'ta'
+ta = pandas_ta
 
 class MarketRegimeStrategy(BaseStrategy):
     """Market Regime Detection Strategy"""

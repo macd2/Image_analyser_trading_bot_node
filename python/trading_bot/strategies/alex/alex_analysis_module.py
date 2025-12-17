@@ -12,8 +12,11 @@ Features:
 
 from typing import Dict, Any, List, Optional
 import pandas as pd
-import pandas_ta as ta
+import pandas_ta
 from trading_bot.strategies.base import BaseAnalysisModule
+
+# Alias for compatibility with code using 'ta'
+ta = pandas_ta
 
 logger = None  # Set in __init__
 

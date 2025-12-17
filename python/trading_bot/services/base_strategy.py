@@ -4,7 +4,10 @@ Base strategy interface for TA-based advisory system.
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List
 import pandas as pd
-import pandas_ta as ta
+import pandas_ta
+
+# Alias for compatibility with code using 'ta'
+ta = pandas_ta
 
 
 class BaseStrategy(ABC):
