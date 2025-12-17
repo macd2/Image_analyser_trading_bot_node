@@ -191,7 +191,7 @@ class EnhancedPositionMonitor:
 
     # ==================== EVENT HANDLERS ====================
 
-    def on_position_update(self, position: PositionState, instance_id: str, run_id: str, trade_id: Optional[str] = None) -> None:
+    def on_position_update(self, position: PositionState, instance_id: str, run_id: str, trade_id: Optional[str] = None, strategy: Optional[Any] = None) -> None:
         """
         Handle position update from WebSocket (event-driven mode).
 
@@ -200,6 +200,7 @@ class EnhancedPositionMonitor:
             instance_id: Instance ID for audit trail
             run_id: Run ID for audit trail
             trade_id: Trade ID for linking (optional)
+            strategy: Strategy instance for strategy-specific monitoring (optional)
 
         MULTI-INSTANCE: Uses (instance_id, symbol) key for tracking.
         """
@@ -238,7 +239,7 @@ class EnhancedPositionMonitor:
 
         # Check for tightening opportunities
         state = self._position_state[position_key]
-        self._check_all_tightening(position, state, instance_id, run_id, trade_id)
+        self._check_all_tightening(position, state, instance_id, run_id, trade_id, strategy)
 
     def on_order_update(self, order: OrderState, instance_id: str, run_id: str, timeframe: str) -> None:
         """
@@ -332,19 +333,46 @@ class EnhancedPositionMonitor:
         instance_id: str,
         run_id: str,
         trade_id: Optional[str],
+        strategy: Optional[Any] = None,
     ) -> None:
-        """Check all tightening strategies for a position"""
+        """Check all tightening strategies for a position
+
+        If strategy is provided, uses strategy.get_monitoring_metadata() to determine
+        what monitoring to apply. Otherwise uses default configuration.
+        """
 
         # Master switch - if disabled, skip ALL tightening
         if not self.master_tightening_enabled:
             return
 
+        # Get strategy-specific monitoring metadata if available
+        monitoring_metadata = None
+        if strategy:
+            try:
+                monitoring_metadata = strategy.get_monitoring_metadata()
+            except Exception as e:
+                logger.warning(f"Failed to get monitoring metadata from strategy: {e}")
+
         # 1. RR-based tightening (standard)
-        if self.tightening_enabled:
+        # Check if enabled in strategy metadata or use default config
+        enable_rr_tightening = True
+        if monitoring_metadata:
+            enable_rr_tightening = monitoring_metadata.get("enable_rr_tightening", self.tightening_enabled)
+        else:
+            enable_rr_tightening = self.tightening_enabled
+
+        if enable_rr_tightening:
             self._check_rr_tightening(position, state, instance_id, run_id, trade_id)
 
         # 2. TP proximity trailing stop
-        if self.tp_proximity_config.enabled:
+        # Check if enabled in strategy metadata or use default config
+        enable_tp_proximity = False
+        if monitoring_metadata:
+            enable_tp_proximity = monitoring_metadata.get("enable_tp_proximity", self.tp_proximity_config.enabled)
+        else:
+            enable_tp_proximity = self.tp_proximity_config.enabled
+
+        if enable_tp_proximity:
             self._check_tp_proximity(position, state, instance_id, run_id, trade_id)
 
         # 3. Age-based tightening

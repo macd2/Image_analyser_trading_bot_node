@@ -101,6 +101,15 @@ CREATE TABLE IF NOT EXISTS recommendations (
     model_name TEXT DEFAULT 'gpt-4-vision-preview',
     raw_response TEXT,
 
+    -- Strategy tracking for traceability
+    strategy_uuid TEXT,
+    strategy_type TEXT,
+    strategy_name TEXT,
+
+    -- Decision context (for reproducibility)
+    setup_quality REAL,
+    market_environment REAL,
+
     -- Timestamps
     analyzed_at TEXT NOT NULL,
     cycle_boundary TEXT,
@@ -166,6 +175,18 @@ CREATE TABLE IF NOT EXISTS trades (
     risk_per_unit REAL,          -- Price distance per unit (entry - SL)
     sizing_method TEXT,          -- 'kelly' or 'fixed'
     risk_pct_used REAL,          -- Risk % used in calculation
+
+    -- Strategy tracking for traceability
+    strategy_uuid TEXT,
+    strategy_type TEXT,
+    strategy_name TEXT,
+
+    -- Decision context (for reproducibility)
+    ranking_context TEXT,        -- JSON: ranking_score, ranking_position, total_signals_analyzed, total_signals_ranked, available_slots
+
+    -- Execution context (for reproducibility)
+    wallet_balance_at_trade REAL,
+    kelly_metrics TEXT,          -- JSON: kelly_fraction_used, win_rate, avg_win_percent, avg_loss_percent, trade_history_count
 
     -- Timestamps
     submitted_at TEXT,

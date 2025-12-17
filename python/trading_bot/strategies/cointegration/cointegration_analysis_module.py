@@ -26,6 +26,11 @@ logger = logging.getLogger(__name__)
 class CointegrationAnalysisModule(BaseAnalysisModule):
     """Cointegration-based spread trading strategy."""
 
+    # Strategy type identification
+    STRATEGY_TYPE = "spread_based"
+    STRATEGY_NAME = "CointegrationAnalysisModule"
+    STRATEGY_VERSION = "1.0"
+
     # Strategy-specific configuration (ready to move to instances.settings.strategy_config)
     # Later: This will be read from instances.settings.strategy_config in database
     STRATEGY_CONFIG = {
@@ -434,5 +439,162 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             "chart_path": "",
             "timeframe": analysis_timeframe,
             "cycle_id": cycle_id,
+            # Add strategy UUID for traceability
+            "strategy_uuid": self.strategy_uuid,
+            "strategy_type": self.STRATEGY_TYPE,
+            "strategy_name": self.STRATEGY_NAME,
+        }
+
+    def validate_signal(self, signal: Dict[str, Any]) -> bool:
+        """
+        Validate spread-based signal.
+
+        Checks:
+        - Z-score distance to SL is adequate (>= min_z_distance)
+        - Spread levels are in correct order
+        - Confidence is reasonable
+
+        Args:
+            signal: Signal dict with z_score, entry_price, stop_loss, take_profit
+
+        Returns:
+            True if valid
+
+        Raises:
+            ValueError: If validation fails
+        """
+        min_z_distance = self.get_config_value("min_z_distance", 0.5)
+
+        z_score = signal.get("z_score", 0)
+        entry = signal.get("entry_price")
+        sl = signal.get("stop_loss")
+        tp = signal.get("take_profit")
+
+        if not all([entry, sl, tp]):
+            raise ValueError(f"Missing price levels: entry={entry}, sl={sl}, tp={tp}")
+
+        if entry <= 0 or sl <= 0 or tp <= 0:
+            raise ValueError(f"Prices must be positive: entry={entry}, sl={sl}, tp={tp}")
+
+        # For spread-based, check z-score distance to SL
+        z_distance_to_sl = abs(z_score)
+        if z_distance_to_sl < min_z_distance:
+            raise ValueError(
+                f"Z-score distance to SL {z_distance_to_sl:.2f} below minimum {min_z_distance}"
+            )
+
+        # Determine direction based on entry vs SL
+        is_long = entry > sl
+
+        if is_long:
+            if not (sl < entry < tp):
+                raise ValueError(
+                    f"Long signal prices in wrong order: SL({sl}) < Entry({entry}) < TP({tp})"
+                )
+        else:
+            if not (tp < entry < sl):
+                raise ValueError(
+                    f"Short signal prices in wrong order: TP({tp}) < Entry({entry}) < SL({sl})"
+                )
+
+        return True
+
+    def calculate_risk_metrics(self, signal: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Calculate spread-based risk metrics.
+
+        Returns:
+            Dict with: z_distance_to_sl, z_distance_to_tp, spread_volatility
+        """
+        z_score = signal.get("z_score", 0)
+        entry = signal.get("entry_price")
+        sl = signal.get("stop_loss")
+        tp = signal.get("take_profit")
+
+        is_long = entry > sl
+
+        if is_long:
+            risk_per_unit = entry - sl
+            reward_per_unit = tp - entry
+        else:
+            risk_per_unit = sl - entry
+            reward_per_unit = entry - tp
+
+        rr_ratio = reward_per_unit / risk_per_unit if risk_per_unit > 0 else 0
+
+        return {
+            "z_score": z_score,
+            "z_distance_to_sl": abs(z_score),
+            "risk_per_unit": risk_per_unit,
+            "reward_per_unit": reward_per_unit,
+            "risk_reward_ratio": rr_ratio,
+        }
+
+    def get_exit_condition(self) -> Dict[str, Any]:
+        """
+        Get spread-based exit condition metadata.
+
+        Returns:
+            Dict with z-score exit parameters for simulator to check
+        """
+        z_exit = self.get_config_value("z_exit", 0.5)
+
+        return {
+            "type": "z_score",
+            "z_exit": z_exit,
+            "description": f"Exit when z-score crosses {z_exit} threshold",
+        }
+
+    def get_monitoring_metadata(self) -> Dict[str, Any]:
+        """
+        Get spread-based monitoring metadata.
+
+        Returns:
+            Dict with spread dynamics and z-score parameters for position monitor
+        """
+        z_exit = self.get_config_value("z_exit", 0.5)
+
+        return {
+            "type": "z_score",
+            "z_exit": z_exit,
+            "enable_spread_monitoring": self.get_config_value("enable_spread_monitoring", True),
+            "z_score_monitoring_interval": self.get_config_value("z_score_monitoring_interval", 60),
+            "spread_reversion_threshold": self.get_config_value("spread_reversion_threshold", 0.1),
+        }
+
+    @classmethod
+    def get_required_settings(cls) -> Dict[str, Any]:
+        """
+        Get spread-based strategy settings schema.
+
+        Returns:
+            Dict with settings schema for CointegrationAnalysisModule
+        """
+        return {
+            "enable_spread_monitoring": {
+                "type": "bool",
+                "default": True,
+                "description": "Enable spread monitoring and reversion detection",
+            },
+            "z_score_monitoring_interval": {
+                "type": "int",
+                "default": 60,
+                "description": "Interval (in seconds) for z-score monitoring checks",
+            },
+            "spread_reversion_threshold": {
+                "type": "float",
+                "default": 0.1,
+                "description": "Threshold for detecting mean reversion in spread",
+            },
+            "max_spread_deviation": {
+                "type": "float",
+                "default": 3.0,
+                "description": "Maximum z-score deviation before closing position",
+            },
+            "min_z_distance": {
+                "type": "float",
+                "default": 0.5,
+                "description": "Minimum z-score distance to SL for signal validation",
+            },
         }
 

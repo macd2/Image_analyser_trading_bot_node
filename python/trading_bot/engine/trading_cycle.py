@@ -639,8 +639,10 @@ class TradingCycle:
             signals: List of actionable signals
 
         Returns:
-            Signals sorted by ranking_score (highest first)
+            Signals sorted by ranking_score (highest first) with ranking context stored
         """
+        total_signals_analyzed = len(signals)
+
         for signal in signals:
             # Normalize risk-reward (cap at 5 for scoring)
             rr = min(signal.get("risk_reward", 0), 5) / 5  # Normalize to 0-1
@@ -656,7 +658,19 @@ class TradingCycle:
             signal["ranking_score"] = round(score, 4)
 
         # Sort by score descending
-        return sorted(signals, key=lambda x: x.get("ranking_score", 0), reverse=True)
+        ranked_signals = sorted(signals, key=lambda x: x.get("ranking_score", 0), reverse=True)
+
+        # Add ranking context to each signal for complete traceability
+        for ranking_position, signal in enumerate(ranked_signals, 1):
+            signal["ranking_context"] = {
+                "ranking_score": signal.get("ranking_score", 0),
+                "ranking_position": ranking_position,
+                "total_signals_analyzed": total_signals_analyzed,
+                "total_signals_ranked": len(ranked_signals),
+                "ranking_weights": self.SIGNAL_WEIGHTS,
+            }
+
+        return ranked_signals
 
     def _get_available_slots(self) -> int:
         """
@@ -886,13 +900,45 @@ class TradingCycle:
             conn = None
             try:
                 conn = get_connection()
+
+                # Capture reproducibility data if strategy is available
+                reproducibility_data = {}
+                if hasattr(self, 'strategy') and self.strategy:
+                    try:
+                        reproducibility_data = self.strategy.capture_reproducibility_data(
+                            analysis_result=analysis,
+                            chart_path=result.get("chart_path"),
+                            market_data=analysis.get("market_data_snapshot", {}),
+                            model_version=model_name,
+                            model_params=analysis.get("model_params", {}),
+                            prompt_version=prompt_version,
+                            prompt_content=analysis.get("analysis_prompt", ""),
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to capture reproducibility data: {e}")
+
+                # Prepare reproducibility columns
+                chart_hash = reproducibility_data.get('chart_hash')
+                model_version = reproducibility_data.get('model_version')
+                model_params = json.dumps(reproducibility_data.get('model_params', {}))
+                market_data_snapshot = json.dumps(reproducibility_data.get('market_data_snapshot', {}))
+                strategy_config_snapshot = json.dumps(reproducibility_data.get('strategy_config_snapshot', {}))
+                confidence_components = json.dumps(reproducibility_data.get('confidence_components', {}))
+                setup_quality_components = json.dumps(reproducibility_data.get('setup_quality_components', {}))
+                market_environment_components = json.dumps(reproducibility_data.get('market_environment_components', {}))
+                validation_results = json.dumps(reproducibility_data.get('validation_results', {}))
+
                 execute(conn, """
                     INSERT INTO recommendations
                     (id, cycle_id, symbol, timeframe, recommendation, confidence,
                      entry_price, stop_loss, take_profit, risk_reward,
                      reasoning, chart_path, prompt_name, prompt_version, model_name,
-                     raw_response, analyzed_at, cycle_boundary, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     raw_response, analyzed_at, cycle_boundary, created_at,
+                     chart_hash, model_version, model_params, market_data_snapshot,
+                     strategy_config_snapshot, confidence_components, setup_quality_components,
+                     market_environment_components, validation_results)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     rec_id,
                     result.get("cycle_id"),  # Link to parent cycle
@@ -913,6 +959,16 @@ class TradingCycle:
                     now_iso,  # analyzed_at
                     get_current_cycle_boundary(self.timeframe).isoformat(),  # cycle_boundary
                     now_iso,  # created_at - explicit to match format with other tables
+                    # Reproducibility columns
+                    chart_hash,
+                    model_version,
+                    model_params,
+                    market_data_snapshot,
+                    strategy_config_snapshot,
+                    confidence_components,
+                    setup_quality_components,
+                    market_environment_components,
+                    validation_results,
                 ))
                 logger.info(f"📝 Recorded recommendation {rec_id} with full audit trail (prompt: {prompt_name}, model: {model_name})")
                 return rec_id

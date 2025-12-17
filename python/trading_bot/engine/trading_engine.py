@@ -298,6 +298,7 @@ class TradingEngine:
         signal: Dict[str, Any],
         recommendation_id: Optional[str] = None,
         cycle_id: Optional[str] = None,
+        strategy: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Execute a trading signal.
@@ -307,6 +308,7 @@ class TradingEngine:
             signal: Signal dict with recommendation, entry, tp, sl, confidence
             recommendation_id: ID of the recommendation that generated this signal
             cycle_id: ID of the cycle that generated this signal
+            strategy: Strategy instance for strategy-specific validation (optional)
 
         Returns:
             Execution result dict
@@ -354,47 +356,43 @@ class TradingEngine:
                 "timestamp": timestamp,
             }
 
-        # Validate RR ratio
-        entry = signal.get("entry_price", 0)
-        tp = signal.get("take_profit", 0)
-        sl = signal.get("stop_loss", 0)
+        # Validate signal using strategy-specific validation if strategy provided
+        if strategy:
+            validation_result = strategy.validate_signal(signal)
+            if not validation_result.get("valid", False):
+                rejection_reason = validation_result.get("error", "Signal validation failed")
+                self._insert_rejected_trade(trade_id, symbol, signal, rejection_reason, recommendation_id, cycle_id, timestamp)
+                return {
+                    "id": trade_id,
+                    "status": "rejected",
+                    "error": rejection_reason,
+                    "timestamp": timestamp,
+                }
+        else:
+            # Fallback to basic validation if no strategy provided
+            entry = signal.get("entry_price", 0)
+            tp = signal.get("take_profit", 0)
+            sl = signal.get("stop_loss", 0)
 
-        if not all([entry, tp, sl]):
-            rejection_reason = "Missing entry, TP, or SL price"
-            self._insert_rejected_trade(trade_id, symbol, signal, rejection_reason, recommendation_id, cycle_id, timestamp)
-            return {
-                "id": trade_id,
-                "status": "rejected",
-                "error": rejection_reason,
-                "timestamp": timestamp,
-            }
-
-        # Calculate RR ratio correctly for both LONG and SHORT
-        is_long = recommendation in ("BUY", "LONG")
-        risk = abs(sl - entry)
-        reward = abs(tp - entry) if is_long else abs(entry - tp)
-        rr_ratio = reward / risk if risk > 0 else 0
-
-        min_rr = self.config.trading.min_rr
-        if rr_ratio < min_rr:
-            rejection_reason = f"RR ratio {rr_ratio:.2f} below minimum {min_rr}"
-            self._insert_rejected_trade(trade_id, symbol, signal, rejection_reason, recommendation_id, cycle_id, timestamp, rr_ratio)
-            return {
-                "id": trade_id,
-                "status": "rejected",
-                "error": rejection_reason,
-                "timestamp": timestamp,
-            }
+            if not all([entry, tp, sl]):
+                rejection_reason = "Missing entry, TP, or SL price"
+                self._insert_rejected_trade(trade_id, symbol, signal, rejection_reason, recommendation_id, cycle_id, timestamp)
+                return {
+                    "id": trade_id,
+                    "status": "rejected",
+                    "error": rejection_reason,
+                    "timestamp": timestamp,
+                }
 
         # Paper trading mode
         if self.paper_trading:
             return self._execute_paper_trade(
-                trade_id, symbol, signal, rr_ratio, recommendation_id, cycle_id, timestamp
+                trade_id, symbol, signal, recommendation_id, cycle_id, timestamp, strategy
             )
 
         # Live trading
         return self._execute_live_trade(
-            trade_id, symbol, signal, rr_ratio, recommendation_id, cycle_id, timestamp
+            trade_id, symbol, signal, recommendation_id, cycle_id, timestamp, strategy
         )
 
     def _execute_paper_trade(
@@ -402,10 +400,10 @@ class TradingEngine:
         trade_id: str,
         symbol: str,
         signal: Dict[str, Any],
-        rr_ratio: float,
         recommendation_id: Optional[str],
         cycle_id: Optional[str],
         timestamp: datetime,
+        strategy: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Execute paper trade (simulation)."""
         side = "Buy" if signal["recommendation"].upper() in ("BUY", "LONG") else "Sell"
@@ -426,6 +424,7 @@ class TradingEngine:
             wallet_balance=balance,
             confidence=signal.get("confidence", 0.75),
             trade_history=trade_history,
+            strategy=strategy,
         )
 
         if "error" in sizing:
@@ -435,6 +434,15 @@ class TradingEngine:
                 "error": sizing["error"],
                 "timestamp": timestamp,
             }
+
+        # Calculate RR ratio for logging
+        entry = signal.get("entry_price", 0)
+        tp = signal.get("take_profit", 0)
+        sl = signal.get("stop_loss", 0)
+        is_long = signal["recommendation"].upper() in ("BUY", "LONG")
+        risk = abs(sl - entry)
+        reward = abs(tp - entry) if is_long else abs(entry - tp)
+        rr_ratio = reward / risk if risk > 0 else 0
 
         # Record paper trade
         trade = {
@@ -453,9 +461,16 @@ class TradingEngine:
             "status": "paper_trade",
             "recommendation_id": recommendation_id,
             "timestamp": timestamp,
+            # Strategy tracking and traceability
+            "strategy_uuid": signal.get("strategy_uuid"),
+            "strategy_type": signal.get("strategy_type"),
+            "strategy_name": signal.get("strategy_name"),
+            "ranking_context": signal.get("ranking_context"),
+            "wallet_balance_at_trade": wallet.get("available"),
+            "kelly_metrics": sizing.get("kelly_metrics"),  # From position sizer
         }
 
-        self._record_trade(trade, sizing)
+        self._record_trade(trade, sizing, strategy)
 
         # Log detailed position sizing info for audit trail
         sizing_details = (
@@ -475,10 +490,10 @@ class TradingEngine:
         trade_id: str,
         symbol: str,
         signal: Dict[str, Any],
-        rr_ratio: float,
         recommendation_id: Optional[str],
         cycle_id: Optional[str],
         timestamp: datetime,
+        strategy: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Execute live trade on exchange."""
         side = "Buy" if signal["recommendation"].upper() in ("BUY", "LONG") else "Sell"
@@ -508,6 +523,7 @@ class TradingEngine:
             wallet_balance=wallet["available"],
             confidence=signal.get("confidence", 0.75),
             trade_history=trade_history,
+            strategy=strategy,
         )
 
         if "error" in sizing:
@@ -566,9 +582,16 @@ class TradingEngine:
             "status": "submitted",
             "recommendation_id": recommendation_id,
             "timestamp": timestamp,
+            # Strategy tracking and traceability
+            "strategy_uuid": signal.get("strategy_uuid"),
+            "strategy_type": signal.get("strategy_type"),
+            "strategy_name": signal.get("strategy_name"),
+            "ranking_context": signal.get("ranking_context"),
+            "wallet_balance_at_trade": wallet.get("available"),
+            "kelly_metrics": sizing.get("kelly_metrics"),  # From position sizer
         }
 
-        self._record_trade(trade, sizing)
+        self._record_trade(trade, sizing, strategy)
 
         # Log detailed position sizing info for audit trail
         sizing_details = (
@@ -583,8 +606,8 @@ class TradingEngine:
 
         return trade
 
-    def _record_trade(self, trade: Dict[str, Any], sizing: Dict[str, Any] = None) -> None:
-        """Record trade to database with position sizing metrics."""
+    def _record_trade(self, trade: Dict[str, Any], sizing: Optional[Dict[str, Any]] = None, strategy: Optional[Any] = None) -> None:
+        """Record trade to database with position sizing metrics and strategy tracking."""
         if not self._db:
             return
 
@@ -610,13 +633,60 @@ class TradingEngine:
             sizing_method = sizing.get("sizing_method") if sizing else None
             risk_pct_used = sizing.get("risk_pct_used") if sizing else None
 
+            # Extract strategy tracking and traceability data
+            strategy_uuid = trade.get("strategy_uuid")
+            strategy_type = trade.get("strategy_type")
+            strategy_name = trade.get("strategy_name")
+            ranking_context = trade.get("ranking_context")  # JSON string
+            wallet_balance_at_trade = trade.get("wallet_balance_at_trade")
+            kelly_metrics = trade.get("kelly_metrics")  # JSON string
+
+            # Capture position sizing reproducibility data
+            position_sizing_inputs = None
+            position_sizing_outputs = None
+            order_parameters = None
+            execution_timestamp = trade.get("timestamp")
+
+            if sizing:
+                import json
+                position_sizing_inputs = json.dumps({
+                    "entry_price": sizing.get("entry_price"),
+                    "stop_loss": sizing.get("stop_loss"),
+                    "wallet_balance": sizing.get("wallet_balance"),
+                    "confidence": sizing.get("confidence"),
+                    "risk_percentage": sizing.get("risk_percentage"),
+                    "kelly_fraction": sizing.get("kelly_fraction"),
+                })
+                position_sizing_outputs = json.dumps({
+                    "position_size": sizing.get("position_size"),
+                    "position_value": sizing.get("position_value"),
+                    "risk_amount": sizing.get("risk_amount"),
+                    "sizing_method": sizing.get("sizing_method"),
+                    "risk_pct_used": sizing.get("risk_pct_used"),
+                })
+
+            # Capture order parameters for reproducibility
+            order_parameters = json.dumps({
+                "symbol": trade.get("symbol"),
+                "side": trade.get("side"),
+                "entry_price": trade.get("entry_price"),
+                "take_profit": trade.get("take_profit"),
+                "stop_loss": trade.get("stop_loss"),
+                "quantity": trade.get("qty"),
+                "order_id": trade.get("order_id"),
+            })
+
             execute(self._db, """
                 INSERT INTO trades
                 (id, recommendation_id, run_id, cycle_id, symbol, side, entry_price, take_profit,
                  stop_loss, quantity, status, order_id, confidence, rr_ratio, timeframe, dry_run, created_at,
-                 position_size_usd, risk_amount_usd, risk_percentage, confidence_weight, risk_per_unit, sizing_method, risk_pct_used)
+                 position_size_usd, risk_amount_usd, risk_percentage, confidence_weight, risk_per_unit, sizing_method, risk_pct_used,
+                 strategy_uuid, strategy_type, strategy_name, ranking_context, wallet_balance_at_trade, kelly_metrics,
+                 position_sizing_inputs, position_sizing_outputs, order_parameters, execution_timestamp)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?)
+                        ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?)
             """, (
                 trade["id"],
                 trade.get("recommendation_id"),
@@ -643,6 +713,18 @@ class TradingEngine:
                 risk_per_unit,
                 sizing_method,
                 risk_pct_used,
+                # Strategy tracking and traceability
+                strategy_uuid,
+                strategy_type,
+                strategy_name,
+                ranking_context,
+                wallet_balance_at_trade,
+                kelly_metrics,
+                # Reproducibility data
+                position_sizing_inputs,
+                position_sizing_outputs,
+                order_parameters,
+                execution_timestamp.isoformat() if execution_timestamp else None,
             ))
         except Exception as e:
             logger.error(f"Failed to record trade: {e}")

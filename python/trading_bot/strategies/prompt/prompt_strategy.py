@@ -39,11 +39,16 @@ logger = logging.getLogger(__name__)
 class PromptStrategy(BaseAnalysisModule):
     """
     Independent prompt-based trading strategy.
-    
+
     Orchestrates chart capture, cleaning, and analysis in a single
     self-contained module that can be swapped with other strategies.
     """
-    
+
+    # Strategy type identification
+    STRATEGY_TYPE = "price_based"
+    STRATEGY_NAME = "PromptStrategy"
+    STRATEGY_VERSION = "1.0"
+
     # Signal ranking weights (same as trading cycle)
     SIGNAL_WEIGHTS = {
         "confidence": 0.4,
@@ -270,7 +275,12 @@ class PromptStrategy(BaseAnalysisModule):
         result["entry_price"] = analysis.get("entry_price")
         result["stop_loss"] = analysis.get("stop_loss")
         result["take_profit"] = analysis.get("take_profit")
-        
+
+        # Add strategy UUID for traceability
+        result["strategy_uuid"] = self.strategy_uuid
+        result["strategy_type"] = self.STRATEGY_TYPE
+        result["strategy_name"] = self.STRATEGY_NAME
+
         self.logger.info(f"   📊 {normalized_symbol}: {recommendation} (conf: {confidence:.2%}, RR: {result['risk_reward']:.2f})")
         
         # Validate output format
@@ -279,6 +289,144 @@ class PromptStrategy(BaseAnalysisModule):
         except ValueError as e:
             self.logger.error(f"Output validation failed for {normalized_symbol}: {e}")
             result["error"] = str(e)
-        
+
         return result
+
+    def validate_signal(self, signal: Dict[str, Any]) -> bool:
+        """
+        Validate price-based signal.
+
+        Checks:
+        - RR ratio >= min_rr (default 1.0)
+        - Entry/SL/TP prices are in correct order
+        - Prices are reasonable (not zero or negative)
+
+        Args:
+            signal: Signal dict with entry_price, stop_loss, take_profit
+
+        Returns:
+            True if valid
+
+        Raises:
+            ValueError: If validation fails
+        """
+        min_rr = self.get_config_value("min_rr", 1.0)
+
+        entry = signal.get("entry_price")
+        sl = signal.get("stop_loss")
+        tp = signal.get("take_profit")
+
+        if not all([entry, sl, tp]):
+            raise ValueError(f"Missing price levels: entry={entry}, sl={sl}, tp={tp}")
+
+        if entry <= 0 or sl <= 0 or tp <= 0:
+            raise ValueError(f"Prices must be positive: entry={entry}, sl={sl}, tp={tp}")
+
+        # Determine direction based on entry vs SL
+        is_long = entry > sl
+
+        if is_long:
+            if not (sl < entry < tp):
+                raise ValueError(
+                    f"Long signal prices in wrong order: SL({sl}) < Entry({entry}) < TP({tp})"
+                )
+            rr_ratio = (tp - entry) / (entry - sl)
+        else:
+            if not (tp < entry < sl):
+                raise ValueError(
+                    f"Short signal prices in wrong order: TP({tp}) < Entry({entry}) < SL({sl})"
+                )
+            rr_ratio = (entry - tp) / (sl - entry)
+
+        if rr_ratio < min_rr:
+            raise ValueError(
+                f"RR ratio {rr_ratio:.2f} below minimum {min_rr}"
+            )
+
+        return True
+
+    def calculate_risk_metrics(self, signal: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Calculate price-based risk metrics.
+
+        Returns:
+            Dict with: risk_per_unit, reward_per_unit, risk_reward_ratio
+        """
+        entry = signal.get("entry_price")
+        sl = signal.get("stop_loss")
+        tp = signal.get("take_profit")
+
+        is_long = entry > sl
+
+        if is_long:
+            risk_per_unit = entry - sl
+            reward_per_unit = tp - entry
+        else:
+            risk_per_unit = sl - entry
+            reward_per_unit = entry - tp
+
+        rr_ratio = reward_per_unit / risk_per_unit if risk_per_unit > 0 else 0
+
+        return {
+            "risk_per_unit": risk_per_unit,
+            "reward_per_unit": reward_per_unit,
+            "risk_reward_ratio": rr_ratio,
+        }
+
+    def get_exit_condition(self) -> Dict[str, Any]:
+        """
+        Get price-based exit condition metadata.
+
+        Returns:
+            Dict with TP and SL prices for simulator to check
+        """
+        return {
+            "type": "price_level",
+            "description": "Exit when price touches TP or SL level",
+        }
+
+    def get_monitoring_metadata(self) -> Dict[str, Any]:
+        """
+        Get price-based monitoring metadata.
+
+        Returns:
+            Dict with price levels and RR ratio for position monitor
+        """
+        return {
+            "type": "price_level",
+            "enable_position_tightening": self.get_config_value("enable_position_tightening", True),
+            "enable_sl_tightening": self.get_config_value("enable_sl_tightening", True),
+            "rr_tightening_steps": self.get_config_value("rr_tightening_steps", []),
+        }
+
+    @classmethod
+    def get_required_settings(cls) -> Dict[str, Any]:
+        """
+        Get price-based strategy settings schema.
+
+        Returns:
+            Dict with settings schema for PromptStrategy
+        """
+        return {
+            "enable_position_tightening": {
+                "type": "bool",
+                "default": True,
+                "description": "Enable position tightening (moving SL to breakeven or profit)",
+            },
+            "enable_sl_tightening": {
+                "type": "bool",
+                "default": True,
+                "description": "Enable stop loss tightening based on RR ratio",
+            },
+            "rr_tightening_steps": {
+                "type": "list",
+                "default": [],
+                "description": "List of RR ratio thresholds for SL tightening (e.g., [2.0, 3.0, 4.0])",
+            },
+            "min_rr": {
+                "type": "float",
+                "default": 1.0,
+                "description": "Minimum risk/reward ratio for signal validation",
+            },
+        }
 

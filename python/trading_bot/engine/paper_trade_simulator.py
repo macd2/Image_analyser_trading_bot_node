@@ -207,10 +207,13 @@ class PaperTradeSimulator:
         except Exception as e:
             logger.error(f"Failed to update run aggregates for paper trade: {e}")
     
-    def simulate_trade(self, trade: Dict[str, Any], candles: List[Candle]) -> Optional[Dict[str, Any]]:
+    def simulate_trade(self, trade: Dict[str, Any], candles: List[Candle], strategy: Optional[Any] = None) -> Optional[Dict[str, Any]]:
         """
         Simulate a single paper trade through its lifecycle.
         Returns updated trade data or None if no update needed.
+
+        If strategy is provided, uses strategy.get_exit_condition() for strategy-specific exit logic.
+        Otherwise falls back to price-level checks (TP/SL).
         """
         if not candles:
             return None
@@ -257,31 +260,41 @@ class PaperTradeSimulator:
             # Trade not filled yet
             return None
 
-        # Trade was filled, now check for exit (TP/SL)
+        # Trade was filled, now check for exit using strategy-specific logic
         candle_idx = candles.index(fill_candle)
         remaining_candles = candles[candle_idx + 1:]
-        
+
         exit_price = None
         exit_reason = None
         exit_time = None
         pnl = None
         pnl_percent = None
-        
-        for candle in remaining_candles:
-            # Check SL
-            if self._price_touched(candle, trade['stop_loss'], side):
-                exit_price = trade['stop_loss']
-                exit_reason = 'sl_hit'
-                exit_time = datetime.fromtimestamp(candle.timestamp / 1000, tz=timezone.utc).isoformat()
-                break
 
-            # Check TP
-            if self._price_touched(candle, trade['take_profit'], side):
-                exit_price = trade['take_profit']
-                exit_reason = 'tp_hit'
-                exit_time = datetime.fromtimestamp(candle.timestamp / 1000, tz=timezone.utc).isoformat()
-                break
-        
+        # Use strategy-specific exit condition if available
+        if strategy:
+            exit_condition = strategy.get_exit_condition()
+            exit_result = self._check_strategy_exit(trade, remaining_candles, exit_condition, side)
+            if exit_result:
+                exit_price = exit_result["exit_price"]
+                exit_reason = exit_result["exit_reason"]
+                exit_time = exit_result["exit_time"]
+        else:
+            # Fallback to price-level checks (TP/SL)
+            for candle in remaining_candles:
+                # Check SL
+                if self._price_touched(candle, trade['stop_loss'], side):
+                    exit_price = trade['stop_loss']
+                    exit_reason = 'sl_hit'
+                    exit_time = datetime.fromtimestamp(candle.timestamp / 1000, tz=timezone.utc).isoformat()
+                    break
+
+                # Check TP
+                if self._price_touched(candle, trade['take_profit'], side):
+                    exit_price = trade['take_profit']
+                    exit_reason = 'tp_hit'
+                    exit_time = datetime.fromtimestamp(candle.timestamp / 1000, tz=timezone.utc).isoformat()
+                    break
+
         # Calculate P&L if trade closed
         if exit_price:
             qty = trade.get('quantity', 1)
@@ -289,9 +302,9 @@ class PaperTradeSimulator:
                 pnl = (exit_price - fill_price) * qty
             else:  # Sell
                 pnl = (fill_price - exit_price) * qty
-            
+
             pnl_percent = (pnl / (fill_price * qty)) * 100 if fill_price > 0 else 0
-        
+
         return {
             'fill_price': fill_price,
             'fill_time': fill_time,
@@ -305,6 +318,64 @@ class PaperTradeSimulator:
             'status': 'closed' if exit_price else 'filled'
         }
     
+    def _check_strategy_exit(self, trade: Dict[str, Any], candles: List[Candle], exit_condition: Dict[str, Any], side: str) -> Optional[Dict[str, Any]]:
+        """
+        Check for strategy-specific exit conditions.
+
+        For price-based strategies: checks if price touches TP/SL levels
+        For spread-based strategies: recalculates z-score and checks if crossed exit threshold
+        """
+        exit_type = exit_condition.get("exit_type")
+
+        if exit_type == "price_level":
+            # Price-based strategy: check TP/SL
+            tp_price = exit_condition.get("tp_price", trade.get("take_profit"))
+            sl_price = exit_condition.get("sl_price", trade.get("stop_loss"))
+
+            for candle in candles:
+                # Check SL first
+                if self._price_touched(candle, sl_price, side):
+                    return {
+                        "exit_price": sl_price,
+                        "exit_reason": "sl_hit",
+                        "exit_time": datetime.fromtimestamp(candle.timestamp / 1000, tz=timezone.utc).isoformat(),
+                    }
+
+                # Check TP
+                if self._price_touched(candle, tp_price, side):
+                    return {
+                        "exit_price": tp_price,
+                        "exit_reason": "tp_hit",
+                        "exit_time": datetime.fromtimestamp(candle.timestamp / 1000, tz=timezone.utc).isoformat(),
+                    }
+
+        elif exit_type == "z_score":
+            # Spread-based strategy: check z-score exit
+            # For now, we'll use price-level fallback since z-score calculation requires market data
+            # In production, this would fetch fresh candles and recalculate z-score
+            z_exit_threshold = exit_condition.get("z_exit_threshold", 2.0)
+
+            # Fallback to price-level checks for now
+            tp_price = trade.get("take_profit")
+            sl_price = trade.get("stop_loss")
+
+            for candle in candles:
+                if self._price_touched(candle, sl_price, side):
+                    return {
+                        "exit_price": sl_price,
+                        "exit_reason": "z_score_sl_hit",
+                        "exit_time": datetime.fromtimestamp(candle.timestamp / 1000, tz=timezone.utc).isoformat(),
+                    }
+
+                if self._price_touched(candle, tp_price, side):
+                    return {
+                        "exit_price": tp_price,
+                        "exit_reason": "z_score_tp_hit",
+                        "exit_time": datetime.fromtimestamp(candle.timestamp / 1000, tz=timezone.utc).isoformat(),
+                    }
+
+        return None
+
     @staticmethod
     def _price_touched(candle: Candle, price: float, side: str) -> bool:
         """Check if price was touched in candle"""

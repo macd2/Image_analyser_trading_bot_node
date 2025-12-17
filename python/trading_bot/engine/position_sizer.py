@@ -4,6 +4,7 @@ Calculates optimal position size based on risk parameters.
 """
 
 import logging
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_DOWN
 from typing import Dict, Any, Optional, List
 
@@ -79,6 +80,7 @@ class PositionSizer:
         confidence: float = 0.75,
         leverage: int = 1,
         trade_history: Optional[List[Dict[str, Any]]] = None,
+        strategy: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Calculate position size based on risk parameters.
@@ -91,19 +93,37 @@ class PositionSizer:
             confidence: Confidence score (0-1)
             leverage: Leverage multiplier
             trade_history: Optional list of closed trades for Kelly Criterion
+            strategy: Optional strategy instance for strategy-specific risk metrics
 
         Returns:
             Dict with position_size, risk_amount, and calculation details
         """
-        # Calculate risk per unit
-        risk_per_unit = abs(entry_price - stop_loss)
+        # Calculate risk per unit using strategy-specific method if available
+        if strategy:
+            # Create a minimal signal dict for strategy risk calculation
+            signal = {
+                "entry_price": entry_price,
+                "stop_loss": stop_loss,
+                "recommendation": "LONG",  # Placeholder, will be overridden by actual signal
+            }
+            risk_metrics = strategy.calculate_risk_metrics(signal)
+            if "error" in risk_metrics:
+                return risk_metrics
+            risk_per_unit = risk_metrics.get("risk_per_unit", abs(entry_price - stop_loss))
+        else:
+            # Fallback to basic calculation
+            risk_per_unit = abs(entry_price - stop_loss)
+
         if risk_per_unit == 0:
             return {"error": "Invalid stop loss - same as entry price"}
 
         # Determine risk percentage (Kelly or fixed)
+        kelly_metrics = None
         if self.use_kelly_criterion and trade_history:
             risk_pct = self.calculate_kelly_fraction(trade_history)
             sizing_method = "kelly"
+            # Capture kelly metrics for traceability
+            kelly_metrics = self._calculate_kelly_metrics(trade_history)
         else:
             risk_pct = self.risk_percentage
             sizing_method = "fixed"
@@ -163,7 +183,7 @@ class PositionSizer:
             actual_risk = qty * risk_per_unit
             actual_risk_pct = actual_risk / wallet_balance if wallet_balance > 0 else 0
 
-        return {
+        result = {
             "position_size": float(qty),
             "position_value": float(position_value),
             "risk_amount": float(actual_risk),
@@ -175,6 +195,12 @@ class PositionSizer:
             "sizing_method": sizing_method,
             "risk_pct_used": float(risk_pct),
         }
+
+        # Add kelly metrics if available for traceability
+        if kelly_metrics:
+            result["kelly_metrics"] = kelly_metrics
+
+        return result
     
     def _get_confidence_weight(self, confidence: float) -> float:
         """Calculate confidence weight multiplier."""
@@ -199,6 +225,47 @@ class PositionSizer:
         decimal_step = Decimal(str(step))
         rounded = (decimal_qty / decimal_step).to_integral_value(rounding=ROUND_DOWN) * decimal_step
         return float(rounded)
+
+    def _calculate_kelly_metrics(self, trade_history: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Calculate kelly metrics for traceability.
+
+        Args:
+            trade_history: List of closed trades with 'pnl_percent' field
+
+        Returns:
+            Dict with kelly metrics for storage
+        """
+        if not trade_history or len(trade_history) < 10:
+            return {
+                "kelly_fraction_used": self.risk_percentage,
+                "win_rate": 0,
+                "avg_win_percent": 0,
+                "avg_loss_percent": 0,
+                "trade_history_count": len(trade_history) if trade_history else 0,
+                "kelly_calculation_timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        # Get recent trades within window
+        recent = trade_history[-self.kelly_window:]
+
+        # Separate wins and losses
+        wins = [t for t in recent if t.get('pnl_percent', 0) > 0]
+        losses = [t for t in recent if t.get('pnl_percent', 0) < 0]
+
+        # Calculate metrics
+        win_rate = len(wins) / len(recent) if recent else 0
+        avg_win = float(np.mean([t.get('pnl_percent', 0) for t in wins])) if wins else 0
+        avg_loss = float(abs(np.mean([t.get('pnl_percent', 0) for t in losses]))) if losses else 0
+
+        return {
+            "kelly_fraction_used": self.kelly_fraction,
+            "win_rate": float(win_rate),
+            "avg_win_percent": float(avg_win),
+            "avg_loss_percent": float(avg_loss),
+            "trade_history_count": len(recent),
+            "kelly_calculation_timestamp": datetime.now(timezone.utc).isoformat(),
+        }
 
     def calculate_kelly_fraction(self, trade_history: List[Dict[str, Any]]) -> float:
         """
