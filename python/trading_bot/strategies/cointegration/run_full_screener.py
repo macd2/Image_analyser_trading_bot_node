@@ -286,10 +286,10 @@ async def run_screener(
     # Convert pairs to dictionary format (symbol1 -> symbol2)
     pairs_dict = {}
     for _, row in final_results.iterrows():
-        pair = row['pair']
-        if '|' in pair:
-            symbol1, symbol2 = pair.split('|')
-            pairs_dict[symbol1] = symbol2
+        # Use symbol1 and symbol2 directly from the row (more reliable than parsing pair string)
+        symbol1 = row['symbol1']
+        symbol2 = row['symbol2']
+        pairs_dict[symbol1] = symbol2
 
     logger.info(f"✅ [SCREENER] Screener complete: {len(pairs_dict)} pairs ready for trading")
     return pairs_dict
