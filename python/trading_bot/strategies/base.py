@@ -70,6 +70,120 @@ class BaseAnalysisModule(ABC):
         # Initialize candle adapter
         self._init_candle_adapter()
     
+    def _convert_setting_type(self, key: str, value: Any) -> Any:
+        """
+        Convert setting value to appropriate type based on setting name.
+
+        Handles conversion of string values from database to proper types:
+        - Numeric settings (lookback, batch_size, etc.) → int/float
+        - Boolean settings (use_soft_vol, etc.) → bool
+        - String settings → str
+
+        Args:
+            key: Setting name
+            value: Setting value (often a string from database)
+
+        Returns:
+            Converted value with appropriate type
+        """
+        if value is None:
+            return value
+
+        # If already the right type, return as-is
+        if isinstance(value, (int, float, bool, dict, list)):
+            return value
+
+        # Convert string values
+        if isinstance(value, str):
+            # Boolean settings
+            if key in ('use_soft_vol', 'enable_spread_monitoring'):
+                return value.lower() in ('true', '1', 'yes')
+
+            # Numeric settings - try to convert to int first, then float
+            if key in (
+                'lookback', 'batch_size', 'screener_cache_hours',
+                'min_volume_usd', 'z_entry', 'z_exit', 'max_spread_deviation',
+                'lookback_period', 'min_z_distance', 'z_score_entry_threshold',
+                'z_score_exit_threshold', 'spread_reversion_threshold'
+            ):
+                try:
+                    # Try int first
+                    if '.' not in value:
+                        return int(value)
+                    else:
+                        return float(value)
+                except (ValueError, TypeError):
+                    self.logger.warning(
+                        f"Could not convert setting '{key}' with value '{value}' to numeric type",
+                        extra={"instance_id": self.instance_id}
+                    )
+                    return value
+
+        return value
+
+    def _flatten_strategy_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Flatten strategy-specific settings from prefixed keys.
+
+        Converts keys like:
+        - "strategy_specific.cointegration.pair_discovery_mode" → "pair_discovery_mode"
+        - "strategy_specific.spread_based.lookback_period" → "lookback_period"
+
+        Also keeps non-prefixed keys as-is and converts string values to appropriate types.
+
+        Args:
+            config: Raw config dict with potentially prefixed keys
+
+        Returns:
+            Flattened config dict with only relevant settings for this strategy
+        """
+        flattened = {}
+
+        # Get the strategy type prefix (e.g., "cointegration" from "CointegrationSpreadTrader")
+        # This is a heuristic - subclasses can override if needed
+        strategy_type_prefix = self._get_strategy_type_prefix()
+
+        for key, value in config.items():
+            # Check if this is a strategy-specific setting
+            if key.startswith('strategy_specific.'):
+                # Extract the strategy type and setting name
+                # Format: "strategy_specific.{strategy_type}.{setting_name}"
+                parts = key.split('.')
+                if len(parts) >= 3:
+                    setting_strategy_type = parts[1]
+                    setting_name = '.'.join(parts[2:])  # Handle nested keys like "z_score.entry"
+
+                    # Only include settings for this strategy type
+                    if setting_strategy_type == strategy_type_prefix:
+                        # Convert to appropriate type
+                        converted_value = self._convert_setting_type(setting_name, value)
+                        flattened[setting_name] = converted_value
+            else:
+                # Keep non-prefixed keys as-is
+                flattened[key] = value
+
+        return flattened
+
+    def _get_strategy_type_prefix(self) -> str:
+        """
+        Get the strategy type prefix for filtering strategy-specific settings.
+
+        Override in subclasses if the default heuristic doesn't work.
+        Default: Extract from STRATEGY_NAME (e.g., "CointegrationAnalysisModule" → "cointegration")
+
+        Returns:
+            Strategy type prefix (e.g., "cointegration", "spread_based")
+        """
+        if self.STRATEGY_NAME:
+            # Convert class name to lowercase prefix
+            # "CointegrationAnalysisModule" → "cointegration"
+            name = self.STRATEGY_NAME.lower()
+            if 'cointegration' in name:
+                return 'cointegration'
+            elif 'spread' in name:
+                return 'spread_based'
+        return 'cointegration'  # Default fallback
+
     def _load_strategy_config(
         self,
         provided_config: Optional[Dict[str, Any]] = None
@@ -83,11 +197,13 @@ class BaseAnalysisModule(ABC):
         3. Default config (class-level defaults)
         """
         if provided_config:
+            # Flatten strategy-specific settings from prefixed keys
+            flattened_config = self._flatten_strategy_config(provided_config)
             self.logger.info(
-                f"Using provided strategy config (keys: {list(provided_config.keys())})",
+                f"Using provided strategy config (keys: {list(flattened_config.keys())})",
                 extra={"instance_id": self.instance_id}
             )
-            return {**self.DEFAULT_CONFIG, **provided_config}
+            return {**self.DEFAULT_CONFIG, **flattened_config}
 
         # Load from database if instance_id provided
         if self.instance_id:

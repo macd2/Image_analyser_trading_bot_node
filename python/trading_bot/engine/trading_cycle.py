@@ -172,6 +172,10 @@ class TradingCycle:
         Returns:
             Dict mapping symbol -> recommendation_data (empty dict if no recommendation exists)
         """
+        # If no symbols provided, return empty dict
+        if not symbols:
+            return {}
+
         conn = None
         try:
             conn = get_connection()
@@ -202,6 +206,10 @@ class TradingCycle:
                 """, (*cycle_ids, *symbols))
             else:
                 # No instance filtering - check all recommendations for boundary
+                # If no symbols, return empty dict
+                if not symbols:
+                    return {}
+
                 existing_recs = query(conn, """
                     SELECT * FROM recommendations
                     WHERE cycle_boundary = ? AND symbol IN ({})

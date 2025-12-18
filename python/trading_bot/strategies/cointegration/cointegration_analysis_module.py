@@ -83,6 +83,15 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         """Initialize cointegration strategy."""
         super().__init__(config, instance_id, run_id, strategy_config, heartbeat_callback)
 
+    def _get_strategy_type_prefix(self) -> str:
+        """
+        Override to return the correct strategy type prefix for cointegration.
+
+        Returns:
+            "cointegration" - the prefix used in strategy_specific.cointegration.* settings
+        """
+        return "cointegration"
+
     def _get_screener_cache_path(self, timeframe: str) -> Path:
         """Get the path to the screener cache file for this instance and timeframe."""
         cache_dir = Path(__file__).parent / "screener_cache"
@@ -176,13 +185,13 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         try:
             # Call screener directly (not via subprocess)
             logger.info(f"📊 [SCREENER] Executing pair discovery...")
-            pairs_dict = asyncio.run(run_screener(
+            pairs_dict = await run_screener(
                 timeframe=timeframe,
                 instance_id=instance_name,
                 min_volume_usd=min_volume_usd,
                 batch_size=batch_size,
                 verbose=False  # Suppress screener's own logging
-            ))
+            )
 
             if not pairs_dict:
                 logger.warning(f"⚠️  [SCREENER] No cointegrated pairs found for {timeframe}")
