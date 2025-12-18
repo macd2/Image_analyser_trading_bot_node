@@ -35,9 +35,8 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
   const [loading, setLoading] = useState(true)
   const [pendingChanges, setPendingChanges] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
-  const [activeCategory, setActiveCategory] = useState('trading')
+  const [activeCategory, setActiveCategory] = useState('strategy')
   const [prompts, setPrompts] = useState<Array<{ name: string; description: string }>>([])
-  const [instancePrompt, setInstancePrompt] = useState<string>('')
   const [selectedStrategy, setSelectedStrategy] = useState<string>('AiImageAnalyzer')
   const [availableStrategies, setAvailableStrategies] = useState<Array<{ name: string; class: string }>>([
     { name: 'AiImageAnalyzer', class: 'PromptStrategy' },
@@ -130,14 +129,9 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
 
   const fetchPrompts = async () => {
     try {
-      const [promptsRes, instanceRes] = await Promise.all([
-        fetch('/api/bot/prompts'),
-        fetch(`/api/bot/instances?id=${instanceId}`)
-      ])
-      const promptsData = await promptsRes.json()
-      const instanceData = await instanceRes.json()
-      if (promptsData.prompts) setPrompts(promptsData.prompts)
-      if (instanceData.instance?.prompt_name) setInstancePrompt(instanceData.instance.prompt_name)
+      const res = await fetch('/api/bot/prompts')
+      const data = await res.json()
+      if (data.prompts) setPrompts(data.prompts)
     } catch (err) {
       console.error('Failed to fetch prompts:', err)
     }
@@ -164,19 +158,6 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
       console.error('Failed to save config:', err)
     } finally {
       setSaving(false)
-    }
-  }
-
-  const handlePromptChange = async (promptName: string) => {
-    try {
-      await fetch('/api/bot/instances', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: instanceId, prompt_name: promptName })
-      })
-      setInstancePrompt(promptName)
-    } catch (err) {
-      console.error('Failed to update prompt:', err)
     }
   }
 
@@ -210,7 +191,7 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
   let filteredConfig = config.filter(c => c.category === activeCategory)
 
   // For AI category, filter based on selected strategy
-  if (activeCategory === 'ai') {
+  if (activeCategory === 'strategy') {
     filteredConfig = filteredConfig.filter(item => {
       // Exclude strategy from config list (shown at top)
       if (item.key === 'strategy') return false
@@ -219,7 +200,8 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
       // Show strategy-specific settings based on selected strategy
       if (item.key.startsWith('strategy_specific.')) {
         const strategyTypeMap: Record<string, string> = {
-          'AiImageAnalyzer': 'price_based',
+          'AiImageAnalyzer': 'prompt_strategy',
+          'PromptStrategy': 'prompt_strategy',
           'MarketStructure': 'price_based',
           'CointegrationSpreadTrader': 'spread_based',
         }
@@ -286,7 +268,7 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
 
               <ScrollArea className="h-[400px] pr-4">
                 {/* Strategy Selector - Always visible at top of AI tab */}
-                {activeCategory === 'ai' && (
+                {activeCategory === 'strategy' && (
                   <div className="mb-6 space-y-4">
                     {/* Strategy Selection */}
                     <div className="p-3 bg-purple-900/20 border border-purple-600/50 rounded-lg">
@@ -310,23 +292,6 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
                         <div className="text-xs text-slate-400 p-2">No strategies available</div>
                       )}
                     </div>
-
-                    {/* Prompt Selector - Only show for AiImageAnalyzer strategy */}
-                    {selectedStrategy === 'AiImageAnalyzer' && (
-                      <div className="p-3 bg-blue-900/20 border border-blue-600/50 rounded-lg">
-                        <label className="text-xs text-slate-300 font-medium block mb-2">Instance Prompt</label>
-                        <Select value={instancePrompt} onValueChange={handlePromptChange}>
-                          <SelectTrigger className="bg-slate-800 border-slate-600">
-                            <SelectValue placeholder="Select a prompt..." />
-                          </SelectTrigger>
-                          <SelectContent className="bg-slate-800 border-slate-600">
-                            {prompts.map(p => (
-                              <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
 
                     {/* Strategy-Specific Settings Schema Info */}
                     {strategySettingsSchema && (
@@ -399,17 +364,26 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
                                       checked={currentValue === 'true'}
                                       onCheckedChange={(checked) => handleChange(item.key, checked ? 'true' : 'false')}
                                     />
-                                  ) : item.type === 'select' && item.options ? (
+                                  ) : item.type === 'select' ? (
                                     <Select value={currentValue} onValueChange={(value) => handleChange(item.key, value)}>
                                       <SelectTrigger className="w-40 bg-slate-900 border-slate-600">
                                         <SelectValue placeholder="Select..." />
                                       </SelectTrigger>
                                       <SelectContent className="bg-slate-800 border-slate-600">
-                                        {item.options.map(opt => (
-                                          <SelectItem key={opt.value} value={opt.value}>
-                                            {opt.label}
-                                          </SelectItem>
-                                        ))}
+                                        {/* For prompt_name, use prompts list; otherwise use static options */}
+                                        {item.key === 'strategy_specific.prompt_strategy.prompt_name' ? (
+                                          prompts.map(p => (
+                                            <SelectItem key={p.name} value={p.name}>
+                                              {p.name}
+                                            </SelectItem>
+                                          ))
+                                        ) : item.options ? (
+                                          item.options.map(opt => (
+                                            <SelectItem key={opt.value} value={opt.value}>
+                                              {opt.label}
+                                            </SelectItem>
+                                          ))
+                                        ) : null}
                                       </SelectContent>
                                     </Select>
                                   ) : (
