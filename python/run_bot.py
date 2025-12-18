@@ -226,16 +226,31 @@ class TradingBot:
         return run_id
 
     def _update_heartbeat(self, message: str = "", **kwargs) -> None:
-        """Update heartbeat timestamp in database to signal bot is alive."""
+        """Update heartbeat timestamp in database to signal bot is alive.
+
+        Uses centralized database layer with proper connection management:
+        - Gets a fresh connection each time to avoid stale connections
+        - Uses auto_commit=True to handle transactions properly
+        - Releases connection immediately after use
+        - Handles connection errors gracefully without blocking the bot
+        """
+        conn = None
         try:
-            execute(self._db, """
+            # Get a fresh connection each time to avoid stale connection issues
+            conn = get_connection()
+
+            # Use auto_commit=True to let the centralized layer handle transactions
+            execute(conn, """
                 UPDATE runs
                 SET heartbeat_at = ?
                 WHERE id = ?
-            """, (datetime.now(timezone.utc).isoformat(), self.run_id))
-            self._db.commit()
+            """, (datetime.now(timezone.utc).isoformat(), self.run_id), auto_commit=True)
         except Exception as e:
             logger.warning(f"Failed to update heartbeat: {e}")
+        finally:
+            # Always release the connection back to the pool (PostgreSQL) or close (SQLite)
+            if conn is not None:
+                release_connection(conn)
 
     def _end_run(self, status: str = "stopped", reason: str = None) -> None:
         """Mark run as ended."""
