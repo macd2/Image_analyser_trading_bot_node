@@ -85,6 +85,7 @@ class DatabaseErrorHandler(logging.Handler):
                     print(f"[ErrorLogger] Stack trace:\n{stack_trace}", file=sys.stderr)
                 return
 
+            # Use auto_commit=True to let centralized layer handle transactions
             execute(conn, """
                 INSERT INTO error_logs (
                     id, timestamp, level, run_id, cycle_id, trade_id, symbol,
@@ -103,9 +104,7 @@ class DatabaseErrorHandler(logging.Handler):
                 message,
                 stack_trace,
                 context_json,
-            ))
-
-            conn.commit()
+            ), auto_commit=True)
 
             # DEBUG: Log successful database write
             import sys
@@ -120,7 +119,8 @@ class DatabaseErrorHandler(logging.Handler):
             if hasattr(e, '__traceback__'):
                 print(f"[ErrorLogger] Error traceback: {traceback.format_exc()}", file=sys.stderr)
         finally:
-            if conn:
+            # Always release connection back to pool (PostgreSQL) or close (SQLite)
+            if conn is not None:
                 release_connection(conn)
 
 
