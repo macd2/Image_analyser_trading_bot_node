@@ -691,17 +691,22 @@ export async function updateInstanceSettings(instanceId: string, updates: Array<
   if (!instance) return false;
 
   // Parse existing settings - handle both string (SQLite) and object (PostgreSQL JSONB) formats
-  let settings: Record<string, string> = {};
+  let settings: Record<string, any> = {};
   try {
     if (instance.settings) {
       if (typeof instance.settings === 'string') {
         settings = JSON.parse(instance.settings);
       } else if (typeof instance.settings === 'object') {
-        settings = instance.settings as Record<string, string>;
+        settings = instance.settings as Record<string, any>;
       }
     }
   } catch {
     settings = {};
+  }
+
+  // Ensure strategy_config exists
+  if (!settings.strategy_config) {
+    settings.strategy_config = {};
   }
 
   // Track top-level field updates
@@ -719,8 +724,16 @@ export async function updateInstanceSettings(instanceId: string, updates: Array<
     } else if (key === 'trading.leverage') {
       max_leverage = parseInt(value, 10);
     }
-    // Always store in settings JSON too
-    settings[key] = value;
+
+    // Store strategy-specific settings under strategy_config
+    if (key.startsWith('strategy_specific.')) {
+      // Extract just the setting name (e.g., "pair_discovery_mode" from "strategy_specific.cointegration.pair_discovery_mode")
+      const settingName = key.split('.').slice(2).join('.');
+      settings.strategy_config[settingName] = value;
+    } else {
+      // Store other settings at top level
+      settings[key] = value;
+    }
   }
 
   // Use NOW() for PostgreSQL, datetime('now') for SQLite
@@ -738,8 +751,17 @@ export async function updateInstanceSettings(instanceId: string, updates: Array<
 // group is used to visually group related settings together in the UI
 // Groups starting with "1.", "2.", etc. are sorted in that order
 // Groups with "├─" or "└─" are displayed as child groups (indented)
-type ConfigMeta = { type: 'string' | 'number' | 'boolean' | 'json' | 'select'; category: string; description: string; tooltip?: string; group?: string; order?: number; options?: Array<{ value: string; label: string }> };
-const CONFIG_METADATA: Record<string, ConfigMeta> = {
+export type ConfigMeta = {
+  type: 'string' | 'number' | 'boolean' | 'json' | 'select';
+  category: string;
+  description: string;
+  tooltip?: string;
+  group?: string;
+  order?: number;
+  options?: Array<{ value: string; label: string }>;
+};
+
+export const CONFIG_METADATA: Record<string, ConfigMeta> = {
   // Trading Settings - Execution Control
   'trading.paper_trading': { type: 'boolean', category: 'trading', group: '1. Execution Control', description: 'Enable paper trading mode (no real trades)', tooltip: 'When enabled, trades are simulated without real execution', order: 1 },
   'trading.auto_approve_trades': { type: 'boolean', category: 'trading', group: '1. Execution Control', description: 'Skip Telegram confirmation for trades', tooltip: 'Automatically execute trades without manual approval', order: 2 },
@@ -867,7 +889,19 @@ export async function getInstanceConfigAsRows(instanceId: string): Promise<Confi
 
     // Iterate over ALL keys in CONFIG_METADATA to show all possible settings
     for (const [key, meta] of Object.entries(CONFIG_METADATA)) {
-      const instanceValue = settings[key];
+      let instanceValue: unknown;
+
+      // Strategy-specific settings are nested under strategy_config
+      if (key.startsWith('strategy_specific.')) {
+        const strategyConfig = settings.strategy_config as Record<string, unknown> || {};
+        // Extract just the setting name (e.g., "pair_discovery_mode" from "strategy_specific.cointegration.pair_discovery_mode")
+        const settingName = key.split('.').slice(2).join('.');
+        instanceValue = strategyConfig[settingName];
+      } else {
+        // Other settings are at top level
+        instanceValue = settings[key];
+      }
+
       const hasValue = instanceValue !== undefined;
 
       rows.push({

@@ -76,20 +76,24 @@ class BaseAnalysisModule(ABC):
     ) -> Dict[str, Any]:
         """
         Load strategy config from database or use provided config.
-        
+
         Priority:
         1. Provided config (from parameter)
         2. Database config (from instances.settings)
         3. Default config (class-level defaults)
         """
         if provided_config:
+            self.logger.info(
+                f"Using provided strategy config (keys: {list(provided_config.keys())})",
+                extra={"instance_id": self.instance_id}
+            )
             return {**self.DEFAULT_CONFIG, **provided_config}
-        
+
         # Load from database if instance_id provided
         if self.instance_id:
             try:
                 from trading_bot.db.client import get_connection, release_connection, query_one
-                
+
                 conn = get_connection()
                 try:
                     instance = query_one(
@@ -97,25 +101,40 @@ class BaseAnalysisModule(ABC):
                         "SELECT settings FROM instances WHERE id = ?",
                         (self.instance_id,)
                     )
-                    
+
                     if instance and instance.get('settings'):
-                        settings = json.loads(instance['settings'])
+                        settings_raw = instance['settings']
+                        # Handle both string (SQLite) and dict (PostgreSQL JSONB) formats
+                        if isinstance(settings_raw, str):
+                            settings = json.loads(settings_raw)
+                        else:
+                            settings = settings_raw if isinstance(settings_raw, dict) else {}
+
                         strategy_config = settings.get('strategy_config', {})
-                        
+
                         self.logger.info(
-                            f"Loaded strategy config from database for instance {self.instance_id}",
+                            f"✅ Loaded strategy config from database for instance {self.instance_id}",
+                            extra={"instance_id": self.instance_id, "config_keys": list(strategy_config.keys())}
+                        )
+
+                        return {**self.DEFAULT_CONFIG, **strategy_config}
+                    else:
+                        self.logger.warning(
+                            f"⚠️  Instance not found or has no settings: {self.instance_id}. Using defaults.",
                             extra={"instance_id": self.instance_id}
                         )
-                        
-                        return {**self.DEFAULT_CONFIG, **strategy_config}
                 finally:
                     release_connection(conn)
             except Exception as e:
                 self.logger.warning(
-                    f"Failed to load strategy config from database: {e}. Using defaults.",
+                    f"⚠️  Failed to load strategy config from database: {e}. Using defaults.",
                     extra={"instance_id": self.instance_id}
                 )
-        
+
+        self.logger.info(
+            f"Using default strategy config (keys: {list(self.DEFAULT_CONFIG.keys())})",
+            extra={"instance_id": self.instance_id}
+        )
         return self.DEFAULT_CONFIG.copy()
     
     def _generate_strategy_uuid(self) -> str:
@@ -162,7 +181,12 @@ class BaseAnalysisModule(ABC):
 
     def get_config_value(self, key: str, default: Any = None) -> Any:
         """Get a config value from strategy_config."""
-        return self.strategy_config.get(key, default)
+        value = self.strategy_config.get(key, default)
+        if value != default:
+            self.logger.debug(f"Config value '{key}': {value} (from strategy_config)")
+        else:
+            self.logger.debug(f"Config value '{key}': {value} (using default)")
+        return value
 
     def _heartbeat(self, message: str = "", **kwargs) -> None:
         """

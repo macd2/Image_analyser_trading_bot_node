@@ -32,6 +32,36 @@ from trading_bot.services.sl_adjuster import StopLossAdjuster
 logger = logging.getLogger(__name__)
 
 
+def convert_numpy_types(obj: Any) -> Any:
+    """
+    Recursively convert numpy types to native Python types for JSON serialization.
+
+    Handles:
+    - numpy scalars (np.float64, np.int64, etc.) -> float/int
+    - numpy arrays -> list
+    - dicts -> recursively convert values
+    - lists -> recursively convert items
+    """
+    try:
+        import numpy as np
+
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, (np.floating, np.integer)):
+            return obj.item()
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        elif isinstance(obj, dict):
+            return {k: convert_numpy_types(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [convert_numpy_types(item) for item in obj]
+        else:
+            return obj
+    except ImportError:
+        # numpy not available, return as-is
+        return obj
+
+
 class TradingCycle:
     """
     Orchestrates complete trading cycle with MULTISTEP PROCESS:
@@ -917,22 +947,22 @@ class TradingCycle:
                     except Exception as e:
                         logger.warning(f"Failed to capture reproducibility data: {e}")
 
-                # Prepare reproducibility columns
+                # Prepare reproducibility columns - convert numpy types before JSON serialization
                 chart_hash = reproducibility_data.get('chart_hash')
                 model_version = reproducibility_data.get('model_version')
-                model_params = json.dumps(reproducibility_data.get('model_params', {}))
-                market_data_snapshot = json.dumps(reproducibility_data.get('market_data_snapshot', {}))
-                strategy_config_snapshot = json.dumps(reproducibility_data.get('strategy_config_snapshot', {}))
-                confidence_components = json.dumps(reproducibility_data.get('confidence_components', {}))
-                setup_quality_components = json.dumps(reproducibility_data.get('setup_quality_components', {}))
-                market_environment_components = json.dumps(reproducibility_data.get('market_environment_components', {}))
-                validation_results = json.dumps(reproducibility_data.get('validation_results', {}))
+                model_params = json.dumps(convert_numpy_types(reproducibility_data.get('model_params', {})))
+                market_data_snapshot = json.dumps(convert_numpy_types(reproducibility_data.get('market_data_snapshot', {})))
+                strategy_config_snapshot = json.dumps(convert_numpy_types(reproducibility_data.get('strategy_config_snapshot', {})))
+                confidence_components = json.dumps(convert_numpy_types(reproducibility_data.get('confidence_components', {})))
+                setup_quality_components = json.dumps(convert_numpy_types(reproducibility_data.get('setup_quality_components', {})))
+                market_environment_components = json.dumps(convert_numpy_types(reproducibility_data.get('market_environment_components', {})))
+                validation_results = json.dumps(convert_numpy_types(reproducibility_data.get('validation_results', {})))
 
-                # Extract strategy metadata for exit logic and monitoring
+                # Extract strategy metadata for exit logic and monitoring - convert numpy types
                 strategy_metadata = result.get("strategy_metadata")
                 strategy_metadata_json = None
                 if strategy_metadata:
-                    strategy_metadata_json = json.dumps(strategy_metadata)
+                    strategy_metadata_json = json.dumps(convert_numpy_types(strategy_metadata))
 
                 execute(conn, """
                     INSERT INTO recommendations
@@ -951,11 +981,11 @@ class TradingCycle:
                     result.get("symbol"),
                     result.get("timeframe"),
                     rec_value,
-                    round(result.get("confidence", 0), 3),
-                    analysis.get("entry_price"),
-                    analysis.get("stop_loss"),
-                    analysis.get("take_profit"),
-                    analysis.get("risk_reward_ratio", analysis.get("risk_reward")),
+                    float(round(convert_numpy_types(result.get("confidence", 0)), 3)),
+                    float(convert_numpy_types(analysis.get("entry_price"))) if analysis.get("entry_price") is not None else None,
+                    float(convert_numpy_types(analysis.get("stop_loss"))) if analysis.get("stop_loss") is not None else None,
+                    float(convert_numpy_types(analysis.get("take_profit"))) if analysis.get("take_profit") is not None else None,
+                    float(convert_numpy_types(analysis.get("risk_reward_ratio", analysis.get("risk_reward")))) if analysis.get("risk_reward_ratio", analysis.get("risk_reward")) is not None else None,
                     analysis.get("summary", ""),
                     result.get("chart_path"),
                     prompt_name,

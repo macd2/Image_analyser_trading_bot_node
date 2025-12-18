@@ -400,12 +400,13 @@ class CandleAdapter:
             try:
                 table_name = get_table_name('klines_store')
                 for candle in db_candles:
-                    # Use different syntax for SQLite vs PostgreSQL
+                    # Use centralized database layer with ? placeholders
+                    # convert_placeholders will handle SQLite vs PostgreSQL conversion
                     if DB_TYPE == 'postgres':
                         sql = f"""
                             INSERT INTO {table_name}
                             (symbol, timeframe, category, start_time, open_price, high_price, low_price, close_price, volume, turnover)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ON CONFLICT DO NOTHING
                         """
                     else:
