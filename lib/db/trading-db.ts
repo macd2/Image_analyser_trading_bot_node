@@ -793,7 +793,7 @@ export const CONFIG_METADATA: Record<string, ConfigMeta> = {
   // AI Settings
   'strategy': {
     type: 'select',
-    category: 'ai',
+    category: 'strategy',
     group: '1. Model Configuration',
     description: 'Analysis Strategy',
     tooltip: 'Select the analysis strategy to use for chart analysis',
@@ -804,15 +804,14 @@ export const CONFIG_METADATA: Record<string, ConfigMeta> = {
       { value: 'CointegrationSpreadTrader', label: 'Cointegration Spread Trader' }
     ]
   },
-  'openai.assistant_id': { type: 'string', category: 'ai', group: '1. Model Configuration', description: 'OpenAI Assistant ID', tooltip: 'The unique identifier for your OpenAI Assistant', order: 1 },
-  'openai.model': { type: 'string', category: 'ai', group: '1. Model Configuration', description: 'OpenAI Model', tooltip: 'AI model to use for analysis (e.g., gpt-4, gpt-3.5-turbo)', order: 2 },
+  // Note: openai.* settings moved to strategy_specific.prompt_strategy.*
 
   // Exchange Settings
   'bybit.use_testnet': { type: 'boolean', category: 'exchange', group: '1. Connection', description: 'Use Bybit testnet', tooltip: 'Connect to Bybit testnet instead of mainnet', order: 1 },
   'bybit.max_retries': { type: 'number', category: 'exchange', group: '2. API Settings', description: 'Max retries for API calls', tooltip: 'Number of times to retry failed API requests', order: 10 },
   'bybit.recv_window': { type: 'number', category: 'exchange', group: '2. API Settings', description: 'Receive window in ms', tooltip: 'Time window for API request validity (milliseconds)', order: 11 },
 
-  // Trading - Order Replacement
+  // Trading - Order Repl acement
   'trading.enable_intelligent_replacement': { type: 'boolean', category: 'trading', group: '6. Order Replacement', description: 'Enable intelligent order replacement', tooltip: 'Replace existing orders with better opportunities based on AI score improvement', order: 50 },
   'trading.min_score_improvement_threshold': { type: 'number', category: 'trading', group: '6. Order Replacement├─ Replacement Settings', description: 'Min score improvement for replacement', tooltip: 'Minimum AI confidence score improvement required to replace an existing order (0.0-1.0)', order: 51 },
 
@@ -841,30 +840,36 @@ export const CONFIG_METADATA: Record<string, ConfigMeta> = {
   'trading.age_cancellation_enabled': { type: 'boolean', category: 'trade monitor', group: '3. Order Cancellation', description: 'Age-based cancellation', tooltip: '⚡ INDEPENDENT: Cancel unfilled orders that have been pending too long (not affected by master switch)', order: 50 },
   'trading.age_cancellation_max_bars': { type: 'json', category: 'trade monitor', group: '3. Order Cancellation', description: 'Max age bars for cancellation', tooltip: 'Maximum bars before cancelling unfilled orders per timeframe. Example: {"1h": 48, "4h": 18}', order: 51 },
 
-  // TradingView - Chart Capture (under Trading category)
-  'tradingview.enabled': { type: 'boolean', category: 'Tradingview', group: '5. Chart Capture', description: 'Enable TradingView chart capture', tooltip: 'Capture charts from TradingView for analysis', order: 40 },
-  'tradingview.target_chart': { type: 'string', category: 'Tradingview', group: '5. Chart Capture', description: 'Target chart URL or identifier', tooltip: 'The TradingView chart URL or identifier to capture (e.g., "BTCUSDT" or full URL)', order: 41 },
-  'trading.timeframe': { type: 'string', category: 'Tradingview', group: '5. Chart Capture', description: 'Trading timeframe', tooltip: 'Chart timeframe for analysis (e.g., 1h, 4h, 1d). Affects candle data and age-based calculations', order: 42 },
+  // TradingView - Chart Capture (moved to strategy-specific for PromptStrategy)
+  // Note: tradingview.enabled removed - PromptStrategy always captures charts
 
-  // Strategy-Specific Settings - Price-Based Strategies
-  'strategy_specific.price_based.enable_position_tightening': { type: 'boolean', category: 'ai', group: '2. Price-Based Strategy Settings', description: 'Enable position tightening', tooltip: 'Current: true | Automatically tighten stop loss as profit increases (e.g., move SL to 1.2R when price reaches 2R)', order: 10 },
-  'strategy_specific.price_based.min_rr': { type: 'number', category: 'ai', group: '2. Price-Based Strategy Settings', description: 'Minimum risk-reward ratio', tooltip: 'Current: 1.0 | Minimum RR ratio required for price-based strategy signals. Range: 0.5-3.0', order: 11 },
-  'strategy_specific.price_based.enable_spread_monitoring': { type: 'boolean', category: 'ai', group: '2. Price-Based Strategy Settings', description: 'Enable spread monitoring', tooltip: 'Current: true | Monitor bid-ask spread for entry/exit optimization', order: 12 },
+  // Strategy-Specific Settings - PromptStrategy (Chart-based AI analysis)
+  'strategy_specific.prompt_strategy.model': { type: 'string', category: 'strategy', group: '2. PromptStrategy Settings├─ Model Configuration', description: 'OpenAI Model', tooltip: 'AI model to use for analysis (e.g., gpt-4o, gpt-4o-mini)', order: 1 },
+  'strategy_specific.prompt_strategy.assistant_id': { type: 'string', category: 'strategy', group: '2. PromptStrategy Settings├─ Model Configuration', description: 'OpenAI Assistant ID', tooltip: 'The unique identifier for your OpenAI Assistant', order: 2 },
+  'strategy_specific.prompt_strategy.prompt_name': { type: 'select', category: 'strategy', group: '2. PromptStrategy Settings├─ Model Configuration', description: 'Prompt template', tooltip: 'Name of the prompt template to use for analysis', order: 3 },
+  'strategy_specific.prompt_strategy.target_chart': { type: 'string', category: 'strategy', group: '2. PromptStrategy Settings├─ Chart Capture', description: 'Target chart URL', tooltip: 'TradingView chart URL to capture for analysis (e.g., https://www.tradingview.com/chart/xxxxx/)', order: 4 },
+  'strategy_specific.prompt_strategy.chart_timeframe': { type: 'string', category: 'strategy', group: '2. PromptStrategy Settings├─ Chart Capture', description: 'Chart timeframe', tooltip: 'Timeframe for chart capture (e.g., 1h, 4h, 1d). Independent of cycle timeframe.', order: 5 },
 
-  // Strategy-Specific Settings - Spread-Based Strategies
-  'strategy_specific.spread_based.z_score_entry_threshold': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings', description: 'Z-score entry threshold', tooltip: 'Current: 2.0 | Enter spread trades when |z-score| reaches this level. Higher = fewer signals but higher confidence. Range: 1.5-3.0', order: 20 },
-  'strategy_specific.spread_based.z_score_exit_threshold': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings', description: 'Z-score exit threshold', tooltip: 'Current: 0.5 | Exit when z-score reverts to this level (mean reversion). Lower = tighter profit-taking. Range: 0.0-1.0', order: 21 },
-  'strategy_specific.spread_based.lookback_period': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings', description: 'Lookback period (bars)', tooltip: 'Current: 120 | Number of candles for cointegration analysis. Longer = more stable but slower to adapt. Range: 30-200', order: 22 },
-  'strategy_specific.spread_based.max_spread_deviation': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings', description: 'Max spread deviation', tooltip: 'Current: 3.0 | Maximum z-score deviation before force-closing position. Range: 2.0-5.0', order: 23 },
-  'strategy_specific.spread_based.min_z_distance': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings', description: 'Min z-distance to SL', tooltip: 'Current: 0.5 | Minimum z-score distance to stop loss for signal validation. Range: 0.3-1.0', order: 27 },
+  // Strategy-Specific Settings - Price-Based Strategies (Generic for all price-based strategies)
+  'strategy_specific.price_based.enable_position_tightening': { type: 'boolean', category: 'strategy', group: '2. Price-Based Strategy Settings', description: 'Enable position tightening', tooltip: 'Current: true | Automatically tighten stop loss as profit increases (e.g., move SL to 1.2R when price reaches 2R)', order: 10 },
+  'strategy_specific.price_based.min_rr': { type: 'number', category: 'strategy', group: '2. Price-Based Strategy Settings', description: 'Minimum risk-reward ratio', tooltip: 'Current: 1.0 | Minimum RR ratio required for price-based strategy signals. Range: 0.5-3.0', order: 11 },
+  'strategy_specific.price_based.enable_spread_monitoring': { type: 'boolean', category: 'strategy', group: '2. Price-Based Strategy Settings', description: 'Enable spread monitoring', tooltip: 'Current: true | Monitor bid-ask spread for entry/exit optimization', order: 12 },
+
+  // Strategy-Specific Settings - Cointegration Analysis
+  'strategy_specific.cointegration.lookback': { type: 'number', category: 'strategy', group: '3. Cointegration Analysis Settings', description: 'Lookback period (candles)', tooltip: 'Number of candles for cointegration analysis. Longer = more stable but slower to adapt. Default: 120. Range: 30-200', order: 31 },
+  'strategy_specific.cointegration.z_entry': { type: 'number', category: 'strategy', group: '3. Cointegration Analysis Settings', description: 'Z-score entry threshold', tooltip: 'Enter when |z-score| reaches this level. Higher = fewer signals but higher confidence. Default: 2.0. Range: 1.5-3.0', order: 32 },
+  'strategy_specific.cointegration.z_exit': { type: 'number', category: 'strategy', group: '3. Cointegration Analysis Settings', description: 'Z-score exit threshold', tooltip: 'Exit when z-score reverts to this level (mean reversion). Lower = tighter profit-taking. Default: 0.5. Range: 0.0-1.0', order: 33 },
+  'strategy_specific.cointegration.use_adf': { type: 'boolean', category: 'strategy', group: '3. Cointegration Analysis Settings', description: 'Use ADF test for mean reversion', tooltip: 'Default: true | ADF test (strict, p<0.05) vs Hurst exponent (loose, <0.5). ADF is more selective for signals.', order: 34 },
+  'strategy_specific.cointegration.use_soft_vol': { type: 'boolean', category: 'strategy', group: '3. Cointegration Analysis Settings', description: 'Use soft volatility adjustment', tooltip: 'Default: false | Soft vol: 0.5x-2.5x sizing (choppy markets) | Aggressive: 0.3x-3.0x (stable pairs)', order: 35 },
+
 
   // Strategy-Specific Settings - Cointegration Strategy
-  'strategy_specific.cointegration.pair_discovery_mode': { type: 'select', category: 'ai', group: '3. Spread-Based Strategy Settings├─ Cointegration Pair Discovery', description: 'Pair discovery mode', tooltip: 'static: Use predefined pairs from configuration | auto_screen: Dynamically discover pairs using screener', order: 24, options: [{ value: 'static', label: 'Static (predefined pairs)' }, { value: 'auto_screen', label: 'Auto-Screen (discover pairs)' }] },
-  'strategy_specific.cointegration.analysis_timeframe': { type: 'select', category: 'ai', group: '3. Spread-Based Strategy Settings├─ Cointegration Pair Discovery', description: 'Analysis timeframe', tooltip: 'Timeframe for cointegration analysis (independent of cycle timeframe). Examples: 1h, 4h, 1d', order: 25, options: [{ value: '1m', label: '1 minute' }, { value: '5m', label: '5 minutes' }, { value: '15m', label: '15 minutes' }, { value: '30m', label: '30 minutes' }, { value: '1h', label: '1 hour' }, { value: '4h', label: '4 hours' }, { value: '1d', label: '1 day' }] },
-  'strategy_specific.cointegration.screener_cache_hours': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings├─ Cointegration Pair Discovery', description: 'Screener cache duration (hours)', tooltip: 'How long to cache screener results before refreshing. Range: 1-168 (1 hour to 1 week)', order: 26 },
-  'strategy_specific.cointegration.min_volume_usd': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings├─ Cointegration Pair Discovery', description: 'Minimum 24h volume (USD)', tooltip: 'Minimum 24h trading volume in USD for pair screening. Filters out low-volume assets. Range: 100000-10000000', order: 28 },
-  'strategy_specific.cointegration.batch_size': { type: 'number', category: 'ai', group: '3. Spread-Based Strategy Settings├─ Cointegration Pair Discovery', description: 'Screener batch size', tooltip: 'Number of symbols to process per batch during screening. Affects API call efficiency. Range: 5-50', order: 29 },
-
+  'strategy_specific.cointegration.pair_discovery_mode': { type: 'select', category: 'strategy', group: '3. Screener', description: 'Pair discovery mode', tooltip: 'static: Use predefined pairs from configuration | auto_screen: Dynamically discover pairs using screener', order: 24, options: [{ value: 'static', label: 'Static (predefined pairs)' }, { value: 'auto_screen', label: 'Auto-Screen (discover pairs)' }] },
+  'strategy_specific.cointegration.analysis_timeframe': { type: 'select', category: 'strategy', group: '3. Screener', description: 'Analysis timeframe', tooltip: 'Timeframe for cointegration analysis (independent of cycle timeframe). Examples: 1h, 4h, 1d', order: 25, options: [{ value: '1m', label: '1 minute' }, { value: '5m', label: '5 minutes' }, { value: '15m', label: '15 minutes' }, { value: '30m', label: '30 minutes' }, { value: '1h', label: '1 hour' }, { value: '4h', label: '4 hours' }, { value: '1d', label: '1 day' }] },
+  'strategy_specific.cointegration.screener_cache_hours': { type: 'number', category: 'strategy', group: '3. Screener', description: 'Screener cache duration (hours)', tooltip: 'How long to cache screener results before refreshing. Range: 1-168 (1 hour to 1 week)', order: 26 },
+  'strategy_specific.cointegration.min_volume_usd': { type: 'number', category: 'strategy', group: '3. Screener', description: 'Minimum 24h volume (USD)', tooltip: 'Minimum 24h trading volume in USD for pair screening. Filters out low-volume assets. Range: 100000-10000000', order: 28 },
+  'strategy_specific.cointegration.batch_size': { type: 'number', category: 'strategy', group: '3. Screener', description: 'Screener batch size', tooltip: 'Number of symbols to process per batch during screening. Affects API call efficiency. Range: 5-50', order: 29 },
+  'strategy_specific.cointegration.candle_limit': { type: 'number', category: 'strategy', group: '3. Screener', description: 'Candles per symbol', tooltip: 'Number of candles to fetch per symbol during screening. More candles = more data but slower. Default: 1000. Range: 100-2000', order: 30 },
 };
 
 /**

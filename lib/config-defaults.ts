@@ -15,7 +15,7 @@ const DEFAULT_RR_TIGHTENING_STEPS = {
 };
 
 export type ConfigType = 'string' | 'number' | 'boolean' | 'json';
-export type ConfigCategory = 'trading' | 'tightening' | 'sizing' | 'replacement' | 'exchange' | 'ai' | 'tradingview';
+export type ConfigCategory = 'trading' | 'tightening' | 'sizing' | 'replacement' | 'exchange' | 'strategy' | 'tradingview';
 
 export interface ConfigDefault {
   key: string;
@@ -208,57 +208,29 @@ export const DEFAULT_CONFIG: ConfigDefault[] = [
     description: "Maximum API retry attempts"
   },
 
-  // AI (2 settings)
-  {
-    key: "openai.model",
-    value: "gpt-4.1-mini",
-    type: "string",
-    category: "ai",
-    description: "OpenAI model for chart analysis"
-  },
-  {
-    key: "openai.assistant_id",
-    value: "asst_m11ds7XhdYfN7voO0pRvgbul",
-    type: "string",
-    category: "ai",
-    description: "OpenAI Assistant ID for analysis (empty = use direct API)"
-  },
-   // TradingView (2 settings)
-  {
-    key: "tradingview.enabled",
-    value: true,
-    type: "boolean",
-    category: "tradingview",
-    description: "Enable TradingView chart capture"
-  },
-  {
-    key: "tradingview.target_chart",
-    value: "https://www.tradingview.com/chart/iXrxoaRu/",
-    type: "string",
-    category: "tradingview",
-    description: "Target chart URL for TradingView navigation"
-  },
+  // Note: OpenAI and TradingView settings moved to strategy_specific.prompt_strategy.*
+  // These are now configured per-strategy in the UI and stored in strategy_config JSON
 
   // Strategy-Specific Settings - Price-Based Strategies (3 settings)
   {
     key: "strategy_specific.price_based.enable_position_tightening",
     value: true,
     type: "boolean",
-    category: "ai",
+    category: "strategy",
     description: "Enable position tightening for price-based strategies"
   },
   {
     key: "strategy_specific.price_based.min_rr",
     value: 1.0,
     type: "number",
-    category: "ai",
+    category: "strategy",
     description: "Minimum risk-reward ratio for price-based strategies"
   },
   {
     key: "strategy_specific.price_based.enable_spread_monitoring",
     value: true,
     type: "boolean",
-    category: "ai",
+    category: "strategy",
     description: "Enable spread monitoring for price-based strategies"
   },
 
@@ -267,35 +239,35 @@ export const DEFAULT_CONFIG: ConfigDefault[] = [
     key: "strategy_specific.spread_based.z_score_entry_threshold",
     value: 2.0,
     type: "number",
-    category: "ai",
+    category: "strategy",
     description: "Z-score entry threshold for spread-based strategies"
   },
   {
     key: "strategy_specific.spread_based.z_score_exit_threshold",
     value: 0.5,
     type: "number",
-    category: "ai",
+    category: "strategy",
     description: "Z-score exit threshold for spread-based strategies"
   },
   {
     key: "strategy_specific.spread_based.lookback_period",
     value: 120,
     type: "number",
-    category: "ai",
+    category: "strategy",
     description: "Lookback period (bars) for cointegration analysis"
   },
   {
     key: "strategy_specific.spread_based.max_spread_deviation",
     value: 3.0,
     type: "number",
-    category: "ai",
+    category: "strategy",
     description: "Maximum z-score deviation before force-closing position"
   },
   {
     key: "strategy_specific.spread_based.min_z_distance",
     value: 0.5,
     type: "number",
-    category: "ai",
+    category: "strategy",
     description: "Minimum z-score distance to stop loss for signal validation"
   },
 ];

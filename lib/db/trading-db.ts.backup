@@ -380,8 +380,8 @@ export function updateInstanceSettings(instanceId: string, updates: Array<{ key:
 
 // Static config metadata (type, category, description, tooltip) for known settings
 const CONFIG_METADATA: Record<string, { type: 'string' | 'number' | 'boolean' | 'json'; category: string; description: string; tooltip?: string }> = {
-  'openai.assistant_id': { type: 'string', category: 'ai', description: 'OpenAI Assistant ID', tooltip: 'The unique identifier for your OpenAI Assistant' },
-  'openai.model': { type: 'string', category: 'ai', description: 'OpenAI Model', tooltip: 'AI model to use for analysis (e.g., gpt-4, gpt-3.5-turbo)' },
+  'openai.assistant_id': { type: 'string', category: 'strategy', description: 'OpenAI Assistant ID', tooltip: 'The unique identifier for your OpenAI Assistant' },
+  'openai.model': { type: 'string', category: 'strategy', description: 'OpenAI Model', tooltip: 'AI model to use for analysis (e.g., gpt-4, gpt-3.5-turbo)' },
   'bybit.max_retries': { type: 'number', category: 'exchange', description: 'Max retries for API calls', tooltip: 'Number of times to retry failed API requests' },
   'bybit.recv_window': { type: 'number', category: 'exchange', description: 'Receive window in ms', tooltip: 'Time window for API request validity (milliseconds)' },
   'bybit.use_testnet': { type: 'boolean', category: 'exchange', description: 'Use Bybit testnet', tooltip: 'Connect to Bybit testnet instead of mainnet' },
