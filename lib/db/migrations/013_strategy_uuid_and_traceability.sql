@@ -30,6 +30,7 @@ CREATE INDEX IF NOT EXISTS idx_rec_strategy_type ON recommendations(strategy_typ
 ALTER TABLE trades ADD COLUMN IF NOT EXISTS strategy_uuid TEXT;
 ALTER TABLE trades ADD COLUMN IF NOT EXISTS strategy_type TEXT;
 ALTER TABLE trades ADD COLUMN IF NOT EXISTS strategy_name TEXT;
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS strategy_metadata JSONB;
 ALTER TABLE trades ADD COLUMN IF NOT EXISTS ranking_context JSONB;
 ALTER TABLE trades ADD COLUMN IF NOT EXISTS wallet_balance_at_trade REAL;
 ALTER TABLE trades ADD COLUMN IF NOT EXISTS kelly_metrics JSONB;

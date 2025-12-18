@@ -1120,6 +1120,11 @@ export interface TradeRow {
   risk_per_unit: number | null;
   sizing_method: string | null;
   risk_pct_used: number | null;
+  // Strategy tracking and metadata
+  strategy_uuid: string | null;
+  strategy_type: string | null;
+  strategy_name: string | null;
+  strategy_metadata: Record<string, any> | null;
 }
 
 /**

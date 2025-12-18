@@ -621,8 +621,10 @@ async function checkStrategyExit(
       entry_price: trade.entry_price,
       stop_loss: trade.stop_loss,
       take_profit: trade.take_profit,
-      strategy_metadata: trade.strategy_metadata ?
-        (typeof trade.strategy_metadata === 'string' ? JSON.parse(trade.strategy_metadata) : trade.strategy_metadata)
+      strategy_metadata: trade.strategy_metadata
+        ? (typeof trade.strategy_metadata === 'string'
+            ? JSON.parse(trade.strategy_metadata)
+            : trade.strategy_metadata)
         : {}
     };
 
@@ -1034,7 +1036,7 @@ export async function POST() {
           strategy_name: undefined,
           timeframe: timeframe,
           candles_checked: candles.length,
-          bars_open: barsOpen,
+          bars_open: fillCandleIndex >= 0 ? candles.length - fillCandleIndex : 0,
           checked_at: new Date().toISOString()
         });
         continue;
