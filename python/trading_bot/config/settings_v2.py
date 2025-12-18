@@ -318,6 +318,22 @@ class ConfigV2:
             else:
                 settings = {}
 
+            # Flatten strategy_config keys into main config dict
+            # Settings can have nested structure: {"strategy_config": {"strategy_specific.cointegration.screener_cache_hours": "24"}}
+            # We need to flatten this to: {"strategy_specific.cointegration.screener_cache_hours": "24"}
+            # Also handle short keys like {"screener_cache_hours": "24"} by prefixing with strategy_specific.cointegration
+            if 'strategy_config' in settings and isinstance(settings['strategy_config'], dict):
+                strategy_config = settings.pop('strategy_config')
+                for key, value in strategy_config.items():
+                    # If key is already fully qualified (contains dots), use as-is
+                    if '.' in key:
+                        settings[key] = value
+                    else:
+                        # Short key like "screener_cache_hours" - prefix with strategy_specific.cointegration
+                        # This handles legacy format from dashboard
+                        full_key = f'strategy_specific.cointegration.{key}'
+                        settings[full_key] = value
+
             for key, value in settings.items():
                 # Parse value based on content
                 if isinstance(value, str):
