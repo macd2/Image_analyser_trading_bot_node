@@ -2154,11 +2154,12 @@ export interface ErrorLogRow {
 export async function getErrorLogs(limit = 100, instanceId?: string): Promise<ErrorLogRow[]> {
   if (instanceId) {
     // Filter by instance via run_id
-    // IMPORTANT: Include logs with run_id IS NULL (errors before run started)
+    // Only include logs that are tied to a run for this instance
+    // System-level errors (run_id IS NULL) are not instance-specific
     return dbQuery<ErrorLogRow>(`
       SELECT el.* FROM error_logs el
       LEFT JOIN runs r ON el.run_id = r.id
-      WHERE r.instance_id = ? OR el.run_id IS NULL
+      WHERE r.instance_id = ?
       ORDER BY el.timestamp DESC
       LIMIT ?
     `, [instanceId, limit]);
