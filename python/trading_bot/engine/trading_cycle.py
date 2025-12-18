@@ -860,12 +860,17 @@ class TradingCycle:
                     # Continue anyway - better to trade than miss opportunity due to parse error
 
             # Extract strategy information for traceability
-            strategy_uuid = None
-            strategy_type = None
-            strategy_name = None
-            if hasattr(self, 'strategy') and self.strategy:
+            # First check if strategy info is already in the analysis (from strategy output)
+            strategy_uuid = analysis.get("strategy_uuid")
+            strategy_type = analysis.get("strategy_type")
+            strategy_name = analysis.get("strategy_name")
+
+            # Fallback to self.strategy if not in analysis
+            if not strategy_uuid and hasattr(self, 'strategy') and self.strategy:
                 strategy_uuid = getattr(self.strategy, 'strategy_uuid', None)
+            if not strategy_type and hasattr(self, 'strategy') and self.strategy:
                 strategy_type = getattr(self.strategy, 'STRATEGY_TYPE', None)
+            if not strategy_name and hasattr(self, 'strategy') and self.strategy:
                 strategy_name = getattr(self.strategy, 'STRATEGY_NAME', None)
 
             return {
