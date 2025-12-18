@@ -175,11 +175,13 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         instance_name = self.instance_id or "default"
         min_volume_usd = self.get_config_value('min_volume_usd', 1_000_000)
         batch_size = self.get_config_value('batch_size', 15)
+        candle_limit = self.get_config_value('candle_limit', 500)
 
         logger.info(f"🔍 [SCREENER] Starting auto-screening for {instance_name}")
         logger.info(f"   Timeframe: {timeframe}")
         logger.info(f"   Min Volume: ${min_volume_usd/1e6:.1f}M")
         logger.info(f"   Batch Size: {batch_size}")
+        logger.info(f"   Candle Limit: {candle_limit}")
         self._heartbeat(f"Running screener for timeframe {timeframe}")
 
         try:
@@ -190,6 +192,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 instance_id=instance_name,
                 min_volume_usd=min_volume_usd,
                 batch_size=batch_size,
+                candle_limit=candle_limit,
                 verbose=False  # Suppress screener's own logging
             )
 

@@ -18,6 +18,7 @@ import asyncio
 import sys
 import os
 import json
+import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Dict
@@ -33,6 +34,9 @@ from prompt_performance.core.bybit_symbols import get_bybit_symbols_cached
 from trading_bot.strategies.candle_adapter import CandleAdapter
 from trading_bot.strategies.cointegration.pair_screener import PairScreener
 import pandas as pd
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 
 def fetch_ticker(symbol: str) -> tuple:
@@ -75,40 +79,56 @@ def fetch_tickers_for_volume(symbols: list, max_workers: int = 10) -> dict:
     return symbol_volumes
 
 
-async def fetch_all_candles(symbols: list, batch_size: int = 10) -> dict:
-    """Fetch candles for all symbols in parallel batches."""
+async def fetch_all_candles(symbols: list, batch_size: int = 10, candle_limit: int = 1000) -> dict:
+    """Fetch candles for all symbols in parallel batches.
+
+    Args:
+        symbols: List of symbols to fetch candles for
+        batch_size: Number of symbols per batch (default: 10)
+        candle_limit: Number of candles to fetch per symbol (default: 500)
+    """
     adapter = CandleAdapter()
     symbol_candles = {}
-    
-    print(f"Fetching candles for {len(symbols)} symbols (batch_size={batch_size})...")
-    
-    for i in range(0, len(symbols), batch_size):
+
+    logger.info(f"📊 [SCREENER] Fetching candles for {len(symbols)} symbols (batch_size={batch_size}, limit={candle_limit})")
+    print(f"Fetching candles for {len(symbols)} symbols (batch_size={batch_size}, limit={candle_limit})...")
+
+    for batch_num, i in enumerate(range(0, len(symbols), batch_size), 1):
         batch = symbols[i:i + batch_size]
         tasks = []
-        
+
         for symbol in batch:
             task = adapter.get_candles(
                 symbol,
                 timeframe='1h',
-                limit=500,
+                limit=candle_limit,
                 min_candles=120,
                 cache_to_db=False,
                 prefer_source="api"  # Prefer fresh API data for screener
             )
             tasks.append((symbol, task))
-        
+
         # Fetch batch in parallel
         results = await asyncio.gather(*[task for _, task in tasks], return_exceptions=True)
-        
+
+        # Collect batch summary
+        batch_summary = []
         for (symbol, _), result in zip(tasks, results):
             if isinstance(result, Exception):
-                print(f"❌ {symbol:12} - Error: {str(result)[:50]}")
+                batch_summary.append(f"❌ {symbol}")
+                logger.warning(f"⚠️  [SCREENER] {symbol} - Error: {str(result)[:50]}")
             elif result:
                 symbol_candles[symbol] = result
-                print(f"✅ {symbol:12} - {len(result)} candles")
+                batch_summary.append(f"✅ {symbol} - 1h - {len(result)} candles - api")
             else:
-                print(f"⊘ {symbol:12} - No candles")
-    
+                batch_summary.append(f"⊘ {symbol}")
+                logger.warning(f"⚠️  [SCREENER] {symbol} - No candles")
+
+        # Log batch summary
+        batch_info = f"📦 [SCREENER] Batch {batch_num}: {', '.join(batch_summary)}"
+        logger.info(batch_info)
+        print(batch_info)
+
     return symbol_candles
 
 
@@ -132,6 +152,7 @@ async def run_screener(
     instance_id: str = "default",
     min_volume_usd: int = 1_000_000,
     batch_size: int = 15,
+    candle_limit: int = 500,
     verbose: bool = True,
 ) -> Dict[str, str]:
     """
@@ -142,6 +163,7 @@ async def run_screener(
         instance_id: Instance ID for cache file naming (default: "default")
         min_volume_usd: Minimum 24h volume in USD for filtering (default: 1M)
         batch_size: Number of symbols per batch for parallel fetching (default: 15)
+        candle_limit: Number of candles to fetch per symbol (default: 500)
         verbose: Print progress messages (default: True)
 
     Returns:
@@ -196,9 +218,9 @@ async def run_screener(
     print(f"After volume filter: {len(filtered_by_volume)} symbols (>= ${min_volume_usd/1e6:.1f}M)")
 
     # Step 4: Fetch candles in parallel
-    logger.info(f"📊 [SCREENER] STEP 4: Fetching candles in parallel (batch_size: {batch_size})...")
+    logger.info(f"📊 [SCREENER] STEP 4: Fetching candles in parallel (batch_size: {batch_size}, limit: {candle_limit})...")
     print("\nSTEP 4: Fetching candles in parallel...")
-    symbol_candles = await fetch_all_candles(filtered_by_volume, batch_size=batch_size)
+    symbol_candles = await fetch_all_candles(filtered_by_volume, batch_size=batch_size, candle_limit=candle_limit)
     logger.info(f"📊 [SCREENER] Successfully fetched {len(symbol_candles)} symbols with candles")
     print(f"\nSuccessfully fetched {len(symbol_candles)} symbols")
 
@@ -304,6 +326,12 @@ if __name__ == "__main__":
         default=15,
         help="Number of symbols per batch for parallel fetching (default: 15)"
     )
+    parser.add_argument(
+        "--candle-limit",
+        type=int,
+        default=1000,
+        help="Number of candles to fetch per symbol (default: 500)"
+    )
 
     args = parser.parse_args()
 
@@ -313,6 +341,7 @@ if __name__ == "__main__":
             instance_id=args.instance_id,
             min_volume_usd=args.min_volume_usd,
             batch_size=args.batch_size,
+            candle_limit=args.candle_limit,
             verbose=True
         ))
         sys.exit(0 if pairs else 1)
