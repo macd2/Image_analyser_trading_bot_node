@@ -204,6 +204,8 @@ def _get_pg_connection_with_timeout(timeout_seconds: float = 10.0):
     If pool is exhausted, waits up to timeout_seconds for a connection to become available.
     Raises TimeoutError if no connection available within timeout.
 
+    Validates connections before returning to detect stale connections closed by server.
+
     Args:
         timeout_seconds: Maximum seconds to wait for a connection (default: 10)
 
@@ -225,9 +227,21 @@ def _get_pg_connection_with_timeout(timeout_seconds: float = 10.0):
             # Try non-blocking first
             conn = pool.getconn()
             conn.cursor_factory = psycopg2.extras.RealDictCursor
+
+            # Validate connection is still alive (detect stale connections)
+            # If connection was closed by server, this will raise an exception
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1")
+                cursor.close()
+            except Exception as e:
+                # Connection is dead, return it to pool and try again
+                pool.putconn(conn, close=True)
+                raise pool.PoolError(f"Connection validation failed: {e}")
+
             return conn
         except pool.PoolError:
-            # Pool exhausted, check if we've exceeded timeout
+            # Pool exhausted or connection invalid, check if we've exceeded timeout
             elapsed = time.time() - start_time
             if elapsed >= timeout_seconds:
                 raise TimeoutError(
@@ -274,6 +288,8 @@ def release_connection(conn):
     Release a database connection back to the pool (PostgreSQL only).
     For SQLite, this closes the connection.
 
+    For PostgreSQL: If connection is in a failed state, closes it instead of returning to pool.
+
     Args:
         conn: Database connection to release
     """
@@ -282,7 +298,21 @@ def release_connection(conn):
 
     if DB_TYPE == 'postgres':
         pool = _get_pg_pool()
-        pool.putconn(conn)
+        try:
+            # Check if connection is in a failed transaction state
+            # If so, close it instead of returning to pool
+            if conn.status != 1:  # 1 = OK, other values = failed/closed
+                pool.putconn(conn, close=True)
+            else:
+                pool.putconn(conn)
+        except Exception as e:
+            # If we can't check status, close the connection to be safe
+            import logging
+            logging.getLogger(__name__).warning(f"Error releasing connection: {e}, closing instead")
+            try:
+                pool.putconn(conn, close=True)
+            except:
+                pass
     else:
         conn.close()
 
