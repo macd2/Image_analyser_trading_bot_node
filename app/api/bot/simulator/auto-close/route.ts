@@ -587,6 +587,110 @@ function checkHistoricalSLTP(
 }
 
 /**
+ * Check strategy-specific exit conditions using Python strategy.should_exit()
+ * Returns exit result if strategy says to exit, null otherwise
+ * Falls back to price-level checks if strategy is not available
+ */
+async function checkStrategyExit(
+  trade: TradeRow,
+  candles: Candle[],
+  startFromIndex: number = 0,
+  strategyName?: string | null
+): Promise<ExitResult | null> {
+  // If no strategy name, cannot use strategy-specific logic
+  if (!strategyName) {
+    return null;
+  }
+
+  try {
+    const { spawn } = await import('child_process');
+    const path = await import('path');
+
+    // Prepare data for Python script
+    const candlesData = candles.slice(startFromIndex).map(c => ({
+      timestamp: c.timestamp,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close
+    }));
+
+    const tradeData = {
+      symbol: trade.symbol,
+      side: trade.side,
+      entry_price: trade.entry_price,
+      stop_loss: trade.stop_loss,
+      take_profit: trade.take_profit,
+      strategy_metadata: trade.strategy_metadata ?
+        (typeof trade.strategy_metadata === 'string' ? JSON.parse(trade.strategy_metadata) : trade.strategy_metadata)
+        : {}
+    };
+
+    // Call Python script
+    return new Promise((resolve) => {
+      const pythonScript = path.join(process.cwd(), 'python', 'check_strategy_exit.py');
+
+      let stdout = '';
+      let stderr = '';
+
+      const pythonProcess = spawn('python3', [
+        pythonScript,
+        trade.id,
+        strategyName,
+        JSON.stringify(candlesData),
+        JSON.stringify(tradeData)
+      ], {
+        cwd: process.cwd(),
+        env: { ...process.env }
+      });
+
+      pythonProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      pythonProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      pythonProcess.on('close', (code) => {
+        if (code !== 0) {
+          console.warn(`[Auto-Close] Strategy exit check failed for ${trade.symbol}: ${stderr}`);
+          resolve(null);
+          return;
+        }
+
+        try {
+          const result = JSON.parse(stdout);
+
+          if (result.should_exit && result.exit_price && result.exit_reason) {
+            resolve({
+              hit: true,
+              reason: result.exit_reason,
+              exitPrice: result.exit_price,
+              exitTimestamp: result.exit_timestamp || candles[startFromIndex]?.timestamp || Date.now(),
+              currentPrice: result.current_price || candles[candles.length - 1]?.close || 0
+            });
+          } else {
+            resolve(null);
+          }
+        } catch (error) {
+          console.warn(`[Auto-Close] Failed to parse strategy exit result: ${error}`);
+          resolve(null);
+        }
+      });
+
+      pythonProcess.on('error', (error) => {
+        console.warn(`[Auto-Close] Error spawning strategy exit check: ${error}`);
+        resolve(null);
+      });
+    });
+  } catch (error) {
+    console.warn(`[Auto-Close] Error calling strategy exit check: ${error}`);
+    return null;
+  }
+}
+
+/**
  * POST /api/bot/simulator/auto-close
  * Check all open paper trades using HISTORICAL candles from trade creation
  * Accurately detects if SL/TP was hit at any point since trade was created
@@ -918,7 +1022,47 @@ export async function POST() {
         continue;
       }
 
-      const exitResult = checkHistoricalSLTP(candlesAfterCreation, isLong, stopLoss, takeProfit, fillCandleIndex);
+      // STEP 2A: Validate that trade has associated strategy
+      if (!trade.strategy_name) {
+        console.error(`[Auto-Close] ${trade.symbol} ERROR - Trade has no associated strategy_name. Cannot determine exit logic.`);
+        results.push({
+          trade_id: trade.id,
+          symbol: trade.symbol,
+          action: 'checked',
+          current_price: await getCurrentPrice(trade.symbol),
+          instance_name: trade.instance_name,
+          strategy_name: undefined,
+          timeframe: timeframe,
+          candles_checked: candles.length,
+          bars_open: barsOpen,
+          checked_at: new Date().toISOString()
+        });
+        continue;
+      }
+
+      // STEP 2B: Determine exit logic based on strategy type
+      let exitResult: ExitResult | null = null;
+      const strategyType = trade.strategy_type || 'unknown';
+
+      if (strategyType === 'price_based') {
+        // Price-based strategies use TP/SL logic
+        console.log(`[Auto-Close] ${trade.symbol} - Price-based strategy (${strategyName}), checking SL/TP`);
+        exitResult = checkHistoricalSLTP(candlesAfterCreation, isLong, stopLoss, takeProfit, fillCandleIndex);
+      } else {
+        // Non-price-based strategies (spread-based, etc.) use strategy.should_exit()
+        console.log(`[Auto-Close] ${trade.symbol} - ${strategyType} strategy (${strategyName}), checking strategy exit`);
+        exitResult = await checkStrategyExit(trade, candlesAfterCreation, fillCandleIndex, strategyName);
+
+        if (!exitResult || !exitResult.hit) {
+          // Fallback to price-level checks if strategy exit returns nothing
+          console.log(`[Auto-Close] ${trade.symbol} - No strategy exit, falling back to SL/TP`);
+          exitResult = checkHistoricalSLTP(candlesAfterCreation, isLong, stopLoss, takeProfit, fillCandleIndex);
+        }
+      }
+
+      if (exitResult && exitResult.hit) {
+        console.log(`[Auto-Close] ${trade.symbol} - Exit triggered: ${exitResult.reason}`);
+      }
 
       // Calculate bars since fill (for max_open_bars check)
       const barsOpen = candlesAfterCreation.length - fillCandleIndex;

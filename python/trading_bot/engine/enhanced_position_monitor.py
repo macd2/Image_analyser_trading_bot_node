@@ -237,9 +237,23 @@ class EnhancedPositionMonitor:
                 "position_opened", f"Started tracking {position.side} position"
             )
 
-        # Check for tightening opportunities
+        # Check for tightening opportunities and strategy exits
         state = self._position_state[position_key]
-        self._check_all_tightening(position, state, instance_id, run_id, trade_id, strategy)
+
+        # Fetch trade data and current candle for strategy exit checking
+        trade = None
+        current_candle = None
+        if strategy:
+            trade = self._fetch_trade_data_for_strategy_exit(symbol, trade_id)
+            if trade:
+                timeframe = state.timeframe or "1h"
+                current_candle = self._fetch_current_candle_for_strategy_exit(symbol, timeframe)
+
+        self._check_all_tightening(
+            position, state, instance_id, run_id, trade_id, strategy,
+            current_candle=current_candle,
+            trade=trade
+        )
 
     def on_order_update(self, order: OrderState, instance_id: str, run_id: str, timeframe: str) -> None:
         """
@@ -334,11 +348,23 @@ class EnhancedPositionMonitor:
         run_id: str,
         trade_id: Optional[str],
         strategy: Optional[Any] = None,
+        current_candle: Optional[Dict[str, Any]] = None,
+        trade: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Check all tightening strategies for a position
 
         If strategy is provided, uses strategy.get_monitoring_metadata() to determine
         what monitoring to apply. Otherwise uses default configuration.
+
+        Args:
+            position: Current position state from exchange
+            state: Internal tracking state
+            instance_id: Instance ID for audit trail
+            run_id: Run ID for audit trail
+            trade_id: Trade ID for linking
+            strategy: Strategy instance for strategy-specific monitoring
+            current_candle: Current candle for strategy exit checks
+            trade: Trade record for strategy exit checks
         """
 
         # Master switch - if disabled, skip ALL tightening
@@ -352,6 +378,31 @@ class EnhancedPositionMonitor:
                 monitoring_metadata = strategy.get_monitoring_metadata()
             except Exception as e:
                 logger.warning(f"Failed to get monitoring metadata from strategy: {e}")
+
+        # 0. STRATEGY-SPECIFIC EXIT CHECK (highest priority)
+        # Check if strategy says to exit BEFORE any tightening
+        if strategy and current_candle and trade:
+            try:
+                exit_result = self.check_strategy_exit(
+                    trade=trade,
+                    current_candle=current_candle,
+                    pair_candle=None,  # Strategy will fetch if needed
+                    strategy=strategy,
+                    instance_id=instance_id,
+                    run_id=run_id,
+                    trade_id=trade_id,
+                )
+
+                if exit_result and exit_result.get("should_exit"):
+                    # Strategy says to exit - close the position
+                    logger.info(f"[{instance_id}] Strategy exit triggered for {position.symbol}: {exit_result.get('exit_reason')}")
+                    self._close_position_for_strategy_exit(
+                        position, state, instance_id, run_id, trade_id,
+                        exit_result
+                    )
+                    return  # Exit early - don't apply other tightening
+            except Exception as e:
+                logger.error(f"Error checking strategy exit for {position.symbol}: {e}", exc_info=True)
 
         # 1. RR-based tightening (standard)
         # Check if enabled in strategy metadata or use default config
@@ -442,6 +493,165 @@ class EnhancedPositionMonitor:
 
         except Exception as e:
             logger.error(f"Error checking strategy exit: {e}")
+            return None
+
+    def _close_position_for_strategy_exit(
+        self,
+        position: PositionState,
+        state: PositionTrackingState,
+        instance_id: str,
+        run_id: str,
+        trade_id: Optional[str],
+        exit_result: Dict[str, Any],
+    ) -> None:
+        """
+        Close a position based on strategy exit signal.
+
+        Args:
+            position: Current position state
+            state: Internal tracking state
+            instance_id: Instance ID for audit trail
+            run_id: Run ID for audit trail
+            trade_id: Trade ID for linking
+            exit_result: Exit result from strategy.should_exit()
+        """
+        try:
+            symbol = position.symbol
+            exit_reason = exit_result.get("exit_reason", "strategy_exit")
+            exit_details = exit_result.get("exit_details", {})
+
+            logger.info(
+                f"[{instance_id}] Closing {symbol} position due to strategy exit: {exit_reason}"
+            )
+
+            # Close the position at market
+            result = self.executor.close_position(symbol=symbol)
+
+            if "error" in result:
+                logger.error(
+                    f"[{instance_id}] Failed to close {symbol} position: {result['error']}"
+                )
+                self._log_position_action(
+                    instance_id, run_id, trade_id, symbol,
+                    "strategy_exit_close_failed",
+                    f"Failed to close position: {result['error']}"
+                )
+            else:
+                logger.info(
+                    f"[{instance_id}] Successfully closed {symbol} position"
+                )
+                self._log_position_action(
+                    instance_id, run_id, trade_id, symbol,
+                    "strategy_exit_closed",
+                    f"Position closed by strategy exit: {exit_reason} - Details: {exit_details}"
+                )
+
+                # Remove from tracking
+                position_key = (instance_id, symbol)
+                if position_key in self._position_state:
+                    del self._position_state[position_key]
+
+        except Exception as e:
+            logger.error(
+                f"[{instance_id}] Error closing position for strategy exit: {e}",
+                exc_info=True
+            )
+
+    def _fetch_trade_data_for_strategy_exit(
+        self,
+        symbol: str,
+        trade_id: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fetch trade data from database for strategy exit checking.
+
+        Args:
+            symbol: Symbol to fetch trade for
+            trade_id: Trade ID (optional, for filtering)
+
+        Returns:
+            Trade record with strategy_metadata or None if not found
+        """
+        if not self._db:
+            logger.warning("No database connection available for fetching trade data")
+            return None
+
+        try:
+            from trading_bot.db.client import query
+
+            # Fetch the most recent open trade for this symbol
+            trades = query(
+                self._db,
+                """
+                SELECT id, symbol, side, entry_price, stop_loss, take_profit,
+                       strategy_name, strategy_type, strategy_metadata
+                FROM trades
+                WHERE symbol = ? AND status IN ('open', 'paper_trade')
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                [symbol]
+            )
+
+            if trades and len(trades) > 0:
+                trade = trades[0]
+                # Parse strategy_metadata if it's a string
+                if isinstance(trade.get("strategy_metadata"), str):
+                    import json
+                    try:
+                        trade["strategy_metadata"] = json.loads(trade["strategy_metadata"])
+                    except:
+                        trade["strategy_metadata"] = {}
+                return trade
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching trade data for {symbol}: {e}", exc_info=True)
+            return None
+
+    def _fetch_current_candle_for_strategy_exit(
+        self,
+        symbol: str,
+        timeframe: str = "1h",
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fetch the most recent candle for a symbol for strategy exit checking.
+
+        Args:
+            symbol: Symbol to fetch candle for
+            timeframe: Timeframe (default: 1h)
+
+        Returns:
+            Candle dict with {timestamp, open, high, low, close} or None if not found
+        """
+        if not self._db:
+            logger.warning("No database connection available for fetching candle data")
+            return None
+
+        try:
+            from trading_bot.db.client import query
+
+            # Fetch the most recent candle for this symbol
+            candles = query(
+                self._db,
+                """
+                SELECT timestamp, open, high, low, close
+                FROM klines
+                WHERE symbol = ? AND timeframe = ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """,
+                [symbol, timeframe]
+            )
+
+            if candles and len(candles) > 0:
+                return candles[0]
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching candle data for {symbol}: {e}", exc_info=True)
             return None
 
     def _check_rr_tightening(

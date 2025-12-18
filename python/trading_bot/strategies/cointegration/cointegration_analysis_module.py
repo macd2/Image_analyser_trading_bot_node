@@ -733,6 +733,62 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             "z_exit": z_exit,
         }
 
+    def _fetch_pair_candle_from_api(
+        self,
+        pair_symbol: str,
+        current_candle: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fetch the pair candle from live API for the same timestamp as current_candle.
+
+        This is called by should_exit() when pair_candle is not provided.
+        Used by simulator to get real-time pair data for z-score calculation.
+
+        Args:
+            pair_symbol: Symbol of the pair (e.g., "ETH")
+            current_candle: Current candle with timestamp
+
+        Returns:
+            Pair candle dict with {timestamp, open, high, low, close} or None if fetch fails
+        """
+        if not self.candle_adapter:
+            logger.warning(f"Candle adapter not available, cannot fetch pair candle for {pair_symbol}")
+            return None
+
+        try:
+            # Get the timestamp from current candle
+            current_timestamp = current_candle.get("timestamp")
+            if not current_timestamp:
+                logger.warning("Current candle has no timestamp, cannot fetch pair candle")
+                return None
+
+            # Normalize pair symbol for Bybit
+            normalized_pair = normalize_symbol_for_bybit(pair_symbol)
+
+            # Fetch just 1 candle from API for this timestamp
+            # Use prefer_source="api" to get live data, not cached
+            candles = asyncio.run(self.candle_adapter.get_candles(
+                normalized_pair,
+                timeframe="1h",  # Use same timeframe as analysis
+                limit=1,
+                min_candles=1,
+                prefer_source="api",  # Always fetch from live API
+                cache_to_db=False  # Don't cache for simulator
+            ))
+
+            if candles and len(candles) > 0:
+                # Return the most recent candle
+                pair_candle = candles[-1]
+                logger.debug(f"Fetched pair candle for {pair_symbol}: close={pair_candle.get('close')}")
+                return pair_candle
+            else:
+                logger.warning(f"No candles returned from API for {pair_symbol}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error fetching pair candle for {pair_symbol}: {e}", exc_info=True)
+            return None
+
     def should_exit(
         self,
         trade: Dict[str, Any],
@@ -749,7 +805,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         Args:
             trade: Trade record with strategy_metadata containing beta, spread_mean, spread_std, z_exit_threshold, pair_symbol
             current_candle: Current candle for main symbol {timestamp, open, high, low, close}
-            pair_candle: Current candle for pair symbol {timestamp, open, high, low, close}
+            pair_candle: Optional pair candle (if not provided, will fetch from live API)
 
         Returns:
             Dict with 'should_exit' bool and 'exit_details' dict
@@ -775,6 +831,21 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
 
             # Get current prices
             current_price = current_candle.get("close")
+
+            # If pair_candle not provided, fetch from live API
+            if not pair_candle and pair_symbol:
+                try:
+                    pair_candle = self._fetch_pair_candle_from_api(pair_symbol, current_candle)
+                except Exception as e:
+                    logger.error(f"Failed to fetch pair candle for {pair_symbol}: {e}")
+                    return {
+                        "should_exit": False,
+                        "exit_details": {
+                            "reason": "no_exit",
+                            "error": f"Failed to fetch pair candle: {e}",
+                        }
+                    }
+
             pair_price = pair_candle.get("close") if pair_candle else None
 
             if not current_price or not pair_price:
