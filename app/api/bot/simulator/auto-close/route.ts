@@ -91,6 +91,19 @@ function validateTradeTimestamps(
 }
 
 /**
+ * Extract strategy name from instance settings JSON
+ */
+function getStrategyNameFromSettings(settingsJson: unknown): string | null {
+  try {
+    if (!settingsJson) return null;
+    const settings = typeof settingsJson === 'string' ? JSON.parse(settingsJson) : settingsJson;
+    return settings?.strategy || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Normalize timestamp to milliseconds (number)
  * Handles: ISO strings, Date objects, numbers, null/undefined
  * Returns: milliseconds since epoch or null if invalid
@@ -591,14 +604,15 @@ export async function POST() {
     }
 
     // Get all open paper trades with instance information
-    const openTrades = await dbQuery<TradeRow & { instance_name: string }>(`
+    const openTrades = await dbQuery<TradeRow & { instance_name: string; strategy_name?: string }>(`
       SELECT
         t.*,
         COALESCE(t.timeframe, rec.timeframe) as timeframe,
         COALESCE(t.entry_price, rec.entry_price) as entry_price,
         COALESCE(t.stop_loss, rec.stop_loss) as stop_loss,
         COALESCE(t.take_profit, rec.take_profit) as take_profit,
-        i.name as instance_name
+        i.name as instance_name,
+        i.settings as instance_settings
       FROM trades t
       LEFT JOIN recommendations rec ON t.recommendation_id = rec.id
       LEFT JOIN runs r ON t.run_id = r.id
@@ -616,6 +630,7 @@ export async function POST() {
       action: 'checked' | 'closed' | 'filled' | 'cancelled';
       current_price: number;
       instance_name?: string;
+      strategy_name?: string;
       timeframe?: string;
       fill_timestamp?: string;
       exit_reason?: string;
@@ -634,6 +649,7 @@ export async function POST() {
 
     for (const trade of openTrades) {
       const timeframe = trade.timeframe || '1h';
+      const strategyName = getStrategyNameFromSettings((trade as any).instance_settings);
       try {
         const isLong = trade.side === 'Buy';
         const entryPrice = trade.entry_price || 0;
@@ -666,6 +682,7 @@ export async function POST() {
           action: 'checked',
           current_price: currentPrice,
           instance_name: trade.instance_name,
+          strategy_name: strategyName || undefined,
           timeframe: timeframe,
           candles_checked: 0,
           checked_at: new Date().toISOString()
@@ -688,6 +705,7 @@ export async function POST() {
           action: 'checked',
           current_price: 0,
           instance_name: trade.instance_name,
+          strategy_name: strategyName || undefined,
           timeframe: timeframe,
           candles_checked: 0,
           checked_at: new Date().toISOString()
@@ -737,6 +755,7 @@ export async function POST() {
               action: 'checked',
               current_price: await getCurrentPrice(trade.symbol),
               instance_name: trade.instance_name,
+          strategy_name: strategyName || undefined,
               timeframe: timeframe,
               candles_checked: candlesAfterCreation.length,
               bars_open: 0,
@@ -796,6 +815,7 @@ export async function POST() {
               action: 'cancelled',
               current_price: currentPrice,
               instance_name: trade.instance_name,
+          strategy_name: strategyName || undefined,
               timeframe: timeframe,
               exit_reason: 'max_bars_exceeded',
               candles_checked: candles.length,
@@ -812,6 +832,7 @@ export async function POST() {
             action: 'checked',
             current_price: currentPrice,
             instance_name: trade.instance_name,
+          strategy_name: strategyName || undefined,
             timeframe: timeframe,
             candles_checked: candles.length,
             bars_open: barsPending,
@@ -888,6 +909,7 @@ export async function POST() {
           action: 'checked',
           current_price: await getCurrentPrice(trade.symbol),
           instance_name: trade.instance_name,
+          strategy_name: strategyName || undefined,
           timeframe: timeframe,
           candles_checked: candles.length,
           bars_open: 0,
@@ -951,6 +973,7 @@ export async function POST() {
             action: 'checked',
             current_price: await getCurrentPrice(trade.symbol),
             instance_name: trade.instance_name,
+          strategy_name: strategyName || undefined,
             timeframe: timeframe,
             candles_checked: candles.length,
             bars_open: barsOpen,
@@ -990,6 +1013,7 @@ export async function POST() {
             action: 'checked',
             current_price: await getCurrentPrice(trade.symbol),
             instance_name: trade.instance_name,
+          strategy_name: strategyName || undefined,
             timeframe: timeframe,
             candles_checked: candles.length,
             bars_open: barsOpen,
@@ -1044,6 +1068,7 @@ export async function POST() {
           action: 'closed',
           current_price: exitResult.currentPrice,
           instance_name: trade.instance_name,
+          strategy_name: strategyName || undefined,
           timeframe: timeframe,
           exit_reason: exitResult.reason,
           exit_timestamp: exitTime,
@@ -1142,6 +1167,7 @@ export async function POST() {
           action: 'cancelled',
           current_price: currentPrice,
           instance_name: trade.instance_name,
+          strategy_name: strategyName || undefined,
           timeframe: timeframe,
           exit_reason: 'max_bars_exceeded',
           exit_timestamp: cancelTime,
@@ -1159,6 +1185,7 @@ export async function POST() {
           action: alreadyFilled ? 'checked' : 'filled',
           current_price: exitResult.currentPrice,
           instance_name: trade.instance_name,
+          strategy_name: strategyName || undefined,
           timeframe: timeframe,
           candles_checked: candles.length,
           bars_open: barsOpen,
@@ -1179,6 +1206,7 @@ export async function POST() {
           action: 'checked',
           current_price: 0,
           instance_name: trade.instance_name,
+          strategy_name: strategyName || undefined,
           timeframe: timeframe,
           candles_checked: 0,
           checked_at: new Date().toISOString(),
