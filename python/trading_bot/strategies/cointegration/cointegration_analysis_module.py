@@ -58,11 +58,13 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         "screener_cache_hours": 24,
         "min_volume_usd": 1_000_000,
         "batch_size": 15,
+        "candle_limit": 1000,       # Number of candles to fetch per symbol in screener
 
         # Cointegration parameters (strategy-specific)
         "lookback": 120,           # Lookback period for cointegration analysis
         "z_entry": 2.0,            # Z-score entry threshold for cointegration
         "z_exit": 0.5,             # Z-score exit threshold for cointegration
+        "use_adf": True,            # Use ADF test for mean reversion detection (True) or Hurst exponent (False)
         "use_soft_vol": False,      # Use soft volatility adjustment for cointegration
     }
 
@@ -407,6 +409,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     lookback=self.get_config_value('lookback', 120),
                     z_entry=self.get_config_value('z_entry', 2.0),
                     z_exit=self.get_config_value('z_exit', 0.5),
+                    use_adf=self.get_config_value('use_adf', True),
                     use_soft_vol=self.get_config_value('use_soft_vol', False)
                 )
 
@@ -908,6 +911,11 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 "default": 15,
                 "description": "Number of symbols to process per batch during screening",
             },
+            "candle_limit": {
+                "type": "number",
+                "default": 1000,
+                "description": "Number of candles to fetch per symbol during screening",
+            },
 
             # Cointegration analysis settings
             "lookback": {
@@ -924,6 +932,11 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 "type": "float",
                 "default": 0.5,
                 "description": "Z-score threshold for exit signal",
+            },
+            "use_adf": {
+                "type": "boolean",
+                "default": True,
+                "description": "Use ADF test for mean reversion detection (True) or Hurst exponent (False). ADF is stricter and more selective for signals.",
             },
             "use_soft_vol": {
                 "type": "boolean",
