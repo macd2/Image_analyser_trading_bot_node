@@ -530,9 +530,7 @@ def seed_default_config(conn) -> None:
         ("bybit.recv_window", "30000", "number", "bybit", "Receive window (ms)"),
         ("bybit.max_retries", "5", "number", "bybit", "Maximum API retries"),
 
-        # OpenAI settings
-        ("openai.model", "gpt-4.1-mini", "string", "openai", "OpenAI model"),
-        ("openai.assistant_id", "asst_m11ds7XhdYfN7voO0pRvgbul", "string", "openai", "OpenAI assistant ID"),
+        # Note: OpenAI settings moved to strategy_specific.prompt_strategy.* in strategy_config
     ]
 
     for key, value, type_, category, description in defaults:

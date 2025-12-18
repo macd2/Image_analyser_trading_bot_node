@@ -374,10 +374,22 @@ class ConfigV2:
     def _load_openai(cls, db_config: dict) -> OpenAIConfig:
         """Load OpenAI config from DB + environment. All settings required."""
         from trading_bot.core.secrets_manager import get_openai_api_key
+
+        # Try to get from strategy-specific settings first (new location)
+        strategy_config = db_config.get('strategy_config', {})
+        model = strategy_config.get('model')
+        assistant_id = strategy_config.get('assistant_id')
+
+        # Fallback to old location for backward compatibility
+        if not model:
+            model = db_config.get('openai.model')
+        if not assistant_id:
+            assistant_id = db_config.get('openai.assistant_id')
+
         return OpenAIConfig(
             api_key=get_openai_api_key(),
-            model=cls._require(db_config, 'openai.model', "Set via dashboard."),
-            assistant_id=cls._require(db_config, 'openai.assistant_id', "Set via dashboard."),
+            model=model or cls._require(db_config, 'openai.model', "Set via dashboard."),
+            assistant_id=assistant_id or cls._require(db_config, 'openai.assistant_id', "Set via dashboard."),
         )
 
     @classmethod
@@ -511,30 +523,32 @@ class ConfigV2:
         # Helper to get value with instance settings priority
         def get_value(key: str, default):
             if db_config is not None:
+                # Try strategy-specific location first (new)
+                strategy_config = db_config.get('strategy_config', {})
+                if key == 'target_chart' and 'target_chart' in strategy_config:
+                    return strategy_config['target_chart']
+                if key == 'chart_timeframe' and 'chart_timeframe' in strategy_config:
+                    return strategy_config['chart_timeframe']
+
+                # Fallback to old location for backward compatibility
                 db_key = f'tradingview.{key}'
                 if db_key in db_config:
                     return db_config[db_key]
             return tv.get(key, default)
 
-        # Determine if TradingView is enabled (default True)
-        enabled = get_value('enabled', True)
-        
+        # TradingView is always enabled for PromptStrategy (no longer configurable)
+        enabled = True
+
         # Chart URL template can fallback to YAML
-        chart_url_template = get_value('chart_url_template', 'https://www.tradingview.com/chart/?symbol=BYBIT:{symbol}.P&interval={interval}')
-        
-        # Target chart is REQUIRED from instance settings when TradingView is enabled
-        target_chart = ''
-        if enabled:
-            if db_config is not None:
-                target_chart = db_config.get('tradingview.target_chart')
-            if not target_chart:
-                raise ConfigurationError(
-                    "Missing required config: tradingview.target_chart. "
-                    "Set via dashboard when TradingView is enabled."
-                )
-        else:
-            # If disabled, target_chart can be empty (fallback to YAML or empty)
-            target_chart = get_value('target_chart', '')
+        chart_url_template = tv.get('chart_url_template', 'https://www.tradingview.com/chart/?symbol=BYBIT:{symbol}.P&interval={interval}')
+
+        # Target chart is REQUIRED from instance settings
+        target_chart = get_value('target_chart', '')
+        if not target_chart:
+            raise ConfigurationError(
+                "Missing required config: strategy_specific.prompt_strategy.target_chart. "
+                "Set via dashboard."
+            )
 
         browser_data = tv.get('browser', {})
         screenshot_data = tv.get('screenshot', {})

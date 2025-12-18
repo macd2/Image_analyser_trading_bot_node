@@ -76,17 +76,8 @@ DEFAULT_CONFIG: List[Tuple[str, Any, str, str, str]] = [
     ("bybit.max_retries", 5, "number", "exchange",
      "Maximum API retry attempts"),
 
-    # AI (2 settings)
-    ("openai.model", "gpt-4.1-mini", "string", "ai",
-     "OpenAI model for chart analysis"),
-    ("openai.assistant_id", "asst_m11ds7XhdYfN7voO0pRvgbul", "string", "ai",
-     "OpenAI Assistant ID for analysis (empty = use direct API)"),
-
-    # TradingView (2 settings)
-    ("tradingview.enabled", True, "boolean", "tradingview",
-     "Enable TradingView chart capture"),
-    ("tradingview.target_chart", "https://www.tradingview.com/chart/iXrxoaRu/", "string", "tradingview",
-     "Target chart URL for TradingView navigation"),
+    # Note: OpenAI and TradingView settings moved to strategy_specific.prompt_strategy.*
+    # These are now configured per-strategy in the UI and stored in strategy_config JSON
 ]
 
 
