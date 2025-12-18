@@ -285,7 +285,7 @@ class ChartCleaner:
                     action_data TEXT,
                     created_at TEXT DEFAULT (datetime('now'))
                 )
-            """)
+            """, auto_commit=True)
 
             action_data = {
                 'folder_path': folder_path,
@@ -299,11 +299,11 @@ class ChartCleaner:
                 }
             }
 
+            # Use auto_commit=True to let centralized layer handle transactions
             execute(db, """
                 INSERT INTO bot_actions (id, cycle_id, action_type, action_data)
                 VALUES (?, ?, 'chart_cleanup', ?)
-            """, (cleanup_id, cycle_id, json.dumps(action_data)))
-            db.commit()
+            """, (cleanup_id, cycle_id, json.dumps(action_data)), auto_commit=True)
 
             self.logger.info(f"📝 Cleanup logged to audit trail (id={cleanup_id})")
 
