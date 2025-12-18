@@ -859,6 +859,15 @@ class TradingCycle:
                     logger.warning(f"   ⚠️ Could not validate price sanity: {e}")
                     # Continue anyway - better to trade than miss opportunity due to parse error
 
+            # Extract strategy information for traceability
+            strategy_uuid = None
+            strategy_type = None
+            strategy_name = None
+            if hasattr(self, 'strategy') and self.strategy:
+                strategy_uuid = getattr(self.strategy, 'strategy_uuid', None)
+                strategy_type = getattr(self.strategy, 'STRATEGY_TYPE', None)
+                strategy_name = getattr(self.strategy, 'STRATEGY_NAME', None)
+
             return {
                 "recommendation": recommendation,
                 "confidence": confidence,
@@ -869,6 +878,10 @@ class TradingCycle:
                 "risk_reward": analysis.get("risk_reward", 0),
                 "market_environment": analysis.get("market_environment", 0.5),
                 "timeframe": self.timeframe,  # Include timeframe for chart display
+                # Strategy tracking for traceability
+                "strategy_uuid": strategy_uuid,
+                "strategy_type": strategy_type,
+                "strategy_name": strategy_name,
             }
         except Exception as e:
             logger.error(f"Failed to build signal: {e}")

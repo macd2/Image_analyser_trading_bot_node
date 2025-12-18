@@ -260,13 +260,20 @@ class TradingEngine:
             # Use provided rr_ratio or try to get from signal, default to 0
             final_rr_ratio = rr_ratio if rr_ratio is not None else signal.get("rr_ratio", 0)
 
+            # Extract strategy information from signal for traceability
+            strategy_uuid = signal.get("strategy_uuid")
+            strategy_type = signal.get("strategy_type")
+            strategy_name = signal.get("strategy_name")
+
             execute(self._db, """
                 INSERT INTO trades (
                     id, recommendation_id, run_id, cycle_id, symbol, side,
                     entry_price, quantity, stop_loss, take_profit,
                     status, rejection_reason, dry_run, confidence, rr_ratio,
-                    timeframe, prompt_name, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    timeframe, prompt_name, created_at,
+                    strategy_uuid, strategy_type, strategy_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                          ?, ?, ?)
             """, (
                 trade_id,
                 recommendation_id,
@@ -286,6 +293,9 @@ class TradingEngine:
                 signal.get("timeframe"),
                 signal.get("prompt_name"),
                 timestamp.isoformat() if timestamp else datetime.now(timezone.utc).isoformat(),
+                strategy_uuid,
+                strategy_type,
+                strategy_name,
             ))
 
             logger.debug(f"Inserted rejected trade {trade_id} for {symbol}: {rejection_reason}")
