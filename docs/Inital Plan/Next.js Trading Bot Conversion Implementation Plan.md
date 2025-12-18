@@ -1352,7 +1352,7 @@ trading-bot-nextjs/
 │   │   │   ├── database.ts          # Database connection
 │   │   │   ├── queue.ts             # Redis queue system
 │   │   │   ├── trading-engine.ts    # Trading logic
-│   │   │   └── ai-analysis.ts       # GPT-4 Vision integration
+│   │   │   └── strategy-analysis.ts       # GPT-4 Vision integration
 │   │   └── package.json
 │   └── websocket-server/
 │       ├── Dockerfile
