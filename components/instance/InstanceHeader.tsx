@@ -41,6 +41,7 @@ interface Instance {
   name: string
   is_running: number | boolean
   prompt_name?: string
+  settings?: string | null
 }
 
 interface ConfigItem {
@@ -71,6 +72,7 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
   const [instanceName, setInstanceName] = useState('')
   const [instanceNameSaving, setInstanceNameSaving] = useState(false)
   const [instanceLoaded, setInstanceLoaded] = useState(false)
+  const [strategyName, setStrategyName] = useState<string | null>(null)
   const [healthStatus, setHealthStatus] = useState<HealthStatus>({ overall: 'checking', checks: [] })
   const [showHealthModal, setShowHealthModal] = useState(false)
 
@@ -90,6 +92,15 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
           if (!instanceLoaded) {
             setInstanceName(inst.name)
             setInstanceLoaded(true)
+          }
+          // Extract strategy name from settings
+          if (inst.settings) {
+            try {
+              const settings = typeof inst.settings === 'string' ? JSON.parse(inst.settings) : inst.settings
+              setStrategyName(settings.strategy || null)
+            } catch (e) {
+              console.error('Failed to parse instance settings:', e)
+            }
           }
         }
       }
@@ -292,6 +303,9 @@ export function InstanceHeader({ instanceId, onSettingsClick }: InstanceHeaderPr
             </div>
             <StatusBadge status={isRunning ? 'running' : 'stopped'} />
             {isPaperTrading && <StatusBadge status="paper" size="sm" />}
+            {strategyName && (
+              <span className="text-xs text-slate-400">• {strategyName}</span>
+            )}
           </div>
         </div>
 

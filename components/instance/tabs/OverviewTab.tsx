@@ -99,6 +99,7 @@ interface MonitorStatus {
     action: 'checked' | 'closed'
     current_price: number
     instance_name?: string
+    strategy_name?: string
     timeframe?: string
     checked_at?: string
     position_size_usd?: number
@@ -534,6 +535,9 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
                   )}
                   {result.instance_name && (
                     <span className="text-slate-400">• {result.instance_name}</span>
+                  )}
+                  {result.strategy_name && (
+                    <span className="text-slate-400">• {result.strategy_name}</span>
                   )}
                   {result.action === 'closed' && (
                     <span className="text-yellow-300">→ Trade closed!</span>
