@@ -70,6 +70,7 @@ interface RunWithCycles {
 interface InstanceWithRuns {
   instance_id: string
   instance_name: string
+  strategy_name?: string
   runs: RunWithCycles[]
 }
 
@@ -91,6 +92,7 @@ interface MonitorStatus {
     action: 'checked' | 'closed' | 'cancelled'
     current_price: number
     instance_name?: string
+    strategy_name?: string
     timeframe?: string
     checked_at?: string
     exit_reason?: string
@@ -121,6 +123,7 @@ interface ClosedTrade {
   cancelled_at?: string | null
   timeframe: string | null
   instance_name: string
+  strategy_name?: string
   instance_id: string
   run_id: string
   bars_open?: number
@@ -1039,6 +1042,7 @@ export function SimulatorPage() {
                       cycle.trades.map(trade => ({
                         trade,
                         instance_name: instance.instance_name,
+                        strategy_name: instance.strategy_name,
                         instance_id: run.instance_id,
                         run_id: run.run_id,
                         boundary_time: cycle.boundary_time
@@ -1047,7 +1051,7 @@ export function SimulatorPage() {
                   )
                 )
                 .sort((a, b) => new Date(b.trade.created_at).getTime() - new Date(a.trade.created_at).getTime())
-                .map(({ trade, instance_name, instance_id, run_id, boundary_time: _boundaryTime }) => {
+                .map(({ trade, instance_name, strategy_name, instance_id, run_id, boundary_time: _boundaryTime }) => {
                   const { pnl, pnlPercent, currentPrice } = calculateUnrealizedPnL(trade)
                   // Check if trade is filled before checking for SL/TP
                   const isFilled = trade.status === 'filled' || trade.fill_time !== null || trade.filled_at !== null
@@ -1092,6 +1096,9 @@ export function SimulatorPage() {
                           <div className="flex items-center gap-1 text-[10px] text-slate-500">
                             <div className="flex items-center gap-1">
                               <span className="bg-slate-700 px-1.5 py-0.5 rounded" title="Instance Name">{instance_name}</span>
+                              {strategy_name && (
+                                <span className="text-slate-400">• {strategy_name}</span>
+                              )}
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
@@ -1559,6 +1566,9 @@ export function SimulatorPage() {
                       <div className="flex items-center gap-1 text-[10px] text-slate-500 mb-2">
                         <div className="flex items-center gap-1">
                           <span className="bg-slate-700 px-1.5 py-0.5 rounded" title="Instance Name">{trade.instance_name}</span>
+                          {trade.strategy_name && (
+                            <span className="text-slate-400">• {trade.strategy_name}</span>
+                          )}
                           {trade.instance_id && (
                             <button
                               onClick={(e) => {
