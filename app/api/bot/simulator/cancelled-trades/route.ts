@@ -1,6 +1,19 @@
 import { NextResponse } from 'next/server'
 import { dbQuery } from '@/lib/db/trading-db'
 
+/**
+ * Extract strategy name from instance settings JSON
+ */
+function getStrategyNameFromSettings(settingsJson: unknown): string | undefined {
+  try {
+    if (!settingsJson) return undefined;
+    const settings = typeof settingsJson === 'string' ? JSON.parse(settingsJson) : settingsJson;
+    return settings?.strategy || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 interface CancelledTrade {
   id: string;
   symbol: string;
@@ -21,6 +34,7 @@ interface CancelledTrade {
   cancelled_at: string | null;
   timeframe: string;
   instance_name: string;
+  strategy_name?: string;
   run_id: string;
   instance_id?: string;
   bars_open?: number;
@@ -32,7 +46,7 @@ interface CancelledTrade {
 export async function GET() {
   try {
     // Get cancelled paper trades (max_bars_exceeded)
-    const cancelledTrades = await dbQuery<CancelledTrade>(`
+    const cancelledTrades = await dbQuery<CancelledTrade & { instance_settings?: string | null }>(`
       SELECT
         t.id,
         t.symbol,
@@ -53,6 +67,7 @@ export async function GET() {
         t.cancelled_at,
         COALESCE(t.timeframe, rec.timeframe) as timeframe,
         i.name as instance_name,
+        i.settings as instance_settings,
         r.id as run_id,
         r.instance_id,
         t.dry_run,
@@ -69,7 +84,7 @@ export async function GET() {
       LIMIT 50
     `);
 
-    // Calculate bars open for each trade
+    // Calculate bars open for each trade and extract strategy name
     const tradesWithBars = cancelledTrades.map((t) => {
       let barsOpen = 0
       const cancelTime = t.cancelled_at || t.closed_at
@@ -84,7 +99,9 @@ export async function GET() {
         const diffMs = cancelledTime - createdTime
         barsOpen = Math.ceil(diffMs / (mins * 60 * 1000))
       }
-      return { ...t, bars_open: barsOpen }
+      const strategyName = getStrategyNameFromSettings((t as any).instance_settings)
+      const { instance_settings, ...tradeWithoutSettings } = t as any
+      return { ...tradeWithoutSettings, bars_open: barsOpen, strategy_name: strategyName }
     })
 
     // Calculate summary stats

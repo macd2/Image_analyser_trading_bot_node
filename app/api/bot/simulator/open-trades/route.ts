@@ -53,6 +53,7 @@ export interface RunWithCycles {
 export interface InstanceWithRuns {
   instance_id: string;
   instance_name: string;
+  strategy_name?: string;
   runs: RunWithCycles[];
 }
 
@@ -81,6 +82,7 @@ interface OpenTradeRow {
   run_started_at: string;
   run_status: string;
   instance_name: string;
+  instance_settings?: string | null;
   // Position sizing metrics
   position_size_usd?: number;
   risk_amount_usd?: number;
@@ -89,6 +91,19 @@ interface OpenTradeRow {
   risk_per_unit?: number;
   sizing_method?: string;
   risk_pct_used?: number;
+}
+
+/**
+ * Extract strategy name from instance settings JSON
+ */
+function getStrategyNameFromSettings(settingsJson: unknown): string | undefined {
+  try {
+    if (!settingsJson) return undefined;
+    const settings = typeof settingsJson === 'string' ? JSON.parse(settingsJson) : settingsJson;
+    return settings?.strategy || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -120,7 +135,8 @@ export async function GET(_request: NextRequest) {
         r.instance_id,
         r.started_at as run_started_at,
         r.status as run_status,
-        i.name as instance_name
+        i.name as instance_name,
+        i.settings as instance_settings
       FROM trades t
       LEFT JOIN recommendations rec ON t.recommendation_id = rec.id
       JOIN cycles c ON t.cycle_id = c.id
@@ -144,6 +160,7 @@ export async function GET(_request: NextRequest) {
         instanceMap.set(instanceId, {
           instance_id: instanceId,
           instance_name: trade.instance_name || instanceId,
+          strategy_name: getStrategyNameFromSettings(trade.instance_settings),
           runs: []
         });
       }

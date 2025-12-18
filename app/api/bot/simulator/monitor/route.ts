@@ -39,6 +39,7 @@ interface RuntimeStatus {
     action: 'checked' | 'closed' | 'cancelled'
     current_price: number
     instance_name?: string
+    strategy_name?: string
     timeframe?: string
     checked_at?: string
     exit_reason?: string

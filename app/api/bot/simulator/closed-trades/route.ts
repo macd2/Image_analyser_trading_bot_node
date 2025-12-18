@@ -1,6 +1,19 @@
 import { NextResponse } from 'next/server'
 import { dbQuery } from '@/lib/db/trading-db'
 
+/**
+ * Extract strategy name from instance settings JSON
+ */
+function getStrategyNameFromSettings(settingsJson: unknown): string | undefined {
+  try {
+    if (!settingsJson) return undefined;
+    const settings = typeof settingsJson === 'string' ? JSON.parse(settingsJson) : settingsJson;
+    return settings?.strategy || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 interface ClosedTrade {
   id: string;
   symbol: string;
@@ -21,6 +34,7 @@ interface ClosedTrade {
   cancelled_at?: string | null;
   timeframe: string;
   instance_name: string;
+  strategy_name?: string;
   run_id: string;
   bars_open?: number;
   // Position sizing metrics
@@ -36,7 +50,7 @@ interface ClosedTrade {
 export async function GET() {
   try {
     // Get closed paper trades with instance info
-    const closedTrades = await dbQuery<ClosedTrade>(`
+    const closedTrades = await dbQuery<ClosedTrade & { instance_settings?: string | null }>(`
       SELECT
         t.id,
         t.symbol,
@@ -57,6 +71,7 @@ export async function GET() {
         t.cancelled_at,
         COALESCE(t.timeframe, rec.timeframe) as timeframe,
         i.name as instance_name,
+        i.settings as instance_settings,
         r.id as run_id,
         t.position_size_usd,
         t.risk_amount_usd,
@@ -77,7 +92,7 @@ export async function GET() {
       LIMIT 50
     `);
 
-    // Calculate bars open for each trade
+    // Calculate bars open for each trade and extract strategy name
     const tradesWithBars = closedTrades.map((t) => {
       let barsOpen = 0
       // Use filled_at if available, otherwise use fill_time
@@ -96,7 +111,9 @@ export async function GET() {
           barsOpen = Math.ceil(timeDiff / (minutesPerBar * 60 * 1000))
         }
       }
-      return { ...t, bars_open: barsOpen }
+      const strategyName = getStrategyNameFromSettings((t as any).instance_settings)
+      const { instance_settings, ...tradeWithoutSettings } = t as any
+      return { ...tradeWithoutSettings, bars_open: barsOpen, strategy_name: strategyName }
     })
 
     // Calculate summary stats
