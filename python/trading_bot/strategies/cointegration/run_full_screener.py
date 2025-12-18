@@ -147,6 +147,8 @@ async def run_screener(
     Returns:
         Dictionary mapping symbol1 -> symbol2 for discovered pairs
     """
+    logger.info(f"🔍 [SCREENER] Starting full pair screener (timeframe: {timeframe}, min_volume: ${min_volume_usd/1e6:.1f}M)")
+
     if verbose:
         print("=" * 70)
         print("FULL PAIR SCREENER")
@@ -155,13 +157,16 @@ async def run_screener(
         print(f"Min Volume: ${min_volume_usd/1e6:.1f}M")
         print(f"Batch Size: {batch_size}")
         print("=" * 70)
-    
+
     # Step 1: Get all symbols
+    logger.info(f"📋 [SCREENER] STEP 1: Fetching available symbols...")
     print("\nSTEP 1: Fetching available symbols...")
     all_symbols = get_bybit_symbols_cached(category="linear")
+    logger.info(f"📋 [SCREENER] Found {len(all_symbols)} total symbols")
     print(f"Total symbols: {len(all_symbols)}")
-    
+
     # Step 2: Filter symbols (basic filters)
+    logger.info(f"🔎 [SCREENER] STEP 2: Filtering symbols (USDT, no futures, no stablecoins, no meme coins)...")
     print("\nSTEP 2: Filtering symbols (USDT, no futures, no stablecoins, no meme coins)...")
     stablecoins = {'USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'USDP', 'FRAX', 'LUSD'}
 
@@ -174,9 +179,11 @@ async def run_screener(
             continue
         filtered.append(s)
 
+    logger.info(f"🔎 [SCREENER] After basic filters: {len(filtered)} symbols")
     print(f"After basic filters: {len(filtered)} symbols")
 
     # Step 3: Fetch tickers and filter by volume
+    logger.info(f"💰 [SCREENER] STEP 3: Fetching tickers and filtering by volume (${min_volume_usd/1e6:.1f}M minimum)...")
     print(f"\nSTEP 3: Fetching tickers and filtering by volume (${min_volume_usd/1e6:.1f}M minimum)...")
     symbol_volumes = fetch_tickers_for_volume(filtered)
 
@@ -185,18 +192,23 @@ async def run_screener(
         if symbol_volumes.get(s, 0) >= min_volume_usd
     ]
 
+    logger.info(f"💰 [SCREENER] After volume filter: {len(filtered_by_volume)} symbols (>= ${min_volume_usd/1e6:.1f}M)")
     print(f"After volume filter: {len(filtered_by_volume)} symbols (>= ${min_volume_usd/1e6:.1f}M)")
 
     # Step 4: Fetch candles in parallel
+    logger.info(f"📊 [SCREENER] STEP 4: Fetching candles in parallel (batch_size: {batch_size})...")
     print("\nSTEP 4: Fetching candles in parallel...")
     symbol_candles = await fetch_all_candles(filtered_by_volume, batch_size=batch_size)
+    logger.info(f"📊 [SCREENER] Successfully fetched {len(symbol_candles)} symbols with candles")
     print(f"\nSuccessfully fetched {len(symbol_candles)} symbols")
-    
+
     if len(symbol_candles) < 2:
+        logger.warning(f"⚠️  [SCREENER] Not enough symbols ({len(symbol_candles)}) for pair screening")
         print("❌ Not enough symbols")
         return False
-    
+
     # Step 5: Screen pairs
+    logger.info(f"🔗 [SCREENER] STEP 5: Screening pairs for cointegration...")
     print("\nSTEP 5: Screening pairs...")
     screener = PairScreener(lookback_days=120, min_data_points=100)
     results = screener.screen_pairs(
@@ -205,17 +217,22 @@ async def run_screener(
     )
 
     if results.empty:
+        logger.warning(f"⚠️  [SCREENER] No cointegrated pairs found")
         print("❌ No cointegrated pairs found")
         return False
 
+    logger.info(f"🔗 [SCREENER] Found {len(results)} cointegrated pairs")
     print(f"Found {len(results)} cointegrated pairs")
 
     # Step 6: Filter correlated pairs
+    logger.info(f"🔗 [SCREENER] STEP 6: Filtering correlated pairs...")
     print("\nSTEP 6: Filtering correlated pairs...")
     final_results = filter_correlated_pairs(results)
+    logger.info(f"🔗 [SCREENER] Final {len(final_results)} independent pairs after correlation filtering")
     print(f"Final {len(final_results)} independent pairs")
 
     # Step 7: Save results
+    logger.info(f"💾 [SCREENER] STEP 7: Saving results to cache...")
     print("\nSTEP 7: Saving results...")
     cache_dir = Path(__file__).parent / "screener_cache"
     cache_dir.mkdir(exist_ok=True)
@@ -234,6 +251,7 @@ async def run_screener(
     with open(output_file, 'w') as f:
         json.dump(results_dict, f, indent=2)
 
+    logger.info(f"✅ [SCREENER] Results saved: {len(final_results)} independent pairs (instance={instance_id}, timeframe={timeframe})")
     print(f"✅ Results saved to {output_file} (instance={instance_id}, timeframe={timeframe})")
     
     # Display results
@@ -251,6 +269,7 @@ async def run_screener(
             symbol1, symbol2 = pair.split('|')
             pairs_dict[symbol1] = symbol2
 
+    logger.info(f"✅ [SCREENER] Screener complete: {len(pairs_dict)} pairs ready for trading")
     return pairs_dict
 
 
