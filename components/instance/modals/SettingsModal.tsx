@@ -172,13 +172,18 @@ export function SettingsModal({ instanceId, open, onOpenChange }: SettingsModalP
       setSelectedStrategy(strategy)
 
       // Fetch settings schema for the new strategy
-      // Map strategy names to strategy types
+      // Map strategy names to strategy types (only 2 types: price_based, spread_based)
       const strategyTypeMap: Record<string, string> = {
         'AiImageAnalyzer': 'price_based',
         'PromptStrategy': 'price_based',
-        'CointegrationStrategy': 'spread_based',
+        'MarketStructure': 'price_based',
+        'CointegrationSpreadTrader': 'spread_based',
       }
-      const strategyType = strategyTypeMap[strategy] || strategy.toLowerCase()
+      const strategyType = strategyTypeMap[strategy]
+      if (!strategyType) {
+        console.error(`Unknown strategy: ${strategy}. Available: ${Object.keys(strategyTypeMap).join(', ')}`)
+        return
+      }
       await fetchStrategySettingsSchema(strategyType)
     } catch (err) {
       console.error('Failed to update strategy:', err)
