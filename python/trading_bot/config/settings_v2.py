@@ -515,7 +515,11 @@ class ConfigV2:
 
     @classmethod
     def _load_tradingview(cls, yaml_data: dict, db_config: Optional[dict] = None) -> Optional[TradingViewConfig]:
-        """Load TradingView config from YAML and instance settings (db_config)."""
+        """Load TradingView config from YAML and instance settings (db_config).
+
+        Note: TradingView config is only required for PromptStrategy (chart-based).
+        Other strategies like CointegrationAnalysisModule don't need it.
+        """
         tv = yaml_data.get('tradingview', {})
         if not tv:
             return None
@@ -542,13 +546,9 @@ class ConfigV2:
         # Chart URL template can fallback to YAML
         chart_url_template = tv.get('chart_url_template', 'https://www.tradingview.com/chart/?symbol=BYBIT:{symbol}.P&interval={interval}')
 
-        # Target chart is REQUIRED from instance settings
+        # Target chart is OPTIONAL - only required for PromptStrategy
+        # Other strategies (e.g., CointegrationAnalysisModule) don't need TradingView
         target_chart = get_value('target_chart', '')
-        if not target_chart:
-            raise ConfigurationError(
-                "Missing required config: strategy_specific.prompt_strategy.target_chart. "
-                "Set via dashboard."
-            )
 
         browser_data = tv.get('browser', {})
         screenshot_data = tv.get('screenshot', {})
