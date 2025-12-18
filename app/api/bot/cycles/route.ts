@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
 
     // Get prompt info from instance config (or use default if no instance)
     const config = instanceId ? await getInstanceConfigAsRows(instanceId) : [];
-    const modelConfig = config.find(c => c.key === 'openai.model');
+    const modelConfig = config.find(c => c.key === 'strategy_specific.prompt_strategy.model');
 
     // Calculate stats
     const successfulCycles = cycles.filter(c => c.status === 'completed');
