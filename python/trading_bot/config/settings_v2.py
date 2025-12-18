@@ -424,6 +424,9 @@ class ConfigV2:
                     sl_position=step_data['sl_position'],
                 )
 
+        # Timeframe is optional - use default '1h' if not set
+        timeframe = db_config.get('trading.timeframe') or '1h'
+
         # Parse age-based tightening bars (optional)
         age_tightening_bars = {}
         age_tightening_bars_raw = db_config.get('trading.age_tightening_bars', {})
@@ -448,7 +451,7 @@ class ConfigV2:
             max_loss_usd=cls._require(db_config, 'trading.max_loss_usd', "Set via dashboard."),
             leverage=cls._require(db_config, 'trading.leverage', "Set via dashboard."),
             max_concurrent_trades=cls._require(db_config, 'trading.max_concurrent_trades', "Set via dashboard."),
-            timeframe=cls._require(db_config, 'trading.timeframe', "Set via dashboard. (e.g., '1h', '4h', '1d')"),
+            timeframe=timeframe,  # Optional - defaults to '1h' if not set
             enable_position_tightening=cls._require(db_config, 'trading.enable_position_tightening', "Set via dashboard."),
             enable_sl_tightening=cls._require(db_config, 'trading.enable_sl_tightening', "Set via dashboard."),
             rr_tightening_steps=rr_steps,
