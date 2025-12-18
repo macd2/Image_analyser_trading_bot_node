@@ -96,7 +96,7 @@ class BaseAnalysisModule(ABC):
         # Convert string values
         if isinstance(value, str):
             # Boolean settings
-            if key in ('use_soft_vol', 'enable_spread_monitoring'):
+            if key in ('use_soft_vol', 'enable_spread_monitoring', 'use_adf'):
                 return value.lower() in ('true', '1', 'yes')
 
             # Numeric settings - try to convert to int first, then float
@@ -104,7 +104,7 @@ class BaseAnalysisModule(ABC):
                 'lookback', 'batch_size', 'screener_cache_hours',
                 'min_volume_usd', 'z_entry', 'z_exit', 'max_spread_deviation',
                 'lookback_period', 'min_z_distance', 'z_score_entry_threshold',
-                'z_score_exit_threshold', 'spread_reversion_threshold'
+                'z_score_exit_threshold', 'spread_reversion_threshold', 'candle_limit'
             ):
                 try:
                     # Try int first
@@ -159,8 +159,10 @@ class BaseAnalysisModule(ABC):
                         converted_value = self._convert_setting_type(setting_name, value)
                         flattened[setting_name] = converted_value
             else:
-                # Keep non-prefixed keys as-is
-                flattened[key] = value
+                # Keep non-prefixed keys but apply type conversion
+                # This ensures values from database (which are strings) are converted to proper types
+                converted_value = self._convert_setting_type(key, value)
+                flattened[key] = converted_value
 
         return flattened
 
@@ -228,12 +230,18 @@ class BaseAnalysisModule(ABC):
 
                         strategy_config = settings.get('strategy_config', {})
 
+                        # Apply type conversion to all config values from database
+                        # Database stores all values as strings, so we need to convert them to proper types
+                        converted_config = {}
+                        for key, value in strategy_config.items():
+                            converted_config[key] = self._convert_setting_type(key, value)
+
                         self.logger.info(
                             f"✅ Loaded strategy config from database for instance {self.instance_id}",
-                            extra={"instance_id": self.instance_id, "config_keys": list(strategy_config.keys())}
+                            extra={"instance_id": self.instance_id, "config_keys": list(converted_config.keys())}
                         )
 
-                        return {**self.DEFAULT_CONFIG, **strategy_config}
+                        return {**self.DEFAULT_CONFIG, **converted_config}
                     else:
                         self.logger.warning(
                             f"⚠️  Instance not found or has no settings: {self.instance_id}. Using defaults.",
@@ -564,12 +572,17 @@ class BaseAnalysisModule(ABC):
                         strategy_settings = strategy_specific.get(self.STRATEGY_TYPE, {})
 
                         if strategy_settings:
+                            # Apply type conversion to all settings from database
+                            converted_settings = {}
+                            for key, value in strategy_settings.items():
+                                converted_settings[key] = self._convert_setting_type(key, value)
+
                             self.logger.debug(
                                 f"Loaded strategy-specific settings for {self.STRATEGY_TYPE}",
                                 extra={"instance_id": self.instance_id}
                             )
                             # Merge with defaults to ensure all required settings are present
-                            return {**defaults, **strategy_settings}
+                            return {**defaults, **converted_settings}
                 finally:
                     release_connection(conn)
         except Exception as e:

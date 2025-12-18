@@ -76,9 +76,13 @@ class PromptStrategy(BaseAnalysisModule):
             strategy_config=strategy_config,
             heartbeat_callback=heartbeat_callback,
         )
-        
+
         self.testnet = testnet
         self.paper_trading = paper_trading
+
+        # Get prompt_name from strategy_config if not provided as parameter
+        if not prompt_name:
+            prompt_name = self.get_config_value('prompt_name', None)
         self.prompt_name = prompt_name
         self._cycle_count = 0
 
@@ -98,14 +102,14 @@ class PromptStrategy(BaseAnalysisModule):
             api_manager=self.api_manager,
             skip_boundary_validation=False,
         )
-        
+
         # Get prompt function
         self._prompt_function = None
-        if prompt_name:
+        if self.prompt_name:
             try:
-                self._prompt_function = get_prompt_function(prompt_name)
+                self._prompt_function = get_prompt_function(self.prompt_name)
             except Exception as e:
-                self.logger.warning(f"Failed to load prompt function '{prompt_name}': {e}")
+                self.logger.warning(f"Failed to load prompt function '{self.prompt_name}': {e}")
     
     async def run_analysis_cycle(
         self,
