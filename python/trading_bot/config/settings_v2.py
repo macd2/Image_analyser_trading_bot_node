@@ -82,8 +82,8 @@ class BybitConfig:
 class OpenAIConfig:
     """OpenAI configuration (mixed)."""
     api_key: str       # From environment
-    model: str         # From DB
-    assistant_id: str  # From DB
+    model: Optional[str] = None         # From DB - optional (only required for PromptStrategy)
+    assistant_id: Optional[str] = None  # From DB - optional (only required for PromptStrategy)
     max_tokens: int = 4096      # Default
     temperature: float = 0.1    # Default
 
@@ -372,7 +372,7 @@ class ConfigV2:
 
     @classmethod
     def _load_openai(cls, db_config: dict) -> OpenAIConfig:
-        """Load OpenAI config from DB + environment. All settings required."""
+        """Load OpenAI config from DB + environment. Settings optional (only required for PromptStrategy)."""
         from trading_bot.core.secrets_manager import get_openai_api_key
 
         # Try to get from strategy-specific settings first (new location)
@@ -388,8 +388,8 @@ class ConfigV2:
 
         return OpenAIConfig(
             api_key=get_openai_api_key(),
-            model=model or cls._require(db_config, 'openai.model', "Set via dashboard."),
-            assistant_id=assistant_id or cls._require(db_config, 'openai.assistant_id', "Set via dashboard."),
+            model=model or None,  # Optional - only required for PromptStrategy
+            assistant_id=assistant_id or None,  # Optional - only required for PromptStrategy
         )
 
     @classmethod
