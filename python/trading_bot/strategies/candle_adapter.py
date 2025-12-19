@@ -233,65 +233,89 @@ class CandleAdapter:
                     }
                     interval = interval_map.get(timeframe, "60")
 
-                    # Run blocking API call in thread pool with rate limit handling
-                    print(f"[CandleAdapter] Calling get_kline({api_symbol}, {interval})...", flush=True)
+                    # Fetch candles with pagination (Bybit max is 200 per request)
+                    print(f"[CandleAdapter] Calling get_kline({api_symbol}, {interval}) with pagination...", flush=True)
 
-                    max_retries = 3
-                    retry_count = 0
-                    response = None
+                    all_candles = []
+                    api_limit = min(200, limit)  # Bybit max is 200
+                    cursor = None
 
-                    while retry_count < max_retries:
-                        try:
-                            response = await asyncio.get_event_loop().run_in_executor(
-                                _executor,
-                                lambda: session.get_kline(
-                                    category="linear",
-                                    symbol=api_symbol,
-                                    interval=interval,
-                                    limit=limit
+                    while len(all_candles) < limit:
+                        max_retries = 3
+                        retry_count = 0
+                        response = None
+
+                        while retry_count < max_retries:
+                            try:
+                                kline_params = {
+                                    "category": "linear",
+                                    "symbol": api_symbol,
+                                    "interval": interval,
+                                    "limit": api_limit
+                                }
+                                if cursor:
+                                    kline_params["cursor"] = cursor
+
+                                response = await asyncio.get_event_loop().run_in_executor(
+                                    _executor,
+                                    lambda: session.get_kline(**kline_params)
                                 )
-                            )
-                            break  # Success, exit retry loop
-                        except Exception as e:
-                            error_str = str(e)
-                            # Check for rate limit error
-                            if "10006" in error_str or "rate limit" in error_str.lower():
-                                retry_count += 1
-                                if retry_count < max_retries:
-                                    wait_time = 2 ** retry_count  # Exponential backoff: 2, 4, 8 seconds
-                                    print(f"[CandleAdapter] Rate limited, waiting {wait_time}s before retry {retry_count}/{max_retries}...", flush=True)
-                                    await asyncio.sleep(wait_time)
+                                break  # Success, exit retry loop
+                            except Exception as e:
+                                error_str = str(e)
+                                # Check for rate limit error
+                                if "10006" in error_str or "rate limit" in error_str.lower():
+                                    retry_count += 1
+                                    if retry_count < max_retries:
+                                        wait_time = 2 ** retry_count  # Exponential backoff: 2, 4, 8 seconds
+                                        print(f"[CandleAdapter] Rate limited, waiting {wait_time}s before retry {retry_count}/{max_retries}...", flush=True)
+                                        await asyncio.sleep(wait_time)
+                                    else:
+                                        print(f"[CandleAdapter] Rate limit exceeded after {max_retries} retries", flush=True)
+                                        raise
                                 else:
-                                    print(f"[CandleAdapter] Rate limit exceeded after {max_retries} retries", flush=True)
                                     raise
-                            else:
-                                raise
 
-                    if response is None:
-                        print(f"[CandleAdapter] Failed to get response after retries", flush=True)
-                        continue
+                        if response is None:
+                            print(f"[CandleAdapter] Failed to get response after retries", flush=True)
+                            break
 
-                    print(f"[CandleAdapter] Got response: retCode={response.get('retCode')}", flush=True)
+                        print(f"[CandleAdapter] Got response: retCode={response.get('retCode')}", flush=True)
 
-                    if response.get('retCode') == 0:
-                        candles = response.get('result', {}).get('list', [])
-                        print(f"[CandleAdapter] Got {len(candles)} candles from API", flush=True)
-                        # Convert Bybit format to standard format
-                        candles = [
-                            {
-                                'timestamp': int(c[0]),
-                                'open': float(c[1]),
-                                'high': float(c[2]),
-                                'low': float(c[3]),
-                                'close': float(c[4]),
-                                'volume': float(c[5]),
-                                'turnover': float(c[6]) if len(c) > 6 else 0,
-                            }
-                            for c in candles
-                        ]
-                    else:
-                        candles = []
-                        print(f"[CandleAdapter] API error: retCode={response.get('retCode')}", flush=True)
+                        if response.get('retCode') == 0:
+                            batch = response.get('result', {}).get('list', [])
+                            if not batch:
+                                print(f"[CandleAdapter] No more candles available", flush=True)
+                                break
+
+                            print(f"[CandleAdapter] Got {len(batch)} candles in this batch (total: {len(all_candles) + len(batch)})", flush=True)
+
+                            # Convert Bybit format to standard format
+                            batch_converted = [
+                                {
+                                    'timestamp': int(c[0]),
+                                    'open': float(c[1]),
+                                    'high': float(c[2]),
+                                    'low': float(c[3]),
+                                    'close': float(c[4]),
+                                    'volume': float(c[5]),
+                                    'turnover': float(c[6]) if len(c) > 6 else 0,
+                                }
+                                for c in batch
+                            ]
+                            all_candles.extend(batch_converted)
+
+                            # Get cursor for next page
+                            cursor = response.get('result', {}).get('nextPageCursor')
+                            if not cursor:
+                                print(f"[CandleAdapter] No more pages available", flush=True)
+                                break
+                        else:
+                            candles = []
+                            print(f"[CandleAdapter] API error: retCode={response.get('retCode')}", flush=True)
+                            break
+
+                    candles = all_candles
 
                     # Check minimum candles requirement
                     if candles and len(candles) < min_candles:
