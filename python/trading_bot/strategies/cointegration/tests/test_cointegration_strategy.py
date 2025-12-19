@@ -12,7 +12,7 @@ import sys
 import os
 
 # Add project to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../..'))
 
 from trading_bot.strategies.cointegration.cointegration_analysis_module import CointegrationAnalysisModule
 from trading_bot.config.settings_v2 import ConfigV2
@@ -60,6 +60,16 @@ async def test_cointegration():
         cycle_id="test-cycle-001"
     )
     
+    print("\n" + "=" * 70)
+    print("⚙️  STRATEGY CONFIGURATION")
+    print("=" * 70)
+    print(f"z_entry: {strategy.get_config_value('z_entry', 'NOT_FOUND')}")
+    print(f"z_exit: {strategy.get_config_value('z_exit', 'NOT_FOUND')}")
+    print(f"lookback: {strategy.get_config_value('lookback', 'NOT_FOUND')}")
+    print(f"use_adf: {strategy.get_config_value('use_adf', 'NOT_FOUND')}")
+    print(f"min_sl_buffer: {strategy.get_config_value('min_sl_buffer', 'NOT_FOUND')}")
+    print(f"enable_dynamic_sizing: {strategy.get_config_value('enable_dynamic_sizing', 'NOT_FOUND')}")
+
     print("\n" + "=" * 70)
     print("📊 RESULTS")
     print("=" * 70)

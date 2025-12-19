@@ -270,6 +270,20 @@ export const DEFAULT_CONFIG: ConfigDefault[] = [
     category: "strategy",
     description: "Minimum z-score distance to stop loss for signal validation"
   },
+  {
+    key: "strategy_specific.cointegration.min_sl_buffer",
+    value: 1.5,
+    type: "number",
+    category: "strategy",
+    description: "Minimum z-distance from entry to stop loss (adaptive SL buffer)"
+  },
+  {
+    key: "strategy_specific.cointegration.enable_dynamic_sizing",
+    value: true,
+    type: "boolean",
+    category: "strategy",
+    description: "Enable dynamic position sizing based on edge and volatility"
+  },
 ];
 
 /**

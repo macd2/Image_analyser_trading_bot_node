@@ -61,13 +61,11 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         "candle_limit": 1000,       # Number of candles to fetch per symbol in screener
 
         # Cointegration parameters (strategy-specific)
-        "lookback": 90,           # Lookback period for cointegration analysis
+        "lookback": 120,           # Lookback period for cointegration analysis
         "z_entry": 2.0,            # Z-score entry threshold for cointegration
         "z_exit": 0.5,             # Z-score exit threshold for cointegration
         "use_adf": True,            # Use ADF test for mean reversion detection (True) or Hurst exponent (False)
         "use_soft_vol": False,      # Use soft volatility adjustment for cointegration
-        "min_sl_buffer": 1.5,       # Minimum z-distance from entry to stop loss
-        "enable_dynamic_sizing": True,  # Enable dynamic position sizing based on edge and volatility
     }
 
     DEFAULT_CONFIG = STRATEGY_CONFIG  # Use STRATEGY_CONFIG as default
@@ -325,7 +323,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
 
                 # Fetch candles for both symbols using analysis_timeframe from config
                 # Use maximum API limit (1000) to ensure we get enough candles for analysis
-                lookback = self.get_config_value('lookback', 90)
+                lookback = self.get_config_value('lookback', 120)
                 min_candles_needed = max(lookback + 10, 50)  # Need at least lookback + buffer
                 self._heartbeat(f"Fetching candles for {symbol} and {pair_symbol}")
                 candles1 = await self.candle_adapter.get_candles(
@@ -408,7 +406,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 logger.info(f"🔗 Running cointegration analysis for {symbol}/{pair_symbol}", extra={"symbol": symbol, "pair": pair_symbol})
                 self._heartbeat(f"Running cointegration analysis for {symbol}")
                 strategy = CointegrationStrategy(
-                    lookback=self.get_config_value('lookback', 90),
+                    lookback=self.get_config_value('lookback', 120),
                     z_entry=self.get_config_value('z_entry', 2.0),
                     z_exit=self.get_config_value('z_exit', 0.5),
                     use_adf=self.get_config_value('use_adf', True),
@@ -468,9 +466,6 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 z_score = latest_signal['z_score']
                 confidence = strategy.compute_confidence(spread, z_score)
 
-                # Compute z_history for adaptive SL calculation
-                z_history = [abs((s - spread_mean) / spread_std) for s in spread] if spread_std > 0 else []
-
                 # Convert to analyzer format with config values
                 recommendation = self._convert_signal_to_recommendation(
                     symbol=symbol,
@@ -483,8 +478,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     pair_symbol=pair_symbol,
                     beta=beta,
                     spread_mean=spread_mean,
-                    spread_std=spread_std,
-                    z_history=z_history
+                    spread_std=spread_std
                 )
 
                 self._validate_output(recommendation)
@@ -523,7 +517,6 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         beta: Optional[float] = None,
         spread_mean: Optional[float] = None,
         spread_std: Optional[float] = None,
-        z_history: Optional[List[float]] = None,
     ) -> Dict[str, Any]:
         """Convert cointegration signal to analyzer format with calculated price levels."""
         z_score = signal['z_score']
@@ -558,7 +551,6 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             try:
                 pair_price = pair_candles[-1]['close']
                 z_entry = self.get_config_value('z_entry', 2.0)
-                min_sl_buffer = self.get_config_value('min_sl_buffer', 1.5)
 
                 # Calculate levels using cointegration formula
                 levels = calculate_levels(
@@ -568,9 +560,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     spread_mean=spread_mean,
                     spread_std=spread_std,
                     z_entry=z_entry,
-                    signal=signal_direction,
-                    z_history=z_history or [],
-                    min_sl_buffer=min_sl_buffer
+                    signal=signal_direction
                 )
 
                 # Extract price levels for the primary symbol
@@ -734,7 +724,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         Returns:
             Dict with z-score exit parameters for simulator to check
         """
-        z_exit = self.get_config_value("z_exit", 0.4)
+        z_exit = self.get_config_value("z_exit", 0.5)
 
         return {
             "type": "z_score",
@@ -1014,7 +1004,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             # Cointegration analysis settings
             "lookback": {
                 "type": "number",
-                "default": 90,
+                "default": 120,
                 "description": "Lookback period (candles) for cointegration analysis",
             },
             "z_entry": {
@@ -1036,16 +1026,6 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 "type": "boolean",
                 "default": False,
                 "description": "Use soft volatility adjustment for cointegration",
-            },
-            "min_sl_buffer": {
-                "type": "float",
-                "default": 1.5,
-                "description": "Minimum z-distance from entry to stop loss (adaptive SL buffer)",
-            },
-            "enable_dynamic_sizing": {
-                "type": "boolean",
-                "default": True,
-                "description": "Enable dynamic position sizing based on edge and volatility",
             },
 
             # Risk management settings

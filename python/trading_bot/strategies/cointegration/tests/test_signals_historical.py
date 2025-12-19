@@ -236,12 +236,21 @@ async def test_pair_signals(symbol1: str, symbol2: str, timeframe: str = "1h", l
 async def main():
     """Test all pairs from screener results."""
 
-    # Load screener results
-    screener_file = Path(__file__).parent / "screener_results.json"
+    # Load screener results from cache directory
+    screener_cache_dir = Path(__file__).parent.parent / "screener_cache"
 
-    if not screener_file.exists():
-        print(f"❌ Screener results not found at {screener_file}")
+    if not screener_cache_dir.exists():
+        print(f"❌ Screener cache directory not found at {screener_cache_dir}")
         return
+
+    # Find the first screener cache file
+    cache_files = list(screener_cache_dir.glob("*.json"))
+    if not cache_files:
+        print(f"❌ No screener cache files found in {screener_cache_dir}")
+        return
+
+    screener_file = cache_files[0]
+    print(f"📂 Using screener cache: {screener_file.name}")
 
     with open(screener_file) as f:
         results = json.load(f)

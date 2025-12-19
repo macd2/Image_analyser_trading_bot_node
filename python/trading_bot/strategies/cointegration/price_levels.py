@@ -20,7 +20,7 @@ def calculate_levels(
     z_entry: float = 2.0,
     signal: int = 1,  # 1 = long spread, -1 = short spread
     z_history: list = None,  # rolling |z| values for adaptive SL
-    min_sl_buffer: float = 1.2  # min z-distance from entry
+    min_sl_buffer: float = 1.5  # min z-distance from entry
 ) -> Dict[str, Any]:
     """
     Calculate entry, stop-loss, and take-profit levels in SPREAD SPACE.
