@@ -417,6 +417,19 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
 
                 # Get the last valid signal (skip NaN z_scores)
                 valid_signals = signals[signals['z_score'].notna()]
+
+                # DEBUG: Log signal generation details
+                if not valid_signals.empty:
+                    latest = valid_signals.iloc[-1]
+                    logger.debug(
+                        f"🔗 Signal details for {symbol}/{pair_symbol}: "
+                        f"z_score={latest['z_score']:.4f}, "
+                        f"is_mr={latest['is_mean_reverting']}, "
+                        f"signal={latest['signal']}, "
+                        f"z_entry={strategy.z_entry}",
+                        extra={"symbol": symbol, "pair": pair_symbol}
+                    )
+
                 if valid_signals.empty:
                     logger.warning(f"🔗 No valid signals for {symbol}/{pair_symbol}", extra={"symbol": symbol, "pair": pair_symbol})
                     self._heartbeat(f"No valid signals for {symbol}/{pair_symbol}")

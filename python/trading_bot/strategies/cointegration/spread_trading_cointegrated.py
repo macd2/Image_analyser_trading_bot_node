@@ -188,7 +188,7 @@ class CointegrationStrategy:
             long_cond = (z_score <= -self.z_entry) and is_mr
             short_cond = (z_score >= self.z_entry) and is_mr
             exit_cond = abs(z_score) <= self.z_exit
-            
+
             # Record signals
             if exit_cond:
                 signals.at[df.index[i], 'exit_signal'] = True
