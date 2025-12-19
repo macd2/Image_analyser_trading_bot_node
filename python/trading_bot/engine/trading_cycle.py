@@ -533,7 +533,15 @@ class TradingCycle:
 
                 if analysis_result.get("recommendation"):
                     # Record recommendation to database
-                    rec_id = self._record_recommendation(analysis_result, analysis_result.get("analysis", {}))
+                    # Ensure analysis is a dict (sometimes it might be a string)
+                    analysis_data = analysis_result.get("analysis", {})
+                    if isinstance(analysis_data, str):
+                        try:
+                            analysis_data = json.loads(analysis_data)
+                        except (json.JSONDecodeError, TypeError):
+                            analysis_data = {}
+
+                    rec_id = self._record_recommendation(analysis_result, analysis_data)
                     if rec_id:
                         analysis_result["recommendation_id"] = rec_id
 
@@ -909,6 +917,15 @@ class TradingCycle:
             recommendation_id if successful, None if failed
         """
         import json
+
+        # Ensure analysis is a dict (defensive check)
+        if isinstance(analysis, str):
+            try:
+                analysis = json.loads(analysis)
+            except (json.JSONDecodeError, TypeError):
+                analysis = {}
+        elif not isinstance(analysis, dict):
+            analysis = {}
 
         # If this is an existing recommendation from previous analysis, return its ID
         if result.get("from_existing") and result.get("recommendation_id"):
