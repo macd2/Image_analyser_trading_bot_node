@@ -412,7 +412,8 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     z_entry=self.get_config_value('z_entry', 2.0),
                     z_exit=self.get_config_value('z_exit', 0.5),
                     use_adf=self.get_config_value('use_adf', True),
-                    use_soft_vol=self.get_config_value('use_soft_vol', False)
+                    use_soft_vol=self.get_config_value('use_soft_vol', False),
+                    enable_dynamic_sizing=self.get_config_value('enable_dynamic_sizing', True)
                 )
 
                 signals = strategy.generate_signals(df)

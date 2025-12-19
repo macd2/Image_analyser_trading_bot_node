@@ -15,13 +15,14 @@ class CointegrationStrategy:
     - Hurst/ADF for regime filter
     """
     
-    def __init__(self, 
+    def __init__(self,
                  lookback: int = 120,
                  z_entry: float = 2.0,
                  z_exit: float = 0.5,
                  base_multiplier: float = 1.0,
                  use_soft_vol: bool = False,
-                 use_adf: bool = True):
+                 use_adf: bool = True,
+                 enable_dynamic_sizing: bool = True):
         """
         Parameters:
         -----------
@@ -37,6 +38,8 @@ class CointegrationStrategy:
             Softer volatility scaling (0.5x–2.5x)
         use_adf : bool
             Use ADF test (True) or Hurst (False) for stationarity
+        enable_dynamic_sizing : bool
+            Enable dynamic position sizing based on edge and volatility
         """
         self.lookback = lookback
         self.z_entry = z_entry
@@ -44,6 +47,7 @@ class CointegrationStrategy:
         self.base_multiplier = base_multiplier
         self.use_soft_vol = use_soft_vol
         self.use_adf = use_adf
+        self.enable_dynamic_sizing = enable_dynamic_sizing
         
         # State
         self.in_long = False
@@ -170,18 +174,21 @@ class CointegrationStrategy:
                 continue
             
             # Dynamic sizing
-            spread_mean_abs = abs(spread_mean) + 1e-8
-            vol_ratio = spread_std / spread_mean_abs
-            vol_adjust = (1.0 / np.sqrt(vol_ratio) if self.use_soft_vol 
-                         else 1.0 / vol_ratio)
-            vol_adjust = min(vol_adjust, 1.8 if self.use_soft_vol else 2.0)
-            
-            edge_adjust = 1.0 + max(0, abs(z_score) - self.z_entry) * 0.5
-            size_mult = self.base_multiplier * edge_adjust * vol_adjust
-            size_mult = (
-                np.clip(size_mult, 0.5, 2.5) if self.use_soft_vol 
-                else np.clip(size_mult, 0.3, 3.0)
-            )
+            if self.enable_dynamic_sizing:
+                spread_mean_abs = abs(spread_mean) + 1e-8
+                vol_ratio = spread_std / spread_mean_abs
+                vol_adjust = (1.0 / np.sqrt(vol_ratio) if self.use_soft_vol
+                             else 1.0 / vol_ratio)
+                vol_adjust = min(vol_adjust, 1.8 if self.use_soft_vol else 2.0)
+
+                edge_adjust = 1.0 + max(0, abs(z_score) - self.z_entry) * 0.5
+                size_mult = self.base_multiplier * edge_adjust * vol_adjust
+                size_mult = (
+                    np.clip(size_mult, 0.5, 2.5) if self.use_soft_vol
+                    else np.clip(size_mult, 0.3, 3.0)
+                )
+            else:
+                size_mult = 1.0
             signals.at[df.index[i], 'size_multiplier'] = size_mult
             
             # State-based signals
