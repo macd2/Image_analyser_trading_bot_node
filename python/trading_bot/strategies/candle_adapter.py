@@ -233,11 +233,11 @@ class CandleAdapter:
                     }
                     interval = interval_map.get(timeframe, "60")
 
-                    # Fetch candles with pagination (Bybit max is 200 per request)
+                    # Fetch candles with pagination (Bybit max is 1000 per request)
                     print(f"[CandleAdapter] Calling get_kline({api_symbol}, {interval}) with pagination...", flush=True)
 
                     all_candles = []
-                    api_limit = min(200, limit)  # Bybit max is 200
+                    api_limit = min(1000, limit)  # Bybit max is 1000
                     cursor = None
 
                     while len(all_candles) < limit:
