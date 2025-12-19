@@ -312,7 +312,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                         "risk_reward": 0.0,
                         "setup_quality": 0.0,
                         "market_environment": None,
-                        "analysis": f"Symbol not available on Bybit: {', '.join(missing)}",
+                        "analysis": {"error": f"Symbol not available on Bybit: {', '.join(missing)}"},
                         "chart_path": None,
                         "timeframe": analysis_timeframe,
                         "cycle_id": cycle_id,
