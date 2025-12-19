@@ -96,7 +96,7 @@ class BaseAnalysisModule(ABC):
         # Convert string values
         if isinstance(value, str):
             # Boolean settings
-            if key in ('use_soft_vol', 'enable_spread_monitoring', 'use_adf'):
+            if key in ('use_soft_vol', 'enable_spread_monitoring', 'use_adf', 'enable_dynamic_sizing'):
                 return value.lower() in ('true', '1', 'yes')
 
             # Numeric settings - try to convert to int first, then float
@@ -104,7 +104,8 @@ class BaseAnalysisModule(ABC):
                 'lookback', 'batch_size', 'screener_cache_hours',
                 'min_volume_usd', 'z_entry', 'z_exit', 'max_spread_deviation',
                 'lookback_period', 'min_z_distance', 'z_score_entry_threshold',
-                'z_score_exit_threshold', 'spread_reversion_threshold', 'candle_limit'
+                'z_score_exit_threshold', 'spread_reversion_threshold', 'candle_limit',
+                'min_sl_buffer'
             ):
                 try:
                     # Try int first
