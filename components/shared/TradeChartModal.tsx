@@ -2,6 +2,7 @@
 
 import { X, TrendingUp, TrendingDown } from 'lucide-react'
 import TradeChart, { TradeData } from './TradeChart'
+import SpreadTradeChart from './SpreadTradeChart'
 
 interface TradeChartModalProps {
   isOpen: boolean
@@ -18,6 +19,26 @@ function getPriceDecimals(price: number | null | undefined): number {
   const decimals = priceStr.split('.')[1]?.length || 0
   // Return at least what's needed to show the full precision, min 2, max 8
   return Math.max(2, Math.min(8, decimals))
+}
+
+// Helper to format timestamp to proper datetime
+function formatDateTime(dateString: string | null | undefined): string {
+  if (!dateString) return '—'
+  try {
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return '—'
+
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    const seconds = String(date.getSeconds()).padStart(2, '0')
+
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+  } catch {
+    return '—'
+  }
 }
 
 export default function TradeChartModal({ isOpen, onClose, trade, mode = 'live' }: TradeChartModalProps) {
@@ -157,13 +178,29 @@ export default function TradeChartModal({ isOpen, onClose, trade, mode = 'live' 
           </div>
         )}
         
-        {/* Chart */}
+        {/* Chart - Render correct chart based on strategy type */}
         <div className="p-4 pb-2 relative">
           {/* Timezone indicator */}
           <div className="absolute top-6 right-6 text-xs text-slate-400 bg-slate-800/50 px-2 py-1 rounded">
             {Intl.DateTimeFormat().resolvedOptions().timeZone}
           </div>
-          <TradeChart trade={trade} height={450} mode={mode} />
+
+          {/* Strategy Type Badge */}
+          {trade.strategy_type && (
+            <div className="absolute top-6 right-30 text-xs font-medium px-2 py-1 rounded bg-slate-800/50">
+              <span className={trade.strategy_type === 'spread_based' ? 'text-purple-400' : 'text-blue-400'}>
+                {trade.strategy_type === 'spread_based' ? '📊 Spread-Based' : '📈 Price-Based'}
+              </span>
+              {trade.strategy_name && <span className="text-slate-400 ml-2">({trade.strategy_name})</span>}
+            </div>
+          )}
+
+          {/* Render appropriate chart based on strategy type */}
+          {trade.strategy_type === 'spread_based' ? (
+            <SpreadTradeChart trade={trade} />
+          ) : (
+            <TradeChart trade={trade} height={450} mode={mode} />
+          )}
         </div>
 
         {/* Bottom Trade Info Cards */}
@@ -173,7 +210,7 @@ export default function TradeChartModal({ isOpen, onClose, trade, mode = 'live' 
             <div className="text-xs text-slate-400 mb-1">Entry Price</div>
             <div className="text-xl font-bold text-white font-mono">${formatPrice(trade.entry_price)}</div>
             <div className="text-xs text-slate-500 mt-1">
-              {trade.timeframe || '1h'} • {new Date(trade.created_at).toLocaleDateString()}
+              {trade.timeframe || '1h'} • {formatDateTime(trade.created_at)}
             </div>
           </div>
 

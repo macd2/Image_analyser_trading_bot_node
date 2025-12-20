@@ -37,7 +37,26 @@ export default function SpreadTradeChart({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const metadata = trade.strategy_metadata as StrategyMetadata | undefined
+  // Parse metadata - it might come as a JSON string or object
+  const parseMetadata = (meta: any): StrategyMetadata | undefined => {
+    if (!meta) return undefined
+    if (typeof meta === 'string') {
+      try {
+        return JSON.parse(meta)
+      } catch {
+        return undefined
+      }
+    }
+    return meta as StrategyMetadata
+  }
+
+  const metadata = parseMetadata(trade.strategy_metadata)
+
+  // Debug logging
+  console.log('[SpreadTradeChart] Rendering for', trade.symbol, {
+    raw_metadata: trade.strategy_metadata,
+    parsed_metadata: metadata,
+  })
 
   // Validate metadata
   useEffect(() => {
@@ -103,7 +122,7 @@ export default function SpreadTradeChart({
     }
 
     fetchData()
-  }, [trade, metadata])
+  }, [trade.id, trade.symbol, trade.timeframe, trade.submitted_at, trade.filled_at, trade.created_at, metadata?.pair_symbol, metadata?.z_exit_threshold])
 
   if (loading) return <LoadingState />
   if (error) return <ErrorState message={error} />
@@ -119,7 +138,7 @@ export default function SpreadTradeChart({
 
       {/* Asset Prices Pane */}
       {showAssetPrices && (
-        <AssetPricePane data={chartData} metadata={metadata!} height={height / 3} />
+        <AssetPricePane data={chartData} metadata={metadata!} primarySymbol={trade.symbol} height={height / 3} />
       )}
     </div>
   )
@@ -140,6 +159,7 @@ function ZScorePane({
 }) {
   const chartData = data.zScores.map((point) => ({
     time: point.time,
+    timeLabel: formatTimestamp(point.time),
     z_score: point.z_score,
     is_mean_reverting: point.is_mean_reverting,
   }))
@@ -148,18 +168,30 @@ function ZScorePane({
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
       <h3 className="text-sm font-semibold text-white mb-3">Z-Score (Entry/Exit Signals)</h3>
       <ResponsiveContainer width="100%" height={height}>
-        <ComposedChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+        <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="time" stroke="#94a3b8" />
+          <XAxis dataKey="timeLabel" stroke="#94a3b8" />
           <YAxis stroke="#94a3b8" />
           <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }}
             labelStyle={{ color: '#e2e8f0' }}
+            formatter={(value: any) => {
+              if (typeof value === 'number') return value.toFixed(3)
+              return value
+            }}
           />
-          <Legend />
+          <Legend
+            wrapperStyle={{ paddingTop: '10px' }}
+            formatter={(value) => {
+              const legendLabels: Record<string, string> = {
+                'Z-Score': 'Z-Score (Statistical Signal)',
+              }
+              return legendLabels[value] || value
+            }}
+          />
 
           {/* Background shading for mean-reverting zones */}
-          <ReferenceLine y={0} stroke="#64748b" strokeDasharray="5 5" label="Mean" />
+          <ReferenceLine y={0} stroke="#64748b" strokeDasharray="5 5" label="Mean (μ)" />
           <ReferenceLine
             y={2.0}
             stroke="#ef4444"
@@ -170,17 +202,19 @@ function ZScorePane({
             y={-2.0}
             stroke="#10b981"
             strokeDasharray="3 3"
+            label="Entry (±2.0σ)"
           />
           <ReferenceLine
             y={metadata.z_exit_threshold}
             stroke="#94a3b8"
             strokeDasharray="2 2"
-            label={`Exit (${metadata.z_exit_threshold})`}
+            label={`Exit (+${metadata.z_exit_threshold}σ)`}
           />
           <ReferenceLine
             y={-metadata.z_exit_threshold}
             stroke="#94a3b8"
             strokeDasharray="2 2"
+            label={`Exit (-${metadata.z_exit_threshold}σ)`}
           />
 
           <Line
@@ -212,6 +246,7 @@ function SpreadPricePane({
 }) {
   const chartData = data.spreads.map((point) => ({
     time: point.time,
+    timeLabel: formatTimestamp(point.time),
     spread: point.spread,
     mean: point.spread_mean,
     upper_entry: point.spread_mean + 2 * point.spread_std,
@@ -224,15 +259,27 @@ function SpreadPricePane({
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
       <h3 className="text-sm font-semibold text-white mb-3">Spread Price (Risk Management)</h3>
       <ResponsiveContainer width="100%" height={height}>
-        <ComposedChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+        <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="time" stroke="#94a3b8" />
+          <XAxis dataKey="timeLabel" stroke="#94a3b8" />
           <YAxis stroke="#94a3b8" />
           <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }}
             labelStyle={{ color: '#e2e8f0' }}
+            formatter={(value: any) => {
+              if (typeof value === 'number') return value.toFixed(6)
+              return value
+            }}
           />
-          <Legend />
+          <Legend
+            wrapperStyle={{ paddingTop: '10px' }}
+            formatter={(value) => {
+              const legendLabels: Record<string, string> = {
+                'spread': 'Spread Price (Y - β×X)',
+              }
+              return legendLabels[value] || value
+            }}
+          />
 
           {/* Statistical boundaries */}
           <ReferenceLine y={metadata.spread_mean} stroke="#64748b" label="μ (Mean)" />
@@ -267,7 +314,7 @@ function SpreadPricePane({
             stroke="#3b82f6"
             dot={false}
             strokeWidth={2}
-            name="Spread"
+            name="spread"
           />
         </ComposedChart>
       </ResponsiveContainer>
@@ -282,14 +329,18 @@ function SpreadPricePane({
 function AssetPricePane({
   data,
   metadata,
+  primarySymbol,
   height,
 }: {
   data: ChartDataSet
   metadata: StrategyMetadata
+  primarySymbol: string
   height: number
 }) {
+
   const chartData = data.prices.map((point) => ({
     time: point.time,
+    timeLabel: formatTimestamp(point.time),
     price_x: point.price_x,
     price_y: point.price_y,
   }))
@@ -298,16 +349,29 @@ function AssetPricePane({
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
       <h3 className="text-sm font-semibold text-white mb-3">Asset Prices (Context)</h3>
       <ResponsiveContainer width="100%" height={height}>
-        <ComposedChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+        <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="time" stroke="#94a3b8" />
+          <XAxis dataKey="timeLabel" stroke="#94a3b8" />
           <YAxis stroke="#94a3b8" yAxisId="left" />
           <YAxis stroke="#94a3b8" yAxisId="right" orientation="right" />
           <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }}
             labelStyle={{ color: '#e2e8f0' }}
+            formatter={(value: any) => {
+              if (typeof value === 'number') return value.toFixed(6)
+              return value
+            }}
           />
-          <Legend />
+          <Legend
+            wrapperStyle={{ paddingTop: '10px' }}
+            formatter={(value) => {
+              const legendLabels: Record<string, string> = {
+                'price_x': `Primary Asset (${primarySymbol})`,
+                'price_y': `Pair Asset (${metadata.pair_symbol})`,
+              }
+              return legendLabels[value] || value
+            }}
+          />
 
           <Line
             yAxisId="left"
@@ -316,7 +380,7 @@ function AssetPricePane({
             stroke="#06b6d4"
             dot={false}
             strokeWidth={2}
-            name={`Primary (${metadata.pair_symbol.split('USDT')[0]})`}
+            name="price_x"
           />
           <Line
             yAxisId="right"
@@ -325,7 +389,7 @@ function AssetPricePane({
             stroke="#ec4899"
             dot={false}
             strokeWidth={2}
-            name={`Pair (${metadata.pair_symbol})`}
+            name="price_y"
           />
         </ComposedChart>
       </ResponsiveContainer>
@@ -349,6 +413,13 @@ function buildChartData(
 
   // Align candles by timestamp
   const minLength = Math.min(primaryCandles.length, pairCandles.length)
+
+  // Debug: log first timestamp to understand format
+  if (minLength > 0) {
+    const firstTime = primaryCandles[0].time
+    console.log('[buildChartData] First candle timestamp:', firstTime, 'Type:', typeof firstTime)
+    console.log('[buildChartData] Formatted:', formatTimestamp(firstTime))
+  }
 
   for (let i = 0; i < minLength; i++) {
     const primary = primaryCandles[i]
@@ -385,6 +456,57 @@ function buildChartData(
     prices,
     entryTime: trade.filled_at ? new Date(trade.filled_at).getTime() : undefined,
     exitTime: trade.closed_at ? new Date(trade.closed_at).getTime() : undefined,
+  }
+}
+
+// ============================================================
+// HELPER: FORMAT TIMESTAMP
+// ============================================================
+
+function formatTimestamp(timestamp: number | string | null | undefined): string {
+  try {
+    if (!timestamp) {
+      return 'Invalid'
+    }
+
+    // Convert to number if it's a string
+    let ts = typeof timestamp === 'string' ? parseInt(timestamp, 10) : timestamp
+
+    if (isNaN(ts) || ts <= 0) {
+      console.warn('[formatTimestamp] Invalid timestamp value:', timestamp)
+      return 'Invalid'
+    }
+
+    // Handle both milliseconds and seconds
+    // Timestamps from Bybit are in milliseconds (13 digits)
+    // If less than 10 billion (10^10), it's likely in seconds
+    let ms = ts
+    if (ts < 10000000000) {
+      ms = ts * 1000
+    }
+
+    const date = new Date(ms)
+    const timeMs = date.getTime()
+
+    // Check if date is valid
+    if (isNaN(timeMs)) {
+      console.warn('[formatTimestamp] Invalid date from timestamp:', timestamp, 'converted ms:', ms)
+      return 'Invalid'
+    }
+
+    // Format: "2025-12-20 11:09:31"
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    const seconds = String(date.getSeconds()).padStart(2, '0')
+
+    const formatted = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+    return formatted
+  } catch (error) {
+    console.error('[formatTimestamp] Error:', timestamp, error)
+    return 'Invalid'
   }
 }
 
