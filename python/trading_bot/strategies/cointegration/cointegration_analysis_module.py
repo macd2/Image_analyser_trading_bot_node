@@ -177,9 +177,9 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
 
         # Cache is stale or doesn't exist, run screener
         instance_name = self.instance_id or "default"
-        min_volume_usd = self.get_config_value('min_volume_usd', 1_000_000)
-        batch_size = self.get_config_value('batch_size', 15)
-        candle_limit = self.get_config_value('candle_limit', 500)
+        min_volume_usd = self.get_config_value('min_volume_usd')
+        batch_size = self.get_config_value('batch_size', 20)
+        candle_limit = self.get_config_value('candle_limit', 1000)
 
         logger.info(f"🔍 [SCREENER] Starting auto-screening for {instance_name}")
         logger.info(f"   Timeframe: {timeframe}")

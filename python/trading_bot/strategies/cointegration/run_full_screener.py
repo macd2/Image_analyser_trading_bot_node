@@ -151,11 +151,11 @@ def filter_correlated_pairs(results: pd.DataFrame) -> pd.DataFrame:
 
 
 async def run_screener(
-    timeframe: str = "1h",
-    instance_id: str = "default",
-    min_volume_usd: int = 1_000_000,
-    batch_size: int = 15,
-    candle_limit: int = 500,
+    timeframe,
+    instance_id,
+    min_volume_usd,
+    batch_size,
+    candle_limit,
     verbose: bool = True,
 ) -> Dict[str, str]:
     """

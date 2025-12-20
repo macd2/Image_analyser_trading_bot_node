@@ -84,7 +84,7 @@ def compute_beta(x: np.ndarray, y: np.ndarray) -> float:
 class PairScreener:
     """Screen for cointegrated pairs from candle data."""
 
-    def __init__(self, lookback_days: int = 120, min_data_points: int = 100):
+    def __init__(self, lookback_days: int = 120, min_data_points: int = 120):
         """
         Initialize screener.
 
