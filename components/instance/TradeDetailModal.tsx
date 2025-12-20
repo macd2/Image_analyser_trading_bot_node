@@ -242,13 +242,18 @@ export function TradeDetailModal({ isOpen, onClose, trade }: TradeDetailModalPro
           }
 
           // Exit marker (when trade was closed)
-          if (trade.closed_at) {
+          if (trade.closed_at && trade.exit_price) {
             const exitTimestamp = Math.floor(new Date(trade.closed_at).getTime() / 1000)
             const closestCandle = findClosestCandle(exitTimestamp)
             if (closestCandle) {
+              // Position marker based on where exit price is relative to candle close
+              const candleClose = closestCandle.close as number
+              const exitAboveCandle = trade.exit_price > candleClose
+              const markerPosition = exitAboveCandle ? 'aboveBar' : 'belowBar'
+
               markers.push({
                 time: closestCandle.time,
-                position: isLong ? 'aboveBar' as const : 'belowBar' as const,
+                position: markerPosition as const,
                 color: trade.pnl !== null && trade.pnl >= 0 ? '#22c55e' : '#ef4444',
                 shape: isLong ? 'arrowDown' as const : 'arrowUp' as const,
                 text: 'Exit',

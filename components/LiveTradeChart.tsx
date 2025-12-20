@@ -315,9 +315,14 @@ export default function LiveTradeChart({ trade, height = 400 }: LiveTradeChartPr
       const closestExit = findClosestCandle(closedTime)
       if (closestExit) {
         const isWin = trade.exit_reason === 'tp_hit'
+        // Position marker based on where exit price is relative to candle close
+        const candleClose = closestExit.close as number
+        const exitAboveCandle = trade.exit_price > candleClose
+        const markerPosition = exitAboveCandle ? 'aboveBar' : 'belowBar'
+
         markers.push({
           time: closestExit.time,
-          position: isLong ? 'aboveBar' : 'belowBar',
+          position: markerPosition,
           color: isWin ? '#22c55e' : '#ef4444',
           shape: isLong ? 'arrowDown' : 'arrowUp',
           text: isWin ? 'TP Hit' : 'SL Hit',

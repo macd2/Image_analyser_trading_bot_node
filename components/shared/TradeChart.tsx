@@ -441,9 +441,16 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
       const exitCandle = findCandleAtTime(closedTimeUtc)
       if (exitCandle) {
         const isWin = trade.exit_reason === 'tp_hit'
+        // Position marker based on where exit price is relative to candle close
+        // For LONG: if exit is above close, position above; if below, position below
+        // For SHORT: if exit is above close, position above; if below, position below
+        const candleClose = exitCandle.close as number
+        const exitAboveCandle = trade.exit_price > candleClose
+        const markerPosition = exitAboveCandle ? 'aboveBar' : 'belowBar'
+
         markers.push({
           time: exitCandle.time,
-          position: isLong ? 'aboveBar' : 'belowBar',
+          position: markerPosition,
           color: isWin ? '#22c55e' : '#ef4444',
           shape: isLong ? 'arrowDown' : 'arrowUp',
           text: isWin ? 'TP Hit' : 'SL Hit',
