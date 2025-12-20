@@ -405,7 +405,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     continue
 
                 # Run cointegration strategy with config values
-                logger.info(f"🔗 Running cointegration analysis for {symbol}/{pair_symbol}", extra={"symbol": symbol, "pair": pair_symbol})
+                logger.info(f"🔗 Analyzing {symbol}/{pair_symbol}", extra={"symbol": symbol, "pair": pair_symbol})
                 self._heartbeat(f"Running cointegration analysis for {symbol}")
                 strategy = CointegrationStrategy(
                     lookback=self.get_config_value('lookback', 90),
@@ -489,9 +489,22 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 )
 
                 self._validate_output(recommendation)
+
+                # Log analysis result with verbose format
+                analysis = recommendation.get('analysis', {})
+                log_message = (
+                    f"🔗 {symbol}/{pair_symbol}\n"
+                    f"   candles:\n"
+                    f"     {symbol}: {len(candles1)}\n"
+                    f"     {pair_symbol}: {len(candles2)}\n"
+                    f"   z_score: {z_score:.4f}\n"
+                    f"   signal: {recommendation['recommendation']}\n"
+                    f"   confidence: {recommendation['confidence']:.2f}\n"
+                    f"   risk_reward: {recommendation.get('rr_ratio', 0):.2f}"
+                )
                 logger.info(
-                    f"🔗 {symbol} cointegration result: {recommendation['recommendation']} (confidence: {recommendation['confidence']:.2f})",
-                    extra={"symbol": symbol, "recommendation": recommendation['recommendation'], "confidence": recommendation['confidence']}
+                    log_message,
+                    extra={"symbol": symbol, "pair": pair_symbol, "recommendation": recommendation['recommendation'], "confidence": recommendation['confidence']}
                 )
                 results.append(recommendation)
                 self._heartbeat(f"Completed {symbol}: {recommendation['recommendation']}")
