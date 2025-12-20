@@ -172,15 +172,18 @@ class TradingEngine:
         """
         Get closed trades for Kelly Criterion calculation.
         Returns trades with pnl_percent field for Kelly analysis.
-        """
-        if not self._db:
-            return []
 
+        CRITICAL: Uses fresh connection to avoid stale connection errors.
+        """
+        conn = None
         try:
+            # Get fresh connection for this operation
+            conn = get_connection()
+
             # Query closed trades with PnL data
             # Join through runs table to filter by instance_id (trades table doesn't have instance_id)
             rows = query(
-                self._db,
+                conn,
                 """
                 SELECT t.pnl_percent FROM trades t
                 JOIN cycles c ON t.cycle_id = c.id
@@ -200,6 +203,9 @@ class TradingEngine:
         except Exception as e:
             logger.warning(f"Failed to fetch closed trades for Kelly: {e}")
             return []
+        finally:
+            if conn:
+                release_connection(conn)
 
     def can_open_trade(self, symbol: str) -> Dict[str, Any]:
         """
@@ -251,8 +257,15 @@ class TradingEngine:
         timestamp: Optional[datetime] = None,
         rr_ratio: Optional[float] = None,
     ) -> None:
-        """Insert a rejected trade into the database for audit trail."""
+        """Insert a rejected trade into the database for audit trail.
+
+        CRITICAL: Uses fresh connection to avoid stale connection errors.
+        """
+        conn = None
         try:
+            # Get fresh connection for this operation
+            conn = get_connection()
+
             # Determine side from recommendation
             recommendation = signal.get("recommendation", "").upper()
             side = "Buy" if recommendation in ("BUY", "LONG") else "Sell"
@@ -265,7 +278,7 @@ class TradingEngine:
             strategy_type = signal.get("strategy_type")
             strategy_name = signal.get("strategy_name")
 
-            execute(self._db, """
+            execute(conn, """
                 INSERT INTO trades (
                     id, recommendation_id, run_id, cycle_id, symbol, side,
                     entry_price, quantity, stop_loss, take_profit,
@@ -301,6 +314,9 @@ class TradingEngine:
             logger.debug(f"Inserted rejected trade {trade_id} for {symbol}: {rejection_reason}")
         except Exception as e:
             logger.error(f"Failed to insert rejected trade {trade_id}: {e}")
+        finally:
+            if conn:
+                release_connection(conn)
 
     def execute_signal(
         self,
@@ -618,16 +634,22 @@ class TradingEngine:
         return trade
 
     def _record_trade(self, trade: Dict[str, Any], sizing: Optional[Dict[str, Any]] = None, strategy: Optional[Any] = None) -> None:
-        """Record trade to database with position sizing metrics and strategy tracking."""
-        if not self._db:
-            return
+        """Record trade to database with position sizing metrics and strategy tracking.
 
+        CRITICAL: Uses fresh connection for each trade to avoid stale connection errors.
+        The engine's self._db connection may be closed by the database server, so we
+        get a new connection for each trade recording operation.
+        """
+        conn = None
         try:
+            # Get fresh connection for this operation
+            conn = get_connection()
+
             # Get timeframe from trade or fallback to recommendation
             timeframe = trade.get("timeframe")
             if not timeframe and trade.get("recommendation_id"):
                 try:
-                    rec_result = query(self._db, """
+                    rec_result = query(conn, """
                         SELECT timeframe FROM recommendations WHERE id = ?
                     """, (trade.get("recommendation_id"),))
                     if rec_result:
@@ -694,7 +716,7 @@ class TradingEngine:
                 import json
                 strategy_metadata_json = json.dumps(strategy_metadata)
 
-            execute(self._db, """
+            execute(conn, """
                 INSERT INTO trades
                 (id, recommendation_id, run_id, cycle_id, symbol, side, entry_price, take_profit,
                  stop_loss, quantity, status, order_id, confidence, rr_ratio, timeframe, dry_run, created_at,
@@ -747,6 +769,9 @@ class TradingEngine:
             ))
         except Exception as e:
             logger.error(f"Failed to record trade: {e}")
+        finally:
+            if conn:
+                release_connection(conn)
 
     def get_status(self) -> Dict[str, Any]:
         """Get engine status."""
