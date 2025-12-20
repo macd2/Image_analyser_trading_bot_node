@@ -670,10 +670,10 @@ class TradingEngine:
             strategy_uuid = trade.get("strategy_uuid")
             strategy_type = trade.get("strategy_type")
             strategy_name = trade.get("strategy_name")
-            ranking_context = trade.get("ranking_context")  # JSON string
+            ranking_context = trade.get("ranking_context")  # Can be dict or JSON string
             strategy_metadata = trade.get("strategy_metadata")  # JSON dict for exit logic
             wallet_balance_at_trade = trade.get("wallet_balance_at_trade")
-            kelly_metrics = trade.get("kelly_metrics")  # JSON string
+            kelly_metrics = trade.get("kelly_metrics")  # Can be dict or JSON string
 
             # Capture position sizing reproducibility data
             position_sizing_inputs = None
@@ -710,11 +710,32 @@ class TradingEngine:
                 "order_id": trade.get("order_id"),
             })
 
+            # Convert dicts to JSON strings for database storage
+            import json
+
             # Convert strategy_metadata dict to JSON string if present
             strategy_metadata_json = None
             if strategy_metadata:
-                import json
-                strategy_metadata_json = json.dumps(strategy_metadata)
+                if isinstance(strategy_metadata, dict):
+                    strategy_metadata_json = json.dumps(strategy_metadata)
+                else:
+                    strategy_metadata_json = strategy_metadata
+
+            # Convert ranking_context dict to JSON string if present
+            ranking_context_json = None
+            if ranking_context:
+                if isinstance(ranking_context, dict):
+                    ranking_context_json = json.dumps(ranking_context)
+                else:
+                    ranking_context_json = ranking_context
+
+            # Convert kelly_metrics dict to JSON string if present
+            kelly_metrics_json = None
+            if kelly_metrics:
+                if isinstance(kelly_metrics, dict):
+                    kelly_metrics_json = json.dumps(kelly_metrics)
+                else:
+                    kelly_metrics_json = kelly_metrics
 
             execute(conn, """
                 INSERT INTO trades
@@ -757,10 +778,10 @@ class TradingEngine:
                 strategy_uuid,
                 strategy_type,
                 strategy_name,
-                ranking_context,
+                ranking_context_json,
                 strategy_metadata_json,
                 wallet_balance_at_trade,
-                kelly_metrics,
+                kelly_metrics_json,
                 # Reproducibility data
                 position_sizing_inputs,
                 position_sizing_outputs,
