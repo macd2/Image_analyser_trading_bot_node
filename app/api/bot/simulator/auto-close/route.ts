@@ -811,8 +811,32 @@ export async function POST() {
           continue; // Skip this trade
         }
 
-      // Fetch all candles from trade creation to now
-      const candles = await getHistoricalCandles(trade.symbol, timeframe, createdAt);
+        // CRITICAL: Use recommendation's analyzed_at (signal time) as the starting point
+        // This ensures we check candles from when the signal was generated, not when trade was created
+        // This is especially important for reset trades where created_at != signal time
+        let signalTime = createdAt;
+
+        if (trade.recommendation_id) {
+          try {
+            const rec = await dbQuery<any>(`
+              SELECT analyzed_at FROM recommendations WHERE id = ?
+            `, [trade.recommendation_id]);
+
+            if (rec && rec.length > 0) {
+              const recAnalyzedAt = normalizeTimestamp(rec[0].analyzed_at);
+              if (recAnalyzedAt !== null) {
+                signalTime = recAnalyzedAt;
+                console.log(`[Auto-Close] Using recommendation signal time: ${new Date(signalTime).toISOString()}`);
+              }
+            }
+          } catch (error) {
+            console.warn(`[Auto-Close] Failed to fetch recommendation time for trade ${trade.id}: ${error}`);
+            // Fall back to created_at
+          }
+        }
+
+      // Fetch all candles from signal time (not creation time) to now
+      const candles = await getHistoricalCandles(trade.symbol, timeframe, signalTime);
 
       console.log(`[Auto-Close] Trade ${trade.id} (${trade.symbol}): entry=${entryPrice}, SL=${stopLoss}, TP=${takeProfit}, timeframe=${timeframe}, created=${new Date(createdAt).toISOString()}, candles_fetched=${candles.length}`);
 
@@ -835,15 +859,15 @@ export async function POST() {
         continue;
       }
 
-      // CRITICAL FIX: Filter candles to only include those at or after trade creation
-      // A trade cannot be filled before it was created!
+      // CRITICAL FIX: Filter candles to only include those at or after signal time
+      // A trade cannot be filled before the signal was generated!
       const candlesAfterCreation = candles.filter(c => {
         const candleTs = normalizeTimestamp(c.timestamp);
-        return candleTs !== null && candleTs >= createdAt;
+        return candleTs !== null && candleTs >= signalTime;
       });
 
       if (candlesAfterCreation.length === 0) {
-        console.log(`[Auto-Close] No candles after trade creation (${new Date(createdAt).toISOString()}), skipping`);
+        console.log(`[Auto-Close] No candles after signal time (${new Date(signalTime).toISOString()}), skipping`);
         results.push({
           trade_id: trade.id,
           symbol: trade.symbol,
@@ -873,8 +897,8 @@ export async function POST() {
       } catch (e) {
         console.error(`[Auto-Close] Error parsing candle timestamps: ${e}`);
       }
-      const tradeCreatedTime = new Date(createdAt).toISOString();
-      console.log(`[Auto-Close] Candle range: ${firstCandleTime} to ${lastCandleTime} (trade created: ${tradeCreatedTime})`);
+      const signalTime_str = new Date(signalTime).toISOString();
+      console.log(`[Auto-Close] Candle range: ${firstCandleTime} to ${lastCandleTime} (signal time: ${signalTime_str})`);
 
       // STEP 1: Check if trade is already filled or find fill candle
       let fillCandleIndex = 0;
