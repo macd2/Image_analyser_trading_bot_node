@@ -45,6 +45,9 @@ interface ClosedTrade {
   risk_per_unit?: number;
   sizing_method?: string;
   risk_pct_used?: number;
+  // Strategy information
+  strategy_type?: string | null;
+  strategy_metadata?: any;
 }
 
 export async function GET() {
@@ -79,7 +82,9 @@ export async function GET() {
         t.confidence_weight,
         t.risk_per_unit,
         t.sizing_method,
-        t.risk_pct_used
+        t.risk_pct_used,
+        t.strategy_type,
+        COALESCE(t.strategy_metadata, rec.strategy_metadata) as strategy_metadata
       FROM trades t
       LEFT JOIN recommendations rec ON t.recommendation_id = rec.id
       LEFT JOIN cycles c ON t.cycle_id = c.id

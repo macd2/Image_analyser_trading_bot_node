@@ -33,6 +33,10 @@ export interface OpenPaperTrade {
   risk_per_unit?: number;
   sizing_method?: string;
   risk_pct_used?: number;
+  // Strategy information
+  strategy_type?: string | null;
+  strategy_name?: string | null;
+  strategy_metadata?: any;
 }
 
 export interface CycleWithTrades {
@@ -91,6 +95,10 @@ interface OpenTradeRow {
   risk_per_unit?: number;
   sizing_method?: string;
   risk_pct_used?: number;
+  // Strategy information
+  strategy_type?: string | null;
+  strategy_name?: string | null;
+  strategy_metadata?: any;
 }
 
 /**
@@ -136,7 +144,10 @@ export async function GET(_request: NextRequest) {
         r.started_at as run_started_at,
         r.status as run_status,
         i.name as instance_name,
-        i.settings as instance_settings
+        i.settings as instance_settings,
+        t.strategy_type,
+        t.strategy_name,
+        COALESCE(t.strategy_metadata, rec.strategy_metadata) as strategy_metadata
       FROM trades t
       LEFT JOIN recommendations rec ON t.recommendation_id = rec.id
       JOIN cycles c ON t.cycle_id = c.id
@@ -210,7 +221,10 @@ export async function GET(_request: NextRequest) {
         confidence: trade.confidence,
         rr_ratio: trade.rr_ratio,
         cycle_id: cycleId,
-        run_id: runId
+        run_id: runId,
+        strategy_type: trade.strategy_type || null,
+        strategy_name: trade.strategy_name || null,
+        strategy_metadata: trade.strategy_metadata || null
       });
     }
 

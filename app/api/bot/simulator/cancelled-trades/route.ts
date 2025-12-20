@@ -41,6 +41,9 @@ interface CancelledTrade {
   dry_run?: number | null;
   position_size_usd?: number;
   risk_amount_usd?: number;
+  // Strategy information
+  strategy_type?: string | null;
+  strategy_metadata?: any;
 }
 
 export async function GET() {
@@ -72,7 +75,9 @@ export async function GET() {
         r.instance_id,
         t.dry_run,
         t.position_size_usd,
-        t.risk_amount_usd
+        t.risk_amount_usd,
+        t.strategy_type,
+        COALESCE(t.strategy_metadata, rec.strategy_metadata) as strategy_metadata
       FROM trades t
       LEFT JOIN recommendations rec ON t.recommendation_id = rec.id
       LEFT JOIN cycles c ON t.cycle_id = c.id
