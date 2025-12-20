@@ -110,6 +110,56 @@ class UnifiedRow:
         return bool(self._dict)
 
 
+def convert_numpy_types(params: Union[Tuple, List]) -> Union[Tuple, List]:
+    """
+    Convert numpy types to native Python types for database compatibility.
+
+    Handles:
+    - np.float64, np.float32 → float
+    - np.int64, np.int32, np.int16, np.int8 → int
+    - np.bool_ → bool
+    - np.ndarray → list
+    - Nested tuples/lists recursively
+
+    Args:
+        params: Query parameters (tuple or list)
+
+    Returns:
+        Parameters with numpy types converted to Python types
+    """
+    try:
+        import numpy as np
+
+        def convert_value(val):
+            """Recursively convert a single value."""
+            if val is None:
+                return val
+
+            # Handle numpy scalar types
+            if isinstance(val, (np.floating, np.float64, np.float32)):
+                return float(val)
+            elif isinstance(val, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+                return int(val)
+            elif isinstance(val, np.bool_):
+                return bool(val)
+            elif isinstance(val, np.ndarray):
+                return val.tolist()
+            # Handle nested tuples/lists
+            elif isinstance(val, (tuple, list)):
+                return type(val)(convert_value(v) for v in val)
+            else:
+                return val
+
+        # Convert all parameters
+        if isinstance(params, (tuple, list)):
+            return type(params)(convert_value(p) for p in params)
+        else:
+            return convert_value(params)
+    except ImportError:
+        # numpy not available, return as-is
+        return params
+
+
 def get_boolean_value(value: bool) -> Union[bool, int]:
     """
     Get the correct boolean value for the current database type.
@@ -377,6 +427,7 @@ def execute(conn, sql: str, params: Tuple = (), auto_commit: bool = True) -> int
     """
     Execute an INSERT/UPDATE/DELETE query.
     Automatically handles parameter placeholder conversion and transaction management.
+    Converts numpy types to native Python types for database compatibility.
 
     Args:
         conn: Database connection
@@ -387,6 +438,9 @@ def execute(conn, sql: str, params: Tuple = (), auto_commit: bool = True) -> int
     Returns:
         Number of affected rows
     """
+    # Convert numpy types to Python types
+    params = convert_numpy_types(params)
+
     converted_sql, converted_params = convert_placeholders(sql, params)
     cursor = conn.cursor()
 
@@ -415,6 +469,7 @@ def query(conn, sql: str, params: Tuple = ()) -> List[UnifiedRow]:
     """
     Execute a SELECT query and return all rows.
     Automatically handles parameter placeholder conversion.
+    Converts numpy types to native Python types for database compatibility.
 
     Args:
         conn: Database connection
@@ -424,6 +479,9 @@ def query(conn, sql: str, params: Tuple = ()) -> List[UnifiedRow]:
     Returns:
         List of UnifiedRow objects (support both index and key access)
     """
+    # Convert numpy types to Python types
+    params = convert_numpy_types(params)
+
     converted_sql, converted_params = convert_placeholders(sql, params)
     cursor = conn.cursor()
     cursor.execute(converted_sql, converted_params)
@@ -435,6 +493,7 @@ def query_one(conn, sql: str, params: Tuple = ()) -> Optional[UnifiedRow]:
     """
     Execute a SELECT query and return one row.
     Automatically handles parameter placeholder conversion.
+    Converts numpy types to native Python types for database compatibility.
 
     Args:
         conn: Database connection
@@ -444,6 +503,9 @@ def query_one(conn, sql: str, params: Tuple = ()) -> Optional[UnifiedRow]:
     Returns:
         UnifiedRow object (supports both index and key access) or None
     """
+    # Convert numpy types to Python types
+    params = convert_numpy_types(params)
+
     converted_sql, converted_params = convert_placeholders(sql, params)
     cursor = conn.cursor()
     cursor.execute(converted_sql, converted_params)
