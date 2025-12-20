@@ -180,7 +180,6 @@ class CandleAdapter:
                             if len(cached) >= limit * 0.8:  # Got at least 80% of requested
                                 # Reverse to get chronological order
                                 cached = list(reversed(cached))
-                                print(f"[CandleAdapter] {symbol} {timeframe} | cache | {len(cached)} candles | ✅", flush=True)
                                 self.logger.debug(
                                     f"Got {len(cached)} candles from cache for {symbol} {timeframe}",
                                     extra={"symbol": symbol, "instance_id": self.instance_id}
@@ -316,7 +315,6 @@ class CandleAdapter:
                         await self._cache_candles_async(symbol, timeframe, candles)
 
                     if candles:
-                        print(f"[CandleAdapter] {symbol} {timeframe} | api | {len(candles)} candles | ✅", flush=True)
                         self.logger.debug(
                             f"Fetched {len(candles)} candles from API for {symbol} {timeframe}",
                             extra={"symbol": symbol, "instance_id": self.instance_id}
