@@ -583,11 +583,13 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         take_profit = None
         risk_reward = 0
 
+        # Get z_entry config value early (needed for adaptive SL calculation later)
+        z_entry = self.get_config_value('z_entry', 2.0)
+
         if (signal_direction != 0 and pair_candles and beta is not None and
             spread_mean is not None and spread_std is not None):
             try:
                 pair_price = pair_candles[-1]['close']
-                z_entry = self.get_config_value('z_entry', 2.0)
                 min_sl_buffer = self.get_config_value('min_sl_buffer', 1.5)
 
                 # Calculate levels using cointegration formula
