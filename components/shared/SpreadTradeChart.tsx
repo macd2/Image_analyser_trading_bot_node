@@ -164,6 +164,13 @@ function ZScorePane({
     is_mean_reverting: point.is_mean_reverting,
   }))
 
+  // Calculate dynamic Y-axis domain based on data
+  const zScores = data.zScores.map(p => p.z_score)
+  const minZ = Math.min(...zScores)
+  const maxZ = Math.max(...zScores)
+  const padding = (maxZ - minZ) * 0.15 // 15% padding
+  const yDomain = [minZ - padding, maxZ + padding]
+
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
       <h3 className="text-sm font-semibold text-white mb-3">Z-Score (Entry/Exit Signals)</h3>
@@ -171,7 +178,7 @@ function ZScorePane({
         <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis dataKey="timeLabel" stroke="#94a3b8" />
-          <YAxis stroke="#94a3b8" />
+          <YAxis stroke="#94a3b8" domain={yDomain} />
           <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }}
             labelStyle={{ color: '#e2e8f0' }}
@@ -255,6 +262,13 @@ function SpreadPricePane({
     lower_stop: point.spread_mean - 3.5 * point.spread_std,
   }))
 
+  // Calculate dynamic Y-axis domain based on data
+  const spreads = data.spreads.map(p => p.spread)
+  const minSpread = Math.min(...spreads)
+  const maxSpread = Math.max(...spreads)
+  const padding = (maxSpread - minSpread) * 0.15 // 15% padding
+  const yDomain = [minSpread - padding, maxSpread + padding]
+
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
       <h3 className="text-sm font-semibold text-white mb-3">Spread Price (Risk Management)</h3>
@@ -262,7 +276,7 @@ function SpreadPricePane({
         <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis dataKey="timeLabel" stroke="#94a3b8" />
-          <YAxis stroke="#94a3b8" />
+          <YAxis stroke="#94a3b8" domain={yDomain} />
           <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }}
             labelStyle={{ color: '#e2e8f0' }}
@@ -345,6 +359,20 @@ function AssetPricePane({
     price_y: point.price_y,
   }))
 
+  // Calculate dynamic Y-axis domains for both assets
+  const pricesX = data.prices.map(p => p.price_x)
+  const pricesY = data.prices.map(p => p.price_y)
+
+  const minX = Math.min(...pricesX)
+  const maxX = Math.max(...pricesX)
+  const paddingX = (maxX - minX) * 0.15
+  const yDomainLeft = [minX - paddingX, maxX + paddingX]
+
+  const minY = Math.min(...pricesY)
+  const maxY = Math.max(...pricesY)
+  const paddingY = (maxY - minY) * 0.15
+  const yDomainRight = [minY - paddingY, maxY + paddingY]
+
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
       <h3 className="text-sm font-semibold text-white mb-3">Asset Prices (Context)</h3>
@@ -352,8 +380,8 @@ function AssetPricePane({
         <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis dataKey="timeLabel" stroke="#94a3b8" />
-          <YAxis stroke="#94a3b8" yAxisId="left" />
-          <YAxis stroke="#94a3b8" yAxisId="right" orientation="right" />
+          <YAxis stroke="#94a3b8" yAxisId="left" domain={yDomainLeft} />
+          <YAxis stroke="#94a3b8" yAxisId="right" orientation="right" domain={yDomainRight} />
           <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }}
             labelStyle={{ color: '#e2e8f0' }}
