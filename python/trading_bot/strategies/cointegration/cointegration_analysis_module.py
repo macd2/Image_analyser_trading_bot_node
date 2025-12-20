@@ -260,9 +260,9 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         logger.info(f"🔗 Cointegration Strategy: Starting analysis cycle for {len(symbols_to_analyze)} symbols (timeframe: {analysis_timeframe})", extra={"cycle_id": cycle_id})
         self._heartbeat(f"Starting cointegration analysis for {len(symbols_to_analyze)} symbols (timeframe: {analysis_timeframe})")
 
-        for symbol in symbols_to_analyze:
+        for idx, symbol in enumerate(symbols_to_analyze, 1):
             try:
-                logger.info(f"🔗 Analyzing {symbol} for cointegration", extra={"symbol": symbol, "cycle_id": cycle_id})
+                logger.info(f"🔗 [{idx}/{len(symbols_to_analyze)}] Analyzing {symbol} for cointegration", extra={"symbol": symbol, "cycle_id": cycle_id})
                 self._heartbeat(f"Analyzing {symbol}")
 
                 # Get pair symbol from config
