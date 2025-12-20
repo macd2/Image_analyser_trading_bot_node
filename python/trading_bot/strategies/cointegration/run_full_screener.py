@@ -114,17 +114,23 @@ async def fetch_all_candles(symbols: list, batch_size: int = 10, candle_limit: i
         # Fetch batch in parallel
         results = await asyncio.gather(*[task for _, task in tasks], return_exceptions=True)
 
-        # Process results (CandleAdapter already logs each symbol)
+        # Collect batch summary with detailed status for each symbol
+        batch_summary = []
         for (symbol, _), result in zip(tasks, results):
             if isinstance(result, Exception):
+                batch_summary.append(f"❌ {symbol}")
                 logger.warning(f"⚠️  [SCREENER] {symbol} - Error: {str(result)[:50]}")
             elif result:
                 symbol_candles[symbol] = result
+                batch_summary.append(f"✅ {symbol} - 1h - {len(result)} candles - api")
             else:
+                batch_summary.append(f"⊘ {symbol}")
                 logger.warning(f"⚠️  [SCREENER] {symbol} - No candles")
 
-        # Log batch completion
-        logger.info(f"📦 [SCREENER] Batch {batch_num}/{total_batches} complete ({len([s for s in batch if s in symbol_candles])}/{len(batch)} symbols)")
+        # Log batch summary with progress counter
+        logger.info(f"📦 [SCREENER] Batch {batch_num}/{total_batches}:")
+        for item in batch_summary:
+            logger.info(f"  {item}")
 
     return symbol_candles
 
