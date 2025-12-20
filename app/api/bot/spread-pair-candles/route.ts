@@ -74,7 +74,15 @@ export async function GET(request: NextRequest) {
         if (fetchedCandles && fetchedCandles.length > 0) {
           // Store fetched candles in database
           await storeCandlesInDatabase(fetchedCandles, pairSymbol, timeframe);
-          candles = fetchedCandles;
+          // Convert fetched candles to the same format as database query
+          candles = fetchedCandles.map(c => ({
+            time: c.start_time,
+            open: c.open_price,
+            high: c.high_price,
+            low: c.low_price,
+            close: c.close_price,
+            volume: c.volume,
+          }));
           console.log(`[Spread Pair Candles] Fetched and stored ${fetchedCandles.length} candles for ${pairSymbol}`);
         }
       } catch (fetchError) {
@@ -151,8 +159,9 @@ async function fetchCandlesFromExchange(
     const bybitTimeframe = timeframeToBybit(timeframe);
 
     // Fetch from Bybit API
+    // Note: Bybit API returns most recent candles first, we'll fetch and filter
     const response = await fetch(
-      `https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=${bybitTimeframe}&start=${Math.floor(startTimeMs / 1000)}&end=${Math.floor(endTimeMs / 1000)}&limit=1000`
+      `https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=${bybitTimeframe}&limit=1000`
     );
 
     if (!response.ok) {
@@ -164,15 +173,24 @@ async function fetchCandlesFromExchange(
       return [];
     }
 
-    // Convert Bybit format to our format
-    return data.result.list.map((candle: any[]) => ({
-      time: parseInt(candle[0]) * 1000, // Convert to milliseconds
-      open: parseFloat(candle[1]),
-      high: parseFloat(candle[2]),
-      low: parseFloat(candle[3]),
-      close: parseFloat(candle[4]),
-      volume: parseFloat(candle[5]),
-    }));
+    // Convert Bybit format to our format and filter by time range
+    const candles = data.result.list
+      .map((candle: any[]) => {
+        const startTimeMs = parseInt(candle[0]);
+        return {
+          start_time: startTimeMs,
+          open_price: parseFloat(candle[1]),
+          high_price: parseFloat(candle[2]),
+          low_price: parseFloat(candle[3]),
+          close_price: parseFloat(candle[4]),
+          volume: parseFloat(candle[5]),
+          turnover: parseFloat(candle[6]) || 0,
+        };
+      })
+      .filter((candle: any) => candle.start_time >= startTimeMs && candle.start_time <= endTimeMs)
+      .sort((a: any, b: any) => a.start_time - b.start_time);
+
+    return candles;
   } catch (error) {
     console.error(`Failed to fetch candles from Bybit for ${symbol}:`, error);
     throw error;
@@ -219,13 +237,13 @@ async function storeCandlesInDatabase(
           symbol,
           timeframe,
           'spot',
-          candle.time,
-          candle.open,
-          candle.high,
-          candle.low,
-          candle.close,
+          candle.start_time,
+          candle.open_price,
+          candle.high_price,
+          candle.low_price,
+          candle.close_price,
           candle.volume,
-          0 // turnover not available from API
+          candle.turnover || 0
         ]
       );
     }
