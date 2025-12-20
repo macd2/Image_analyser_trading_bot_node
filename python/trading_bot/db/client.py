@@ -26,7 +26,7 @@ from collections.abc import Mapping
 import threading
 
 # Database configuration
-DB_TYPE = os.getenv('DB_TYPE', 'sqlite')
+DB_TYPE = os.getenv('DB_TYPE', 'postgres')
 DATABASE_URL = os.getenv('DATABASE_URL', '')
 
 # PostgreSQL connection pool (singleton)

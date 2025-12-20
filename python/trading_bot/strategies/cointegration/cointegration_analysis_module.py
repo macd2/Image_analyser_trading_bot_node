@@ -477,15 +477,26 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 # Compute z_history for adaptive SL calculation
                 z_history = [abs((s - spread_mean) / spread_std) for s in spread] if spread_std > 0 else []
 
+                # Convert aligned dataframe back to candle format for price level calculation
+                # This ensures we use prices at the same timestamp as the signal
+                aligned_candles_1 = [
+                    {'timestamp': ts, 'close': close}
+                    for ts, close in zip(df['timestamp'], df['close_1'])
+                ]
+                aligned_candles_2 = [
+                    {'timestamp': ts, 'close': close}
+                    for ts, close in zip(df['timestamp'], df['close_2'])
+                ]
+
                 # Convert to analyzer format with config values
                 recommendation = self._convert_signal_to_recommendation(
                     symbol=symbol,
                     signal=latest_signal,
-                    candles=candles1,
+                    candles=aligned_candles_1,
                     cycle_id=cycle_id,
                     analysis_timeframe=analysis_timeframe,
                     confidence=confidence,
-                    pair_candles=candles2,
+                    pair_candles=aligned_candles_2,
                     pair_symbol=pair_symbol,
                     beta=beta,
                     spread_mean=spread_mean,
@@ -605,13 +616,20 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 spread_sl = spread_levels['stop_loss']
                 spread_tp = spread_levels['take_profit_2']  # Use full reversion target
 
-                # Convert spread levels to PAIR SYMBOL (Y) prices for database storage
-                # Formula: Y = spread + beta * X
-                # These prices represent the pair symbol (Y), not the primary symbol (X)
+                # Convert spread levels to PRIMARY SYMBOL (X) prices for database storage
+                # Formula: X = (Y - spread) / beta
+                # These prices represent the primary symbol (X) being traded
                 # The actual trading is done in spread space via z-score monitoring
-                entry_price = spread_entry + beta_val * current_price
-                stop_loss = spread_sl + beta_val * current_price
-                take_profit = spread_tp + beta_val * current_price
+                # Note: For SHORT spreads with negative beta, Y prices would be negative
+                # so we use X prices which are always positive and meaningful
+                if beta_val != 0:
+                    entry_price = (pair_candles[-1]['close'] - spread_entry) / beta_val
+                    stop_loss = (pair_candles[-1]['close'] - spread_sl) / beta_val
+                    take_profit = (pair_candles[-1]['close'] - spread_tp) / beta_val
+                else:
+                    entry_price = current_price
+                    stop_loss = None
+                    take_profit = None
 
                 # Calculate risk-reward
                 if stop_loss and take_profit:
@@ -648,6 +666,9 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 "z_score_at_entry": float(z_score),
                 "pair_symbol": pair_symbol,
                 "z_exit_threshold": float(z_exit),
+                # Store actual prices at entry for recalculation capability
+                "price_x_at_entry": float(current_price),
+                "price_y_at_entry": float(pair_candles[-1]['close']) if pair_candles else None,
             }
 
         return {
