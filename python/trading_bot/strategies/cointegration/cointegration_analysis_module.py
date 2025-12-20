@@ -696,6 +696,13 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             "strategy_name": self.STRATEGY_NAME,
             # Add strategy metadata for exit logic and monitoring
             "strategy_metadata": strategy_metadata,
+            # Add validation results for reproducibility
+            "validation_results": {
+                "z_score_valid": z_score is not None,
+                "price_levels_valid": entry_price is not None and stop_loss is not None and take_profit is not None,
+                "mean_reverting": signal.get('is_mean_reverting', False),
+                "confidence_valid": 0 <= confidence <= 1,
+            },
         }
 
     def validate_signal(self, signal: Dict[str, Any]) -> bool:
