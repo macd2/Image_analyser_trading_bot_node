@@ -446,7 +446,7 @@ export default function TradeChart({ trade, height = 400, mode = 'live' }: Trade
         // For SHORT: if exit is above close, position above; if below, position below
         const candleClose = exitCandle.close as number
         const exitAboveCandle = trade.exit_price > candleClose
-        const markerPosition = exitAboveCandle ? 'aboveBar' : 'belowBar'
+        const markerPosition: 'aboveBar' | 'belowBar' = exitAboveCandle ? 'aboveBar' : 'belowBar'
 
         markers.push({
           time: exitCandle.time,

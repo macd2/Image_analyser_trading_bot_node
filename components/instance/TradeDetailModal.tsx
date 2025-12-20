@@ -249,11 +249,11 @@ export function TradeDetailModal({ isOpen, onClose, trade }: TradeDetailModalPro
               // Position marker based on where exit price is relative to candle close
               const candleClose = closestCandle.close as number
               const exitAboveCandle = trade.exit_price > candleClose
-              const markerPosition = exitAboveCandle ? 'aboveBar' : 'belowBar'
+              const markerPosition: 'aboveBar' | 'belowBar' = exitAboveCandle ? 'aboveBar' : 'belowBar'
 
               markers.push({
                 time: closestCandle.time,
-                position: markerPosition as const,
+                position: markerPosition,
                 color: trade.pnl !== null && trade.pnl >= 0 ? '#22c55e' : '#ef4444',
                 shape: isLong ? 'arrowDown' as const : 'arrowUp' as const,
                 text: 'Exit',

@@ -318,7 +318,7 @@ export default function LiveTradeChart({ trade, height = 400 }: LiveTradeChartPr
         // Position marker based on where exit price is relative to candle close
         const candleClose = closestExit.close as number
         const exitAboveCandle = trade.exit_price > candleClose
-        const markerPosition = exitAboveCandle ? 'aboveBar' : 'belowBar'
+        const markerPosition: 'aboveBar' | 'belowBar' = exitAboveCandle ? 'aboveBar' : 'belowBar'
 
         markers.push({
           time: closestExit.time,
