@@ -48,6 +48,9 @@ export async function GET(request: NextRequest) {
     const timestampMs = parseInt(timestamp, 10);
     const timeframeMs = getTimeframeMs(timeframe);
 
+    // Convert Bybit format to our format if needed
+    const dbTimeframe = bybitToOurFormat(timeframe);
+
     // Calculate time window
     const startTime = timestampMs - (before * timeframeMs);
     const endTime = timestampMs + (after * timeframeMs);
@@ -64,7 +67,7 @@ export async function GET(request: NextRequest) {
       FROM klines
       WHERE symbol = ? AND timeframe = ? AND start_time >= ? AND start_time <= ?
       ORDER BY start_time ASC
-    `, [symbol, timeframe, startTime, endTime]);
+    `, [symbol, dbTimeframe, startTime, endTime]);
 
     // Ensure numeric types (PostgreSQL may return strings)
     // CRITICAL: Convert milliseconds to seconds for lightweight-charts
@@ -96,6 +99,30 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Convert Bybit format timeframe to our format
+ * Bybit uses: 1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, W, M
+ * We use: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 12h, 1d, 1w, 1M
+ */
+function bybitToOurFormat(timeframe: string): string {
+  const map: Record<string, string> = {
+    '1': '1m',
+    '3': '3m',
+    '5': '5m',
+    '15': '15m',
+    '30': '30m',
+    '60': '1h',
+    '120': '2h',
+    '240': '4h',
+    '360': '6h',
+    '720': '12h',
+    'D': '1d',
+    'W': '1w',
+    'M': '1M',
+  };
+  return map[timeframe] || timeframe; // Return as-is if already in our format
 }
 
 /**
