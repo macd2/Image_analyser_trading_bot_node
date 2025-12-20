@@ -146,6 +146,11 @@ class PromptStrategy(BaseAnalysisModule):
         recommendations: List[Dict[str, Any]] = []
 
         try:
+            # Check if stop was requested before starting
+            if self._stop_requested:
+                self.logger.info("Stop requested - aborting analysis cycle")
+                return recommendations
+
             # STEP 0: Clean outdated charts
             self.logger.info(f"\n🧹 STEP 0: Cleaning outdated charts...")
             charts_dir = self.config.paths.charts if self.config.paths else "data/charts"
@@ -214,13 +219,18 @@ class PromptStrategy(BaseAnalysisModule):
         cycle_id: str,
     ) -> List[Dict[str, Any]]:
         """Analyze all charts in parallel using asyncio.gather()."""
+        # Check if stop was requested before starting parallel analysis
+        if self._stop_requested:
+            self.logger.info("Stop requested - aborting parallel analysis")
+            return []
+
         tasks = [
             self._analyze_chart_async(symbol, path, timeframe, cycle_id)
             for symbol, path in chart_paths.items()
         ]
-        
+
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         # Filter out exceptions and return valid results
         recommendations = []
         for result in results:
@@ -229,7 +239,7 @@ class PromptStrategy(BaseAnalysisModule):
                 continue
             if result and not result.get("skipped"):
                 recommendations.append(result)
-        
+
         return recommendations
     
     async def _analyze_chart_async(

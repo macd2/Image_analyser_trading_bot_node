@@ -69,6 +69,9 @@ class BaseAnalysisModule(ABC):
 
         # Initialize candle adapter
         self._init_candle_adapter()
+
+        # Stop signal for graceful shutdown
+        self._stop_requested = False
     
     def _convert_setting_type(self, key: str, value: Any) -> Any:
         """
@@ -326,7 +329,17 @@ class BaseAnalysisModule(ABC):
                 self.heartbeat_callback(message=message, **kwargs)
             except Exception as e:
                 self.logger.warning(f"Heartbeat callback failed: {e}")
-    
+
+    def request_stop(self) -> None:
+        """
+        Request graceful stop of the strategy analysis.
+
+        Used when the bot is being stopped to halt long-running analysis cycles.
+        Strategies should check this flag in their loops and exit gracefully.
+        """
+        self._stop_requested = True
+        self.logger.info("Stop requested for strategy analysis")
+
     @abstractmethod
     async def run_analysis_cycle(
         self,

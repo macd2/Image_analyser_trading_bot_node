@@ -74,6 +74,11 @@ class AlexAnalysisModule(BaseAnalysisModule):
         configured_timeframes = self.get_config_value('timeframes', ['1h', '4h', '1d'])
 
         for symbol in symbols:
+            # Check if bot should stop (graceful shutdown)
+            if self._stop_requested:
+                self.logger.info(f"Stop requested - halting analysis at symbol {symbol}")
+                break
+
             try:
                 # Send heartbeat: starting analysis for symbol
                 self._heartbeat(f"Analyzing {symbol}...", symbol=symbol)

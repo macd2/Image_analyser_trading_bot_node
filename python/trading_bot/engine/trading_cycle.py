@@ -159,6 +159,9 @@ class TradingCycle:
     def stop(self) -> None:
         """Stop the trading cycle loop."""
         self._running = False
+        # Request stop from strategy to halt long-running analysis
+        if self.strategy:
+            self.strategy.request_stop()
         logger.info("Trading cycle stopped")
 
     def _get_existing_recommendations_for_boundary(self, symbols: List[str]) -> Dict[str, Dict[str, Any]]:

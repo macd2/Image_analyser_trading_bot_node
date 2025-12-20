@@ -261,6 +261,11 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         self._heartbeat(f"Starting cointegration analysis for {len(symbols_to_analyze)} symbols (timeframe: {analysis_timeframe})")
 
         for idx, symbol in enumerate(symbols_to_analyze, 1):
+            # Check if bot should stop (graceful shutdown)
+            if hasattr(self, '_stop_requested') and self._stop_requested:
+                logger.info(f"🔗 Stop requested - halting analysis at symbol {idx}/{len(symbols_to_analyze)}")
+                break
+
             try:
                 logger.info(f"🔗 [{idx}/{len(symbols_to_analyze)}] Analyzing {symbol} for cointegration", extra={"symbol": symbol, "cycle_id": cycle_id})
                 self._heartbeat(f"Analyzing {symbol}")
