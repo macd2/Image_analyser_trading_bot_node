@@ -308,25 +308,25 @@ function SpreadPricePane({
             y={metadata.spread_mean + 2 * metadata.spread_std}
             stroke="#ef4444"
             strokeDasharray="3 3"
-            label="Entry (μ+2σ)"
+            label="Short Entry (μ+2σ)"
           />
           <ReferenceLine
             y={metadata.spread_mean - 2 * metadata.spread_std}
             stroke="#10b981"
             strokeDasharray="3 3"
-            label="Entry (μ-2σ)"
+            label="Long Entry (μ-2σ)"
           />
           <ReferenceLine
             y={metadata.spread_mean + 3.5 * metadata.spread_std}
             stroke="#8b5cf6"
             strokeDasharray="2 2"
-            label="Stop (μ+3.5σ)"
+            label="Short Stop (μ+3.5σ)"
           />
           <ReferenceLine
             y={metadata.spread_mean - 3.5 * metadata.spread_std}
             stroke="#8b5cf6"
             strokeDasharray="2 2"
-            label="Stop (μ-3.5σ)"
+            label="Long Stop (μ-3.5σ)"
           />
 
           <Line
