@@ -1018,9 +1018,10 @@ class TradingCycle:
                      raw_response, analyzed_at, cycle_boundary, created_at,
                      chart_hash, model_version, model_params, market_data_snapshot,
                      strategy_config_snapshot, confidence_components, setup_quality_components,
-                     market_environment_components, validation_results, strategy_metadata)
+                     market_environment_components, validation_results, strategy_metadata,
+                     strategy_uuid, strategy_type, strategy_name, setup_quality, market_environment)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     rec_id,
                     result.get("cycle_id"),  # Link to parent cycle
@@ -1052,6 +1053,12 @@ class TradingCycle:
                     market_environment_components,
                     validation_results,
                     strategy_metadata_json,
+                    # Strategy tracking and traceability
+                    result.get("strategy_uuid"),
+                    result.get("strategy_type"),
+                    result.get("strategy_name"),
+                    float(convert_numpy_types(result.get("setup_quality", 0.5))) if result.get("setup_quality") is not None else None,
+                    float(convert_numpy_types(result.get("market_environment", 0.5))) if result.get("market_environment") is not None else None,
                 ))
                 logger.info(f"📝 Recorded recommendation {rec_id} with full audit trail (prompt: {prompt_name}, model: {model_name})")
                 return rec_id
