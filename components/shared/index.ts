@@ -4,5 +4,7 @@ export { StatusBadge } from './StatusBadge'
 export { DataCard } from './DataCard'
 export { default as TradeChart } from './TradeChart'
 export { default as TradeChartModal } from './TradeChartModal'
+export { default as SpreadTradeChart } from './SpreadTradeChart'
 export type { TradeData } from './TradeChart'
+export type { SpreadTradeData, StrategyMetadata } from './SpreadTradeChart.types'
 
