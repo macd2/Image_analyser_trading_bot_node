@@ -628,6 +628,44 @@ async function checkStrategyExit(
         : {}
     };
 
+    // Fetch pair candles if this is a spread-based trade
+    let pairCandlesData: any[] = [];
+    const metadata = tradeData.strategy_metadata;
+    if (metadata && metadata.pair_symbol) {
+      try {
+        const pairSymbol = metadata.pair_symbol;
+        // Get the timeframe from the first candle or default to '1h'
+        const timeframe = candles.length > 0 ? '1h' : '1h';
+
+        // Get the time range from the candles
+        if (candles.length > 0) {
+          const startTime = candles[0].timestamp;
+          const endTime = candles[candles.length - 1].timestamp;
+
+          // Query pair candles from klines table
+          const pairCandles = await dbQuery<any>(`
+            SELECT
+              start_time as timestamp,
+              open_price as open,
+              high_price as high,
+              low_price as low,
+              close_price as close
+            FROM klines
+            WHERE symbol = ? AND timeframe = ? AND start_time >= ? AND start_time <= ?
+            ORDER BY start_time ASC
+          `, [pairSymbol, timeframe, startTime, endTime]);
+
+          pairCandlesData = pairCandles || [];
+          if (pairCandlesData.length > 0) {
+            console.log(`[Auto-Close] Fetched ${pairCandlesData.length} pair candles for ${pairSymbol}`);
+          }
+        }
+      } catch (error) {
+        console.warn(`[Auto-Close] Failed to fetch pair candles: ${error}`);
+        // Continue without pair candles - strategy will fetch from API if needed
+      }
+    }
+
     // Call Python script
     return new Promise((resolve) => {
       const pythonScript = path.join(process.cwd(), 'python', 'check_strategy_exit.py');
@@ -640,7 +678,8 @@ async function checkStrategyExit(
         trade.id,
         strategyName,
         JSON.stringify(candlesData),
-        JSON.stringify(tradeData)
+        JSON.stringify(tradeData),
+        JSON.stringify(pairCandlesData)
       ], {
         cwd: process.cwd(),
         env: { ...process.env }

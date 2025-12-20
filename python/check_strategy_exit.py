@@ -22,13 +22,21 @@ def check_strategy_exit(
     trade_id: str,
     strategy_name: str,
     candles: List[Dict[str, Any]],
-    trade_data: Dict[str, Any]
+    trade_data: Dict[str, Any],
+    pair_candles: List[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Check if trade should exit using strategy.should_exit().
 
     IMPORTANT: This function ONLY handles non-price-based strategies.
     Price-based strategies should use TP/SL logic in the simulator.
+
+    Args:
+        trade_id: Trade ID
+        strategy_name: Name of the strategy
+        candles: List of primary symbol candles
+        trade_data: Trade data dict
+        pair_candles: Optional list of pair symbol candles for spread-based strategies
     """
     try:
         # Validate inputs
@@ -136,8 +144,8 @@ def check_strategy_exit(
             }
 
         # Iterate through candles and check for exit
-        # NOTE: For non-price-based strategies (e.g., cointegration), the strategy's should_exit()
-        # method is responsible for fetching any additional data (pair candles, etc.) from live API
+        # NOTE: For spread-based strategies, pair_candles are provided from the database cache
+        # If not available, the strategy's should_exit() method can fetch from live API as fallback
         for i, candle in enumerate(candles):
             try:
                 current_candle_dict = {
@@ -148,12 +156,27 @@ def check_strategy_exit(
                     "close": candle.get("close"),
                 }
 
+                # Find corresponding pair candle by timestamp
+                pair_candle_dict = None
+                if pair_candles:
+                    for pair_candle in pair_candles:
+                        if pair_candle.get("timestamp") == current_candle_dict.get("timestamp"):
+                            pair_candle_dict = {
+                                "timestamp": pair_candle.get("timestamp"),
+                                "open": pair_candle.get("open"),
+                                "high": pair_candle.get("high"),
+                                "low": pair_candle.get("low"),
+                                "close": pair_candle.get("close"),
+                            }
+                            break
+
                 # Call strategy.should_exit()
-                # Strategy is responsible for fetching pair candles or other data from live API
+                # For spread-based strategies, pair_candle is provided from database cache
+                # If not available, strategy can fetch from live API as fallback
                 exit_result = strategy.should_exit(
                     trade=trade_data,
                     current_candle=current_candle_dict,
-                    pair_candle=None,  # Strategy will fetch if needed
+                    pair_candle=pair_candle_dict,  # Provided from database cache if available
                 )
 
                 # Validate exit_result
@@ -201,22 +224,24 @@ def check_strategy_exit(
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 5:
-        print(json.dumps({"error": "Usage: check_strategy_exit.py <trade_id> <strategy_name> <candles_json> <trade_data_json>"}))
+    if len(sys.argv) < 5:
+        print(json.dumps({"error": "Usage: check_strategy_exit.py <trade_id> <strategy_name> <candles_json> <trade_data_json> [pair_candles_json]"}))
         sys.exit(1)
 
     trade_id = sys.argv[1]
     strategy_name = sys.argv[2]
     candles_json = sys.argv[3]
     trade_data_json = sys.argv[4]
+    pair_candles_json = sys.argv[5] if len(sys.argv) > 5 else "[]"
 
     try:
         candles = json.loads(candles_json)
         trade_data = json.loads(trade_data_json)
+        pair_candles = json.loads(pair_candles_json)
     except json.JSONDecodeError as e:
         print(json.dumps({"error": f"Invalid JSON: {e}"}))
         sys.exit(1)
 
-    result = check_strategy_exit(trade_id, strategy_name, candles, trade_data)
+    result = check_strategy_exit(trade_id, strategy_name, candles, trade_data, pair_candles)
     print(json.dumps(result))
 
