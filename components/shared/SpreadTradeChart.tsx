@@ -171,6 +171,11 @@ function ZScorePane({
   const padding = (maxZ - minZ) * 0.15 // 15% padding
   const yDomain = [minZ - padding, maxZ + padding]
 
+  // Generate nice tick values
+  const tickCount = 5
+  const tickInterval = (yDomain[1] - yDomain[0]) / (tickCount - 1)
+  const yTicks = Array.from({ length: tickCount }, (_, i) => yDomain[0] + i * tickInterval)
+
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
       <h3 className="text-sm font-semibold text-white mb-3">Z-Score (Entry/Exit Signals)</h3>
@@ -178,7 +183,12 @@ function ZScorePane({
         <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis dataKey="timeLabel" stroke="#94a3b8" />
-          <YAxis stroke="#94a3b8" domain={yDomain} />
+          <YAxis
+            stroke="#94a3b8"
+            type="number"
+            domain={[yDomain[0], yDomain[1]]}
+            ticks={yTicks}
+          />
           <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }}
             labelStyle={{ color: '#e2e8f0' }}
@@ -262,6 +272,12 @@ function SpreadPricePane({
     lower_stop: point.spread_mean - 3.5 * point.spread_std,
   }))
 
+  // Debug logging
+  if (chartData.length > 0) {
+    console.log('[SpreadPricePane] First data point:', chartData[0])
+    console.log('[SpreadPricePane] Spread values:', data.spreads.slice(0, 3).map(p => p.spread))
+  }
+
   // Calculate dynamic Y-axis domain based on data AND reference lines
   const spreads = data.spreads.map(p => p.spread)
   const minSpread = Math.min(...spreads)
@@ -276,6 +292,11 @@ function SpreadPricePane({
   const padding = (maxValue - minValue) * 0.15 // 15% padding
   const yDomain = [minValue - padding, maxValue + padding]
 
+  // Generate nice tick values
+  const tickCount = 5
+  const tickInterval = (yDomain[1] - yDomain[0]) / (tickCount - 1)
+  const yTicks = Array.from({ length: tickCount }, (_, i) => yDomain[0] + i * tickInterval)
+
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
       <h3 className="text-sm font-semibold text-white mb-3">Spread Price (Risk Management)</h3>
@@ -283,7 +304,12 @@ function SpreadPricePane({
         <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis dataKey="timeLabel" stroke="#94a3b8" />
-          <YAxis stroke="#94a3b8" domain={yDomain} />
+          <YAxis
+            stroke="#94a3b8"
+            type="number"
+            domain={[yDomain[0], yDomain[1]]}
+            ticks={yTicks}
+          />
           <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }}
             labelStyle={{ color: '#e2e8f0' }}
@@ -380,6 +406,15 @@ function AssetPricePane({
   const paddingY = (maxY - minY) * 0.15
   const yDomainRight = [minY - paddingY, maxY + paddingY]
 
+  // Generate tick values for both axes
+  const tickCountLeft = 5
+  const tickIntervalLeft = (yDomainLeft[1] - yDomainLeft[0]) / (tickCountLeft - 1)
+  const yTicksLeft = Array.from({ length: tickCountLeft }, (_, i) => yDomainLeft[0] + i * tickIntervalLeft)
+
+  const tickCountRight = 5
+  const tickIntervalRight = (yDomainRight[1] - yDomainRight[0]) / (tickCountRight - 1)
+  const yTicksRight = Array.from({ length: tickCountRight }, (_, i) => yDomainRight[0] + i * tickIntervalRight)
+
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
       <h3 className="text-sm font-semibold text-white mb-3">Asset Prices (Context)</h3>
@@ -387,8 +422,21 @@ function AssetPricePane({
         <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis dataKey="timeLabel" stroke="#94a3b8" />
-          <YAxis stroke="#94a3b8" yAxisId="left" domain={yDomainLeft} />
-          <YAxis stroke="#94a3b8" yAxisId="right" orientation="right" domain={yDomainRight} />
+          <YAxis
+            stroke="#94a3b8"
+            yAxisId="left"
+            type="number"
+            domain={[yDomainLeft[0], yDomainLeft[1]]}
+            ticks={yTicksLeft}
+          />
+          <YAxis
+            stroke="#94a3b8"
+            yAxisId="right"
+            orientation="right"
+            type="number"
+            domain={[yDomainRight[0], yDomainRight[1]]}
+            ticks={yTicksRight}
+          />
           <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }}
             labelStyle={{ color: '#e2e8f0' }}
