@@ -1,11 +1,10 @@
 /**
  * Bot Trade Candles API - GET historical candles for a trade
- * Fetches candles from Bybit for displaying on trade charts
+ * Fetches candles from database cache for displaying on trade charts
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { spawn } from 'child_process';
-import path from 'path';
+import { dbQuery } from '@/lib/db/trading-db';
 
 export interface CandlesResponse {
   candles: Array<{
@@ -46,48 +45,43 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Use bot-specific candle fetcher (copied from tournament version with enhancements)
-    const pythonScript = path.join(process.cwd(), 'python', 'trading_bot', 'utils', 'get_trade_candles_bot_control.py');
+    const timestampMs = parseInt(timestamp, 10);
+    const timeframeMs = getTimeframeMs(timeframe);
 
-    const pythonProcess = spawn('python3', [
-      pythonScript,
-      symbol,
-      timeframe,
-      timestamp,
-      before.toString(),
-      after.toString()
-    ]);
+    // Calculate time window
+    const startTime = timestampMs - (before * timeframeMs);
+    const endTime = timestampMs + (after * timeframeMs);
 
-    let stdout = '';
-    let stderr = '';
+    // Query database for candles
+    const candles = await dbQuery<any>(`
+      SELECT
+        start_time as time,
+        open_price as open,
+        high_price as high,
+        low_price as low,
+        close_price as close,
+        volume
+      FROM klines
+      WHERE symbol = ? AND timeframe = ? AND start_time >= ? AND start_time <= ?
+      ORDER BY start_time ASC
+    `, [symbol, timeframe, startTime, endTime]);
 
-    pythonProcess.stdout.on('data', (data) => {
-      stdout += data.toString();
+    // Ensure numeric types (PostgreSQL may return strings)
+    const normalizedCandles = (candles || []).map(candle => ({
+      ...candle,
+      time: Number(candle.time),
+      open: Number(candle.open),
+      high: Number(candle.high),
+      low: Number(candle.low),
+      close: Number(candle.close),
+      volume: Number(candle.volume),
+    }));
+
+    return NextResponse.json({
+      candles: normalizedCandles,
+      symbol: symbol,
+      timeframe: timeframe
     });
-
-    pythonProcess.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    const result = await new Promise<CandlesResponse>((resolve, reject) => {
-      pythonProcess.on('close', (code) => {
-        if (code !== 0) {
-          console.error('Python script error:', stderr);
-          reject(new Error(`Python script exited with code ${code}: ${stderr}`));
-          return;
-        }
-
-        try {
-          const data = JSON.parse(stdout);
-          resolve(data);
-        } catch (err) {
-          console.error('Failed to parse Python output:', stdout);
-          reject(new Error('Failed to parse candles data'));
-        }
-      });
-    });
-
-    return NextResponse.json(result);
   } catch (error) {
     console.error('Trade candles GET error:', error);
     return NextResponse.json(
@@ -95,5 +89,27 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Convert timeframe string to milliseconds
+ */
+function getTimeframeMs(timeframe: string): number {
+  const timeframeMap: Record<string, number> = {
+    '1m': 60 * 1000,
+    '3m': 3 * 60 * 1000,
+    '5m': 5 * 60 * 1000,
+    '15m': 15 * 60 * 1000,
+    '30m': 30 * 60 * 1000,
+    '1h': 60 * 60 * 1000,
+    '2h': 2 * 60 * 60 * 1000,
+    '4h': 4 * 60 * 60 * 1000,
+    '6h': 6 * 60 * 60 * 1000,
+    '12h': 12 * 60 * 60 * 1000,
+    '1d': 24 * 60 * 60 * 1000,
+    '1w': 7 * 24 * 60 * 60 * 1000,
+    '1M': 30 * 24 * 60 * 60 * 1000,
+  };
+  return timeframeMap[timeframe] || 60 * 60 * 1000; // Default to 1h
 }
 
