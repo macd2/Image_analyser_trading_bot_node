@@ -615,22 +615,36 @@ async function checkStrategyExit(
       close: c.close
     }));
 
+    // Fetch strategy metadata from recommendation (single source of truth)
+    let strategyMetadata: any = {};
+    if (trade.recommendation_id) {
+      try {
+        const rec = await dbQuery<any>(`
+          SELECT strategy_metadata FROM recommendations WHERE id = ?
+        `, [trade.recommendation_id]);
+
+        if (rec && rec.length > 0 && rec[0].strategy_metadata) {
+          strategyMetadata = typeof rec[0].strategy_metadata === 'string'
+            ? JSON.parse(rec[0].strategy_metadata)
+            : rec[0].strategy_metadata;
+        }
+      } catch (error) {
+        console.warn(`[Auto-Close] Failed to fetch strategy metadata from recommendation: ${error}`);
+      }
+    }
+
     const tradeData = {
       symbol: trade.symbol,
       side: trade.side,
       entry_price: trade.entry_price,
       stop_loss: trade.stop_loss,
       take_profit: trade.take_profit,
-      strategy_metadata: trade.strategy_metadata
-        ? (typeof trade.strategy_metadata === 'string'
-            ? JSON.parse(trade.strategy_metadata)
-            : trade.strategy_metadata)
-        : {}
+      strategy_metadata: strategyMetadata
     };
 
     // Fetch pair candles if this is a spread-based trade
     let pairCandlesData: any[] = [];
-    const metadata = tradeData.strategy_metadata;
+    const metadata = strategyMetadata;
     if (metadata && metadata.pair_symbol) {
       try {
         const pairSymbol = metadata.pair_symbol;
@@ -812,7 +826,8 @@ export async function POST() {
         }
 
         // CRITICAL: Use recommendation's analyzed_at (signal time) as the starting point
-        // This ensures we check candles from when the signal was generated, not when trade was created
+        // This ensures we check cand
+        // les from when the signal was generated, not when trade was created
         // This is especially important for reset trades where created_at != signal time
         let signalTime = createdAt;
 
