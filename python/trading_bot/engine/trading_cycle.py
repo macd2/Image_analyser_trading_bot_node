@@ -899,6 +899,7 @@ class TradingCycle:
                 "strategy_uuid": strategy_uuid,
                 "strategy_type": strategy_type,
                 "strategy_name": strategy_name,
+                "strategy_metadata": analysis.get("strategy_metadata"),  # For exit logic and monitoring
             }
         except Exception as e:
             logger.error(f"Failed to build signal: {e}")

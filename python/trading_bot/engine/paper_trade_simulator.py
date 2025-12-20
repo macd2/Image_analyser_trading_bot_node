@@ -11,12 +11,14 @@ This module:
 """
 
 import logging
+import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
 
 from trading_bot.db.client import get_connection, release_connection, query, execute as db_execute
+from trading_bot.strategies.candle_adapter import CandleAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -319,7 +321,51 @@ class PaperTradeSimulator:
             'status': 'closed' if exit_price else 'filled',
             'exit_details': exit_details,
         }
-    
+
+    def _get_pair_candle_for_timestamp(self, pair_symbol: str, timestamp_ms: int) -> Optional[Dict[str, Any]]:
+        """
+        Fetch a pair candle for a specific timestamp from the database cache.
+
+        Args:
+            pair_symbol: The pair symbol (e.g., 'WETUSDT')
+            timestamp_ms: Timestamp in milliseconds
+
+        Returns:
+            Candle dict or None if not found
+        """
+        try:
+            conn = get_connection()
+            if not conn:
+                return None
+
+            try:
+                # Query the candle_cache table for the pair symbol at this timestamp
+                # We use 1h timeframe as default for spread-based strategies
+                result = query(conn, """
+                    SELECT timestamp, open, high, low, close
+                    FROM candle_cache
+                    WHERE symbol = ? AND timeframe = '1h' AND timestamp = ?
+                    LIMIT 1
+                """, (pair_symbol, timestamp_ms))
+
+                if result and len(result) > 0:
+                    row = result[0]
+                    return {
+                        "timestamp": row[0],
+                        "open": row[1],
+                        "high": row[2],
+                        "low": row[3],
+                        "close": row[4],
+                    }
+
+                return None
+            finally:
+                release_connection(conn)
+
+        except Exception as e:
+            logger.warning(f"Error fetching pair candle for {pair_symbol}: {e}")
+            return None
+
     def _check_strategy_exit_with_should_exit(self, trade: Dict[str, Any], candles: List[Candle], strategy: Any) -> Optional[Dict[str, Any]]:
         """
         Check for strategy-specific exit conditions using strategy.should_exit().
@@ -328,9 +374,19 @@ class PaperTradeSimulator:
         Returns exit details when should_exit returns True.
         """
         try:
+            import json
+
             # For spread-based strategies, we need pair candles
             # Get pair symbol from strategy_metadata if available
             metadata = trade.get("strategy_metadata", {})
+
+            # Handle case where strategy_metadata is a JSON string
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except (json.JSONDecodeError, TypeError):
+                    metadata = {}
+
             pair_symbol = metadata.get("pair_symbol")
 
             for candle in candles:
@@ -346,9 +402,15 @@ class PaperTradeSimulator:
                 # For spread-based strategies, fetch pair candle
                 pair_candle_dict = None
                 if pair_symbol:
-                    # TODO: Fetch pair candle from CandleAdapter
-                    # For now, we'll pass None and let strategy handle it
-                    pair_candle_dict = None
+                    # Fetch pair candle from CandleAdapter for the same timestamp
+                    try:
+                        pair_candle_dict = self._get_pair_candle_for_timestamp(
+                            pair_symbol,
+                            candle.timestamp
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not fetch pair candle for {pair_symbol}: {e}")
+                        pair_candle_dict = None
 
                 # Call strategy.should_exit()
                 exit_result = strategy.should_exit(

@@ -659,6 +659,18 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         strategy_metadata = None
         if beta is not None and spread_mean is not None and spread_std is not None:
             z_exit = self.get_config_value('z_exit', 0.5)
+
+            # Calculate adaptive max_spread_deviation from z_history (99th percentile)
+            # This prevents premature stops due to normal volatility while protecting against tail risk
+            adaptive_sl_z = 3.0  # Default fallback
+            if z_history and len(z_history) > 0:
+                try:
+                    z_99 = float(np.percentile([abs(z) for z in z_history], 99))
+                    # Add 1.5σ buffer to 99th percentile for crypto fat-tail protection
+                    adaptive_sl_z = max(z_entry + 1.5, z_99 + 1.5)
+                except (ValueError, TypeError):
+                    adaptive_sl_z = 3.0
+
             strategy_metadata = {
                 "beta": float(beta),
                 "spread_mean": float(spread_mean),
@@ -666,6 +678,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 "z_score_at_entry": float(z_score),
                 "pair_symbol": pair_symbol,
                 "z_exit_threshold": float(z_exit),
+                "max_spread_deviation": float(adaptive_sl_z),  # Adaptive SL from z_history
                 # Store actual prices at entry for recalculation capability
                 "price_x_at_entry": float(current_price),
                 "price_y_at_entry": float(pair_candles[-1]['close']) if pair_candles else None,
@@ -952,8 +965,11 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             spread = pair_price - beta * current_price
             z_score = (spread - spread_mean) / spread_std if spread_std > 0 else 0
 
-            # Get max_spread_deviation setting (0 = disabled)
-            max_spread_deviation = self.get_config_value("max_spread_deviation", 3.0)
+            # Get adaptive max_spread_deviation from metadata (stored at entry time)
+            # Falls back to global config if not in metadata (for backward compatibility)
+            max_spread_deviation = metadata.get("max_spread_deviation")
+            if max_spread_deviation is None:
+                max_spread_deviation = self.get_config_value("max_spread_deviation", 3.0)
 
             # Check if z-score crossed exit threshold (mean reversion)
             threshold_crossed = abs(z_score) <= z_exit_threshold
