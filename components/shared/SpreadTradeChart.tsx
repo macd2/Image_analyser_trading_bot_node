@@ -262,12 +262,19 @@ function SpreadPricePane({
     lower_stop: point.spread_mean - 3.5 * point.spread_std,
   }))
 
-  // Calculate dynamic Y-axis domain based on data
+  // Calculate dynamic Y-axis domain based on data AND reference lines
   const spreads = data.spreads.map(p => p.spread)
   const minSpread = Math.min(...spreads)
   const maxSpread = Math.max(...spreads)
-  const padding = (maxSpread - minSpread) * 0.15 // 15% padding
-  const yDomain = [minSpread - padding, maxSpread + padding]
+
+  // Include reference lines in domain calculation
+  const upperStop = metadata.spread_mean + 3.5 * metadata.spread_std
+  const lowerStop = metadata.spread_mean - 3.5 * metadata.spread_std
+
+  const minValue = Math.min(minSpread, lowerStop)
+  const maxValue = Math.max(maxSpread, upperStop)
+  const padding = (maxValue - minValue) * 0.15 // 15% padding
+  const yDomain = [minValue - padding, maxValue + padding]
 
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
