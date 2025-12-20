@@ -574,10 +574,23 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     min_sl_buffer=min_sl_buffer
                 )
 
-                # Extract price levels for the primary symbol
-                entry_price = levels['entry']['x']
-                stop_loss = levels['stop_loss']['x']
-                take_profit = levels['take_profit_2']['x']  # Use full reversion target
+                # Extract spread levels and convert to asset prices
+                # Formula: spread = y - beta * x  →  y = spread + beta * x
+                spread_levels = levels['spread_levels']
+                beta_val = levels['beta']
+
+                # Convert spread levels to PAIR SYMBOL (Y) prices
+                # The cointegration strategy trades the spread, which is defined as: spread = Y - beta * X
+                # When we get a signal, we convert spread levels to Y prices for execution
+                spread_entry = spread_levels['entry']
+                spread_sl = spread_levels['stop_loss']
+                spread_tp = spread_levels['take_profit_2']  # Use full reversion target
+
+                # Convert spread levels to Y prices using: y = spread + beta * x
+                # where x is current_price (primary symbol) and y is pair_price
+                entry_price = spread_entry + beta_val * current_price
+                stop_loss = spread_sl + beta_val * current_price
+                take_profit = spread_tp + beta_val * current_price
 
                 # Calculate risk-reward
                 if stop_loss and take_profit:
@@ -620,10 +633,6 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             "symbol": symbol,
             "recommendation": recommendation,
             "confidence": confidence,
-            "entry_price": entry_price,
-            "stop_loss": stop_loss,
-            "take_profit": take_profit,
-            "risk_reward": risk_reward,
             "setup_quality": signal.get('size_multiplier', 0.5),
             "market_environment": 0.5,
             "analysis": {
@@ -631,6 +640,10 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 "z_score": float(z_score),
                 "is_mean_reverting": bool(signal.get('is_mean_reverting', False)),
                 "size_multiplier": float(signal.get('size_multiplier', 1.0)),
+                "entry_price": entry_price,
+                "stop_loss": stop_loss,
+                "take_profit": take_profit,
+                "risk_reward_ratio": risk_reward,
             },
             "chart_path": "",
             "timeframe": analysis_timeframe,

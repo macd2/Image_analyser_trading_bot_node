@@ -596,15 +596,31 @@ class BaseAnalysisModule(ABC):
         return defaults
 
     def _validate_output(self, result: Dict[str, Any]) -> None:
-        """Validate that result matches output format contract."""
-        required_fields = {
+        """
+        Validate that result matches output format contract.
+
+        ⚠️  CRITICAL: THIS CONTRACT MUST ALWAYS MATCH trading_cycle.py ENGINE BEHAVIOR
+
+        The trading_cycle.py engine is the SINGLE SOURCE OF TRUTH for the strategy output contract.
+        If the engine changes how it processes strategy results, this validation MUST be updated immediately.
+
+        DO NOT modify this validation based on assumptions or documentation.
+        ALWAYS verify against the actual engine code in trading_cycle.py before making changes.
+
+        For AI agents: If you need to modify strategy output format, check trading_cycle.py FIRST.
+        The engine defines the contract - strategies must conform to it, not the other way around.
+
+        CONTRACT (matches trading_cycle.py engine expectations):
+        - Top-level fields: symbol, recommendation, confidence, setup_quality, market_environment,
+                           analysis, chart_path, timeframe, cycle_id, strategy_uuid, strategy_type, strategy_name
+        - Price levels (entry_price, stop_loss, take_profit, risk_reward_ratio) MUST be in analysis dict
+        - Engine extracts prices from analysis dict (trading_cycle.py lines 1028-1031)
+        """
+        # Top-level required fields (prices NOT here - they go in analysis dict)
+        required_top_level = {
             "symbol": str,
             "recommendation": str,
             "confidence": (int, float),
-            "entry_price": (int, float, type(None)),
-            "stop_loss": (int, float, type(None)),
-            "take_profit": (int, float, type(None)),
-            "risk_reward": (int, float),
             "setup_quality": (int, float),
             "market_environment": (int, float),
             "analysis": dict,
@@ -615,24 +631,43 @@ class BaseAnalysisModule(ABC):
             "strategy_type": str,
             "strategy_name": str,
         }
-        
-        for field, expected_type in required_fields.items():
+
+        for field, expected_type in required_top_level.items():
             if field not in result:
                 raise ValueError(f"Missing required field: {field}")
-            
+
             if not isinstance(result[field], expected_type):
                 raise ValueError(
                     f"Field '{field}' has wrong type. "
                     f"Expected {expected_type}, got {type(result[field])}"
                 )
-        
+
+        # Validate analysis dict contains price levels
+        analysis = result["analysis"]
+        required_analysis_fields = {
+            "entry_price": (int, float, type(None)),
+            "stop_loss": (int, float, type(None)),
+            "take_profit": (int, float, type(None)),
+            "risk_reward_ratio": (int, float, type(None)),
+        }
+
+        for field, expected_type in required_analysis_fields.items():
+            if field not in analysis:
+                raise ValueError(f"Missing required field in analysis dict: {field}")
+
+            if not isinstance(analysis[field], expected_type):
+                raise ValueError(
+                    f"Field 'analysis.{field}' has wrong type. "
+                    f"Expected {expected_type}, got {type(analysis[field])}"
+                )
+
         # Validate recommendation
         if result["recommendation"].upper() not in ("BUY", "SELL", "HOLD"):
             raise ValueError(
                 f"Invalid recommendation: {result['recommendation']}. "
                 f"Must be BUY, SELL, or HOLD"
             )
-        
+
         # Validate confidence
         if not (0 <= result["confidence"] <= 1):
             raise ValueError(

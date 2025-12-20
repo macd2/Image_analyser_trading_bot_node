@@ -779,7 +779,7 @@ class TradingCycle:
             logger.warning("No execute_signal callback configured")
             return None
 
-        symbol = signal.get("symbol")
+        symbol = signal.get("symbol", "UNKNOWN")
         recommendation = signal.get("recommendation")
         if recommendation is None:
             logger.error("Critical error: recommendation is None - cannot build signal")
@@ -790,7 +790,8 @@ class TradingCycle:
         trade_signal = self._build_signal(
             analysis,
             recommendation,
-            signal.get("confidence", 0)
+            signal.get("confidence", 0),
+            symbol
         )
 
         if not trade_signal:
@@ -813,7 +814,7 @@ class TradingCycle:
 
         return trade_result
 
-    def _build_signal(self, analysis: Dict[str, Any], recommendation: str, confidence: float) -> Optional[Dict[str, Any]]:
+    def _build_signal(self, analysis: Dict[str, Any], recommendation: str, confidence: float, symbol: str = "UNKNOWN") -> Optional[Dict[str, Any]]:
         """Build trading signal from analysis with price sanity check."""
         try:
             # Extract price levels - check if they exist and are non-zero
@@ -832,7 +833,6 @@ class TradingCycle:
 
             # Check if all price levels are present and non-zero
             if entry <= 0 or tp <= 0 or sl <= 0:
-                symbol = analysis.get("symbol", "UNKNOWN")
                 logger.warning(f"   ⚠️ Missing price levels in analysis for {symbol}")
                 logger.debug(f"      entry_price={entry}, take_profit={tp}, stop_loss={sl}")
                 return None
