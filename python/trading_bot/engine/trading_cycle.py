@@ -790,11 +790,13 @@ class TradingCycle:
         analysis = signal.get("analysis", {})
 
         # Build signal dict for trading engine
+        # Pass entire signal object so _build_signal can extract strategy_type and strategy_name from top level
         trade_signal = self._build_signal(
             analysis,
             recommendation,
             signal.get("confidence", 0),
-            symbol
+            symbol,
+            signal  # Pass entire signal object for strategy metadata
         )
 
         if not trade_signal:
@@ -817,8 +819,16 @@ class TradingCycle:
 
         return trade_result
 
-    def _build_signal(self, analysis: Dict[str, Any], recommendation: str, confidence: float, symbol: str = "UNKNOWN") -> Optional[Dict[str, Any]]:
-        """Build trading signal from analysis with price sanity check."""
+    def _build_signal(self, analysis: Dict[str, Any], recommendation: str, confidence: float, symbol: str = "UNKNOWN", signal_obj: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        """Build trading signal from analysis with price sanity check.
+
+        Args:
+            analysis: The analysis dict from the signal
+            recommendation: The recommendation (BUY/SELL/LONG/SHORT)
+            confidence: Confidence level
+            symbol: Trading symbol
+            signal_obj: Optional full signal object to extract strategy metadata from top level
+        """
         try:
             # Extract price levels - check if they exist and are non-zero
             entry_raw = analysis.get("entry_price")
@@ -871,12 +881,30 @@ class TradingCycle:
                     # Continue anyway - better to trade than miss opportunity due to parse error
 
             # Extract strategy information for traceability
-            # First check if strategy info is already in the analysis (from strategy output)
-            strategy_uuid = analysis.get("strategy_uuid")
-            strategy_type = analysis.get("strategy_type")
-            strategy_name = analysis.get("strategy_name")
+            # First check if strategy info is at top level of signal object (from strategy output)
+            strategy_uuid = None
+            strategy_type = None
+            strategy_name = None
+            strategy_metadata = None
 
-            # Fallback to self.strategy if not in analysis
+            if signal_obj:
+                # Extract from top level of signal object (where strategies put them)
+                strategy_uuid = signal_obj.get("strategy_uuid")
+                strategy_type = signal_obj.get("strategy_type")
+                strategy_name = signal_obj.get("strategy_name")
+                strategy_metadata = signal_obj.get("strategy_metadata")
+
+            # Also check in analysis dict as fallback
+            if not strategy_uuid:
+                strategy_uuid = analysis.get("strategy_uuid")
+            if not strategy_type:
+                strategy_type = analysis.get("strategy_type")
+            if not strategy_name:
+                strategy_name = analysis.get("strategy_name")
+            if not strategy_metadata:
+                strategy_metadata = analysis.get("strategy_metadata")
+
+            # Fallback to self.strategy if not found anywhere
             if not strategy_uuid and hasattr(self, 'strategy') and self.strategy:
                 strategy_uuid = getattr(self.strategy, 'strategy_uuid', None)
             if not strategy_type and hasattr(self, 'strategy') and self.strategy:
@@ -899,7 +927,7 @@ class TradingCycle:
                 "strategy_uuid": strategy_uuid,
                 "strategy_type": strategy_type,
                 "strategy_name": strategy_name,
-                "strategy_metadata": analysis.get("strategy_metadata"),  # For exit logic and monitoring
+                "strategy_metadata": strategy_metadata,  # For exit logic and monitoring
             }
         except Exception as e:
             logger.error(f"Failed to build signal: {e}")
