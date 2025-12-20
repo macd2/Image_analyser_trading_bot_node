@@ -50,6 +50,10 @@ interface OpenPaperTrade {
   rejection_reason?: string | null
   position_size_usd?: number
   risk_amount_usd?: number
+  // Strategy information
+  strategy_type?: string | null
+  strategy_name?: string | null
+  strategy_metadata?: any
 }
 
 interface CycleWithTrades {
@@ -124,6 +128,8 @@ interface ClosedTrade {
   timeframe: string | null
   instance_name: string
   strategy_name?: string
+  strategy_type?: string | null
+  strategy_metadata?: any
   instance_id: string
   run_id: string
   bars_open?: number
@@ -1085,7 +1091,10 @@ export function SimulatorPage() {
                           stop_loss: trade.stop_loss,
                           take_profit: trade.take_profit,
                           dry_run: trade.dry_run ?? 1,  // Paper trades default to 1
-                          rejection_reason: trade.rejection_reason
+                          rejection_reason: trade.rejection_reason,
+                          strategy_type: trade.strategy_type || null,
+                          strategy_name: trade.strategy_name || null,
+                          strategy_metadata: trade.strategy_metadata || null
                         })
                         setChartMode('live')
                       }}
@@ -1161,7 +1170,10 @@ export function SimulatorPage() {
                                 stop_loss: trade.stop_loss,
                                 take_profit: trade.take_profit,
                                 dry_run: trade.dry_run ?? 1,
-                                rejection_reason: trade.rejection_reason
+                                rejection_reason: trade.rejection_reason,
+                                strategy_type: trade.strategy_type || null,
+                                strategy_name: trade.strategy_name || null,
+                                strategy_metadata: trade.strategy_metadata || null
                               })
                               setChartMode('live')
                             }}
@@ -1333,7 +1345,10 @@ export function SimulatorPage() {
                           closed_at: trade.closed_at,
                           timeframe: trade.timeframe,
                           dry_run: trade.dry_run ?? 1,
-                          exit_reason: trade.exit_reason
+                          exit_reason: trade.exit_reason,
+                          strategy_type: trade.strategy_type || null,
+                          strategy_name: trade.strategy_name || null,
+                          strategy_metadata: trade.strategy_metadata || null
                         })
                         setChartMode('historical')
                       }}
@@ -1557,7 +1572,10 @@ export function SimulatorPage() {
                           closed_at: trade.closed_at,
                           timeframe: trade.timeframe,
                           dry_run: trade.dry_run ?? 1,
-                          exit_reason: trade.exit_reason
+                          exit_reason: trade.exit_reason,
+                          strategy_type: trade.strategy_type || null,
+                          strategy_name: trade.strategy_name || null,
+                          strategy_metadata: trade.strategy_metadata || null
                         })
                         setChartMode('historical')
                       }}

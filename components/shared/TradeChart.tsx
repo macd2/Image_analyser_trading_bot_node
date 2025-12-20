@@ -24,6 +24,10 @@ export interface TradeData {
   dry_run?: number | null  // 1 = paper trade, 0 = live trade
   rejection_reason?: string | null
   exit_reason?: string | null
+  // Strategy information
+  strategy_type?: string | null  // 'price_based' or 'spread_based'
+  strategy_name?: string | null  // e.g., 'PromptStrategy', 'CointegrationAnalysisModule'
+  strategy_metadata?: any  // Strategy-specific metadata for exit logic
 }
 
 interface TradeChartProps {

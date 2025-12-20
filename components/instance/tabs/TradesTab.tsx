@@ -34,6 +34,10 @@ interface TradeRow {
   timeframe: string | null;
   dry_run: number;
   rejection_reason: string | null;
+  // Strategy information
+  strategy_type?: string | null;
+  strategy_name?: string | null;
+  strategy_metadata?: any;
 }
 
 interface CycleWithTrades {

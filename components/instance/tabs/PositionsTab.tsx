@@ -166,6 +166,9 @@ export function PositionsTab({ instanceId }: PositionsTabProps) {
       created_at: pos.created_at || new Date().toISOString(),
       timeframe: pos.timeframe || '1h',
       dry_run: pos.dry_run,
+      strategy_type: pos.strategy_type || null,
+      strategy_name: pos.strategy_name || null,
+      strategy_metadata: pos.strategy_metadata || null,
     }
   }
 
