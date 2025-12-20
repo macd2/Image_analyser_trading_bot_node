@@ -492,6 +492,7 @@ class TradingEngine:
             "strategy_type": signal.get("strategy_type"),
             "strategy_name": signal.get("strategy_name"),
             "ranking_context": signal.get("ranking_context"),
+            "strategy_metadata": signal.get("strategy_metadata"),  # For exit logic and monitoring
             "wallet_balance_at_trade": wallet.get("available"),
             "kelly_metrics": sizing.get("kelly_metrics"),  # From position sizer
         }
