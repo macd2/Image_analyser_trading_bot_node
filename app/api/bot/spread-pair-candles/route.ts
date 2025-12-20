@@ -1,10 +1,10 @@
 /**
  * Bot Spread Pair Candles API - GET historical candles for pair symbol in spread-based trades
- * Fetches candles from database cache for the pair asset in cointegration trades
+ * Fetches candles from database cache, with on-demand fetching from exchange if needed
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { dbQuery } from '@/lib/db/trading-db';
+import { dbQuery, dbExecute } from '@/lib/db/trading-db';
 
 export interface CandlesResponse {
   candles: Array<{
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
     const endTime = timestampMs + (after * timeframeMs);
 
     // Query database for candles
-    const candles = await dbQuery<any>(`
+    let candles = await dbQuery<any>(`
       SELECT
         start_time as time,
         open_price as open,
@@ -65,6 +65,23 @@ export async function GET(request: NextRequest) {
       WHERE symbol = ? AND timeframe = ? AND start_time >= ? AND start_time <= ?
       ORDER BY start_time ASC
     `, [pairSymbol, timeframe, startTime, endTime]);
+
+    // If no candles found, try to fetch from exchange
+    if (!candles || candles.length === 0) {
+      console.log(`[Spread Pair Candles] No candles found for ${pairSymbol} ${timeframe}, fetching from exchange...`);
+      try {
+        const fetchedCandles = await fetchCandlesFromExchange(pairSymbol, timeframe, startTime, endTime);
+        if (fetchedCandles && fetchedCandles.length > 0) {
+          // Store fetched candles in database
+          await storeCandlesInDatabase(fetchedCandles, pairSymbol, timeframe);
+          candles = fetchedCandles;
+          console.log(`[Spread Pair Candles] Fetched and stored ${fetchedCandles.length} candles for ${pairSymbol}`);
+        }
+      } catch (fetchError) {
+        console.warn(`[Spread Pair Candles] Failed to fetch candles from exchange: ${fetchError}`);
+        // Continue with empty candles - frontend will handle gracefully
+      }
+    }
 
     // Ensure numeric types (PostgreSQL may return strings)
     // CRITICAL: Convert milliseconds to seconds for lightweight-charts
@@ -118,5 +135,103 @@ function getTimeframeMs(timeframe: string): number {
     '1M': 30 * 24 * 60 * 60 * 1000,
   };
   return timeframeMap[timeframe] || 60 * 60 * 1000; // Default to 1h
+}
+
+/**
+ * Fetch candles from Bybit exchange
+ */
+async function fetchCandlesFromExchange(
+  symbol: string,
+  timeframe: string,
+  startTimeMs: number,
+  endTimeMs: number
+): Promise<any[]> {
+  try {
+    // Convert timeframe to Bybit format
+    const bybitTimeframe = timeframeToBybit(timeframe);
+
+    // Fetch from Bybit API
+    const response = await fetch(
+      `https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=${bybitTimeframe}&start=${Math.floor(startTimeMs / 1000)}&end=${Math.floor(endTimeMs / 1000)}&limit=1000`
+    );
+
+    if (!response.ok) {
+      throw new Error(`Bybit API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    if (!data.result || !data.result.list) {
+      return [];
+    }
+
+    // Convert Bybit format to our format
+    return data.result.list.map((candle: any[]) => ({
+      time: parseInt(candle[0]) * 1000, // Convert to milliseconds
+      open: parseFloat(candle[1]),
+      high: parseFloat(candle[2]),
+      low: parseFloat(candle[3]),
+      close: parseFloat(candle[4]),
+      volume: parseFloat(candle[5]),
+    }));
+  } catch (error) {
+    console.error(`Failed to fetch candles from Bybit for ${symbol}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Convert our timeframe format to Bybit format
+ */
+function timeframeToBybit(timeframe: string): string {
+  const map: Record<string, string> = {
+    '1m': '1',
+    '3m': '3',
+    '5m': '5',
+    '15m': '15',
+    '30m': '30',
+    '1h': '60',
+    '2h': '120',
+    '4h': '240',
+    '6h': '360',
+    '12h': '720',
+    '1d': 'D',
+    '1w': 'W',
+    '1M': 'M',
+  };
+  return map[timeframe] || '60';
+}
+
+/**
+ * Store candles in database
+ */
+async function storeCandlesInDatabase(
+  candles: any[],
+  symbol: string,
+  timeframe: string
+): Promise<void> {
+  try {
+    for (const candle of candles) {
+      await dbExecute(
+        `INSERT INTO klines (symbol, timeframe, category, start_time, open_price, high_price, low_price, close_price, volume, turnover)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (symbol, timeframe, start_time) DO NOTHING`,
+        [
+          symbol,
+          timeframe,
+          'spot',
+          candle.time,
+          candle.open,
+          candle.high,
+          candle.low,
+          candle.close,
+          candle.volume,
+          0 // turnover not available from API
+        ]
+      );
+    }
+  } catch (error) {
+    console.error(`Failed to store candles in database for ${symbol}:`, error);
+    throw error;
+  }
 }
 
