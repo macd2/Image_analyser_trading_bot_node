@@ -837,8 +837,8 @@ export const CONFIG_METADATA: Record<string, ConfigMeta> = {
   'trading.enable_adx_tightening': { type: 'boolean', category: 'trade monitor', group: '2. └─ ADX Tightening', description: 'ADX-based tightening', tooltip: '⚠️ NOT YET IMPLEMENTED - Will tighten stops based on ADX trend strength and ATR volatility', order: 40 },
 
   // Trade Monitor - Age-based Cancellation (Independent - NOT controlled by master)
-  'trading.age_cancellation_enabled': { type: 'boolean', category: 'trade monitor', group: '3. Order Cancellation', description: 'Age-based cancellation', tooltip: '⚡ INDEPENDENT: Cancel unfilled orders that have been pending too long (not affected by master switch)', order: 50 },
-  'trading.age_cancellation_max_bars': { type: 'json', category: 'trade monitor', group: '3. Order Cancellation', description: 'Max age bars for cancellation', tooltip: 'Maximum bars before cancelling unfilled orders per timeframe. Example: {"1h": 48, "4h": 18}', order: 51 },
+  'trading.age_cancellation_enabled': { type: 'boolean', category: 'trade monitor', group: '3. Order Cancellation', description: 'Age-based cancellation', tooltip: '⚡ INDEPENDENT: Cancel unfilled orders that have been pending too long (not affected by master switch)', order: 53 },
+  'trading.age_cancellation_max_bars': { type: 'json', category: 'trade monitor', group: '3. Order Cancellation', description: 'Max age bars for cancellation', tooltip: 'Maximum bars before cancelling unfilled orders per timeframe. Example: {"1h": 48, "4h": 18}', order: 54 },
 
   // TradingView - Chart Capture (moved to strategy-specific for PromptStrategy)
   // Note: tradingview.enabled removed - PromptStrategy always captures charts
@@ -858,12 +858,12 @@ export const CONFIG_METADATA: Record<string, ConfigMeta> = {
   // Strategy-Specific Settings - Cointegration Analysis
   'strategy_specific.cointegration.lookback': { type: 'number', category: 'strategy', group: '3. Cointegration Analysis Settings', description: 'Lookback period (candles)', tooltip: 'Number of candles for cointegration analysis. Longer = more stable but slower to adapt. Default: 120. Range: 30-200', order: 31 },
    'strategy_specific.cointegration.use_adf': { type: 'boolean', category: 'strategy', group: '3. Cointegration Analysis Settings', description: 'Use ADF test for mean reversion', tooltip: 'Default: true | ADF test (strict, p<0.05) vs Hurst exponent (loose, <0.5). ADF is more selective for signals.', order: 34 },
-  'strategy_specific.cointegration.use_soft_vol': { type: 'boolean', category: 'strategy', group: '3. Cointegration Analysis Settings', description: 'Use soft volatility adjustment', tooltip: 'Default: false | Soft vol: 0.5x-2.5x sizing (choppy markets) | Aggressive: 0.3x-3.0x (stable pairs)', order: 35 },
   
    'strategy_specific.cointegration.z_entry': { type: 'number', category: 'strategy', group: '3. Cointegration Trade Settings', description: 'Z-score entry threshold', tooltip: 'Enter when |z-score| reaches this level. Higher = fewer signals but higher confidence. Default: 2.0. Range: 1.5-3.0', order: 32 },
   'strategy_specific.cointegration.z_exit': { type: 'number', category: 'strategy', group: '3. Cointegration Trade Settings', description: 'Z-score exit threshold', tooltip: 'Exit when z-score reverts to this level (mean reversion). Lower = tighter profit-taking. Default: 0.5. Range: 0.0-1.0', order: 33 },
   'strategy_specific.cointegration.min_sl_buffer': { type: 'number', category: 'strategy', group: '3. Cointegration Trade Settings', description: 'Minimum z-distance to stop loss', tooltip: 'Minimum z-score distance from entry to stop loss (adaptive SL buffer). Default: 1.5. Range: 0.5-3.0', order: 36 },
   'strategy_specific.cointegration.enable_dynamic_sizing': { type: 'boolean', category: 'strategy', group: '3. Cointegration Trade Settings', description: 'Enable dynamic position sizing', tooltip: 'Default: true | Enable dynamic position sizing based on edge (z-score distance) and volatility (spread std/mean)', order: 37 },
+  'strategy_specific.cointegration.use_soft_vol': { type: 'boolean', category: 'strategy', group: '3. Cointegration Trade Settings', description: 'Use soft volatility adjustment', tooltip: 'Default: false | Soft vol: 0.5x-2.5x sizing (choppy markets) | Aggressive: 0.3x-3.0x (stable pairs)', order: 35 },
 
 
   // Strategy-Specific Settings - Cointegration Strategy

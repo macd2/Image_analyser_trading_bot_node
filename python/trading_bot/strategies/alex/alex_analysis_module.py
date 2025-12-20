@@ -230,6 +230,7 @@ class AlexAnalysisModule(BaseAnalysisModule):
                 "take_profit": None,
                 "risk_reward": 0,
                 "setup_quality": 0.5,
+                "position_size_multiplier": 1.0,
                 "market_environment": 0.5,
                 "analysis": {"error": "No timeframe analysis available"},
                 "chart_path": "",
@@ -257,6 +258,7 @@ class AlexAnalysisModule(BaseAnalysisModule):
             "take_profit": None,
             "risk_reward": 0,
             "setup_quality": self._calculate_setup_quality(trend, sr, structure),
+            "position_size_multiplier": 1.0,  # Market structure strategy uses neutral sizing
             "market_environment": self._calculate_market_environment(trend),
             "analysis": {
                 "strategy": "alex_top_down",

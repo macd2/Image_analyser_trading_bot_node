@@ -81,6 +81,7 @@ class PositionSizer:
         leverage: int = 1,
         trade_history: Optional[List[Dict[str, Any]]] = None,
         strategy: Optional[Any] = None,
+        position_size_multiplier: float = 1.0,
     ) -> Dict[str, Any]:
         """
         Calculate position size based on risk parameters.
@@ -94,6 +95,7 @@ class PositionSizer:
             leverage: Leverage multiplier
             trade_history: Optional list of closed trades for Kelly Criterion
             strategy: Optional strategy instance for strategy-specific risk metrics
+            position_size_multiplier: Position size multiplier (0.5-1.5) from strategy
 
         Returns:
             Dict with position_size, risk_amount, and calculation details
@@ -130,10 +132,16 @@ class PositionSizer:
 
         # Calculate base risk amount
         base_risk_amount = wallet_balance * risk_pct
-        
+
         # Apply confidence weighting
         confidence_weight = self._get_confidence_weight(confidence)
-        adjusted_risk = base_risk_amount * confidence_weight
+
+        # Apply position size multiplier (0.5-1.5 range)
+        # Clamp to valid range for safety
+        clamped_multiplier = max(0.5, min(1.5, position_size_multiplier))
+
+        # Combine both adjustments
+        adjusted_risk = base_risk_amount * confidence_weight * clamped_multiplier
         
         # Calculate raw position size
         raw_qty = adjusted_risk / risk_per_unit

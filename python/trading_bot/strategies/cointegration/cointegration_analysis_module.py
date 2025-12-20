@@ -671,11 +671,16 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 "price_y_at_entry": float(pair_candles[-1]['close']) if pair_candles else None,
             }
 
+        # Normalize position size multiplier to 0.5-1.5 range
+        raw_multiplier = signal.get('size_multiplier', 1.0)
+        normalized_multiplier = self.normalize_position_size_multiplier(raw_multiplier)
+
         return {
             "symbol": symbol,
             "recommendation": recommendation,
             "confidence": confidence,
             "setup_quality": signal.get('size_multiplier', 0.5),
+            "position_size_multiplier": normalized_multiplier,
             "market_environment": 0.5,
             "analysis": {
                 "strategy": "cointegration",

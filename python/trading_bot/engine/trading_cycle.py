@@ -891,6 +891,7 @@ class TradingCycle:
                 "take_profit": tp,
                 "stop_loss": sl,
                 "setup_quality": analysis.get("setup_quality", 0.5),
+                "position_size_multiplier": analysis.get("position_size_multiplier", 1.0),
                 "risk_reward": analysis.get("risk_reward", 0),
                 "market_environment": analysis.get("market_environment", 0.5),
                 "timeframe": self.timeframe,  # Include timeframe for chart display

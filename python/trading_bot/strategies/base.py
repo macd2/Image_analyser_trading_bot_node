@@ -608,6 +608,34 @@ class BaseAnalysisModule(ABC):
         # Return defaults
         return defaults
 
+    @staticmethod
+    def normalize_position_size_multiplier(raw_multiplier: float) -> float:
+        """
+        Map raw position size multiplier (0.3-3.0) to normalized range (0.5-1.5).
+
+        This ensures position sizes don't get too extreme while still respecting signal strength.
+
+        Args:
+            raw_multiplier: Raw multiplier from strategy (typically 0.3-3.0)
+
+        Returns:
+            Normalized multiplier (0.5-1.5)
+
+        Examples:
+            0.3 (weakest)  → 0.50 (50% smaller position)
+            1.0 (neutral)  → 0.87 (13% smaller position)
+            1.5 (good)     → 1.00 (normal position)
+            3.0 (strongest)→ 1.50 (50% larger position)
+        """
+        # Clamp to valid range first
+        clamped = max(0.3, min(3.0, raw_multiplier))
+
+        # Linear mapping: 0.3 → 0.5, 3.0 → 1.5
+        # Formula: normalized = 0.5 + (clamped - 0.3) / 2.7 * 1.0
+        normalized = 0.5 + (clamped - 0.3) / 2.7
+
+        return round(normalized, 3)
+
     def _validate_output(self, result: Dict[str, Any]) -> None:
         """
         Validate that result matches output format contract.
@@ -624,10 +652,12 @@ class BaseAnalysisModule(ABC):
         The engine defines the contract - strategies must conform to it, not the other way around.
 
         CONTRACT (matches trading_cycle.py engine expectations):
-        - Top-level fields: symbol, recommendation, confidence, setup_quality, market_environment,
-                           analysis, chart_path, timeframe, cycle_id, strategy_uuid, strategy_type, strategy_name
+        - Top-level fields: symbol, recommendation, confidence, setup_quality, position_size_multiplier,
+                           market_environment, analysis, chart_path, timeframe, cycle_id, strategy_uuid,
+                           strategy_type, strategy_name
         - Price levels (entry_price, stop_loss, take_profit, risk_reward_ratio) MUST be in analysis dict
         - Engine extracts prices from analysis dict (trading_cycle.py lines 1028-1031)
+        - position_size_multiplier: Normalized to 0.5-1.5 range for position sizing
         """
         # Top-level required fields (prices NOT here - they go in analysis dict)
         required_top_level = {
@@ -635,6 +665,7 @@ class BaseAnalysisModule(ABC):
             "recommendation": str,
             "confidence": (int, float),
             "setup_quality": (int, float),
+            "position_size_multiplier": (int, float),
             "market_environment": (int, float),
             "analysis": dict,
             "chart_path": str,
@@ -685,5 +716,12 @@ class BaseAnalysisModule(ABC):
         if not (0 <= result["confidence"] <= 1):
             raise ValueError(
                 f"Confidence must be 0-1, got {result['confidence']}"
+            )
+
+        # Validate position_size_multiplier (before normalization)
+        # Raw values from strategies can be 0.3-3.0, will be normalized to 0.5-1.5
+        if not (0.1 <= result["position_size_multiplier"] <= 5.0):
+            raise ValueError(
+                f"position_size_multiplier must be 0.1-5.0, got {result['position_size_multiplier']}"
             )
 

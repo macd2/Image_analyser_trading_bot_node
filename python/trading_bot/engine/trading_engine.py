@@ -550,6 +550,7 @@ class TradingEngine:
             confidence=signal.get("confidence", 0.75),
             trade_history=trade_history,
             strategy=strategy,
+            position_size_multiplier=signal.get("position_size_multiplier", 1.0),
         )
 
         if "error" in sizing:

@@ -285,6 +285,7 @@ class PromptStrategy(BaseAnalysisModule):
         result["analysis"] = analysis
         result["risk_reward"] = float(analysis.get("risk_reward_ratio", analysis.get("risk_reward", 0)) or 0)
         result["setup_quality"] = float(analysis.get("setup_quality", 0.5) or 0.5)
+        result["position_size_multiplier"] = 1.0  # Price-based strategies use neutral sizing
         result["market_environment"] = float(analysis.get("market_environment", 0.5) or 0.5)
         result["entry_price"] = analysis.get("entry_price")
         result["stop_loss"] = analysis.get("stop_loss")
