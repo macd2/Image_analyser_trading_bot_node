@@ -55,6 +55,24 @@ export async function GET(
       }
     }
 
+    // If strategy_metadata is missing, fetch from recommendation (fallback for old trades)
+    if (!tradeData.strategy_metadata && tradeData.recommendation_id) {
+      try {
+        const recommendation = await dbQuery<any>(`
+          SELECT strategy_metadata FROM recommendations WHERE id = ?
+        `, [tradeData.recommendation_id]);
+
+        if (recommendation && recommendation.length > 0 && recommendation[0].strategy_metadata) {
+          const metadata = recommendation[0].strategy_metadata;
+          tradeData.strategy_metadata = typeof metadata === 'string'
+            ? JSON.parse(metadata)
+            : metadata;
+        }
+      } catch (e) {
+        console.warn(`Failed to fetch strategy_metadata from recommendation: ${e}`);
+      }
+    }
+
     return NextResponse.json(tradeData);
   } catch (error) {
     console.error('Trade detail GET error:', error);
