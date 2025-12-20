@@ -593,7 +593,10 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 )
 
                 # Extract spread levels and convert to asset prices
-                # Formula: spread = y - beta * x  →  x = (y - spread) / beta
+                # NOTE: Cointegration strategy trades the SPREAD, not individual assets
+                # Spread = Y - beta * X
+                # Exit logic uses z-score, not price levels
+                # Price levels stored here are for informational/monitoring purposes only
                 spread_levels = levels['spread_levels']
                 beta_val = levels['beta']
 
@@ -602,19 +605,13 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 spread_sl = spread_levels['stop_loss']
                 spread_tp = spread_levels['take_profit_2']  # Use full reversion target
 
-                # Convert spread levels to PRIMARY SYMBOL (X) prices
-                # The recommendation is for the primary symbol (X), not the pair symbol (Y)
-                # Spread = Y - beta * X  →  X = (Y - spread) / beta
-                # where Y is pair_price and spread is the calculated spread level
-                if beta_val != 0:
-                    entry_price = (pair_price - spread_entry) / beta_val
-                    stop_loss = (pair_price - spread_sl) / beta_val
-                    take_profit = (pair_price - spread_tp) / beta_val
-                else:
-                    # Fallback if beta is 0 (shouldn't happen)
-                    entry_price = current_price
-                    stop_loss = current_price * 0.98
-                    take_profit = current_price * 1.02
+                # Convert spread levels to PAIR SYMBOL (Y) prices for database storage
+                # Formula: Y = spread + beta * X
+                # These prices represent the pair symbol (Y), not the primary symbol (X)
+                # The actual trading is done in spread space via z-score monitoring
+                entry_price = spread_entry + beta_val * current_price
+                stop_loss = spread_sl + beta_val * current_price
+                take_profit = spread_tp + beta_val * current_price
 
                 # Calculate risk-reward
                 if stop_loss and take_profit:
