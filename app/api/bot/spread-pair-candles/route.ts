@@ -67,15 +67,22 @@ export async function GET(request: NextRequest) {
     `, [pairSymbol, timeframe, startTime, endTime]);
 
     // Ensure numeric types (PostgreSQL may return strings)
-    const normalizedCandles = (candles || []).map(candle => ({
-      ...candle,
-      time: Number(candle.time),
-      open: Number(candle.open),
-      high: Number(candle.high),
-      low: Number(candle.low),
-      close: Number(candle.close),
-      volume: Number(candle.volume),
-    }));
+    // CRITICAL: Convert milliseconds to seconds for lightweight-charts
+    // Database stores start_time in milliseconds, but chart expects seconds
+    const normalizedCandles = (candles || []).map(candle => {
+      const timeMs = Number(candle.time);
+      // If timestamp is in milliseconds (> 10 billion), convert to seconds
+      const timeSeconds = timeMs > 10000000000 ? Math.floor(timeMs / 1000) : timeMs;
+      return {
+        ...candle,
+        time: timeSeconds,
+        open: Number(candle.open),
+        high: Number(candle.high),
+        low: Number(candle.low),
+        close: Number(candle.close),
+        volume: Number(candle.volume),
+      };
+    });
 
     return NextResponse.json({
       candles: normalizedCandles,
