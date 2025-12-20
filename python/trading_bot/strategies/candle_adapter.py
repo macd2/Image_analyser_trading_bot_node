@@ -149,8 +149,6 @@ class CandleAdapter:
         Returns:
             List of candles with OHLCV data (or empty list if < min_candles)
         """
-        print(f"[CandleAdapter] Fetching {symbol} {timeframe} (prefer_source={prefer_source})", flush=True)
-
         # Determine source priority based on prefer_source
         sources = []
         if prefer_source == "api":
@@ -159,7 +157,6 @@ class CandleAdapter:
             sources = ["cache", "api"]
 
         for source in sources:
-            print(f"[CandleAdapter] Trying source: {source}", flush=True)
             if source == "cache" and use_cache:
                 try:
                     # Try to get from database using centralized layer
@@ -183,7 +180,7 @@ class CandleAdapter:
                             if len(cached) >= limit * 0.8:  # Got at least 80% of requested
                                 # Reverse to get chronological order
                                 cached = list(reversed(cached))
-                                print(f"[CandleAdapter] Got {len(cached)} candles from cache", flush=True)
+                                print(f"[CandleAdapter] {symbol} {timeframe} | cache | {len(cached)} candles | ✅", flush=True)
                                 self.logger.debug(
                                     f"Got {len(cached)} candles from cache for {symbol} {timeframe}",
                                     extra={"symbol": symbol, "instance_id": self.instance_id}
@@ -201,8 +198,6 @@ class CandleAdapter:
             elif source == "api":
                 # Fetch from API with rate limit handling
                 try:
-                    print(f"[CandleAdapter] Fetching from API...", flush=True)
-
                     # Try to use pybit directly (simpler than BybitAPIManager which needs full config)
                     from pybit.unified_trading import HTTP
                     import time
@@ -234,11 +229,10 @@ class CandleAdapter:
                     interval = interval_map.get(timeframe, "60")
 
                     # Fetch candles with pagination (Bybit max is 1000 per request)
-                    print(f"[CandleAdapter] Calling get_kline({api_symbol}, {interval}) with pagination...", flush=True)
-
                     all_candles = []
                     api_limit = min(1000, limit)  # Bybit max is 1000
                     cursor = None
+                    page_count = 0
 
                     while len(all_candles) < limit:
                         max_retries = 3
@@ -268,27 +262,21 @@ class CandleAdapter:
                                     retry_count += 1
                                     if retry_count < max_retries:
                                         wait_time = 2 ** retry_count  # Exponential backoff: 2, 4, 8 seconds
-                                        print(f"[CandleAdapter] Rate limited, waiting {wait_time}s before retry {retry_count}/{max_retries}...", flush=True)
                                         await asyncio.sleep(wait_time)
                                     else:
-                                        print(f"[CandleAdapter] Rate limit exceeded after {max_retries} retries", flush=True)
                                         raise
                                 else:
                                     raise
 
                         if response is None:
-                            print(f"[CandleAdapter] Failed to get response after retries", flush=True)
                             break
-
-                        print(f"[CandleAdapter] Got response: retCode={response.get('retCode')}", flush=True)
 
                         if response.get('retCode') == 0:
                             batch = response.get('result', {}).get('list', [])
                             if not batch:
-                                print(f"[CandleAdapter] No more candles available", flush=True)
                                 break
 
-                            print(f"[CandleAdapter] Got {len(batch)} candles in this batch (total: {len(all_candles) + len(batch)})", flush=True)
+                            page_count += 1
 
                             # Convert Bybit format to standard format
                             batch_converted = [
@@ -308,11 +296,9 @@ class CandleAdapter:
                             # Get cursor for next page
                             cursor = response.get('result', {}).get('nextPageCursor')
                             if not cursor:
-                                print(f"[CandleAdapter] No more pages available", flush=True)
                                 break
                         else:
                             candles = []
-                            print(f"[CandleAdapter] API error: retCode={response.get('retCode')}", flush=True)
                             break
 
                     candles = all_candles
@@ -330,6 +316,7 @@ class CandleAdapter:
                         await self._cache_candles_async(symbol, timeframe, candles)
 
                     if candles:
+                        print(f"[CandleAdapter] {symbol} {timeframe} | api | {len(candles)} candles | ✅", flush=True)
                         self.logger.debug(
                             f"Fetched {len(candles)} candles from API for {symbol} {timeframe}",
                             extra={"symbol": symbol, "instance_id": self.instance_id}
