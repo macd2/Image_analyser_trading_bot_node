@@ -172,18 +172,18 @@ class TradeTracker:
             return
         
         try:
-            execute(self._db, """
-                UPDATE trades SET
-                    status = ?,
-                    fill_price = ?,
-                    fill_quantity = ?,
-                    exit_price = ?,
-                    pnl = ?,
-                    pnl_percent = ?,
-                    filled_at = ?,
-                    closed_at = ?
-                WHERE id = ?
-            """, (
+            # Build UPDATE statement with spread-based columns if present
+            update_fields = [
+                "status = ?",
+                "fill_price = ?",
+                "fill_quantity = ?",
+                "exit_price = ?",
+                "pnl = ?",
+                "pnl_percent = ?",
+                "filled_at = ?",
+                "closed_at = ?"
+            ]
+            update_values = [
                 trade.status.value,
                 trade.fill_price,
                 trade.fill_quantity,
@@ -192,8 +192,28 @@ class TradeTracker:
                 trade.pnl_percent,
                 trade.filled_at.isoformat() if trade.filled_at else None,
                 trade.closed_at.isoformat() if trade.closed_at else None,
-                trade.trade_id,
-            ))
+            ]
+
+            # Add spread-based columns if present
+            if hasattr(trade, 'pair_fill_price') and trade.pair_fill_price is not None:
+                update_fields.append("pair_fill_price = ?")
+                update_values.append(trade.pair_fill_price)
+
+            if hasattr(trade, 'pair_exit_price') and trade.pair_exit_price is not None:
+                update_fields.append("pair_exit_price = ?")
+                update_values.append(trade.pair_exit_price)
+
+            if hasattr(trade, 'order_id_pair') and trade.order_id_pair is not None:
+                update_fields.append("order_id_pair = ?")
+                update_values.append(trade.order_id_pair)
+
+            update_values.append(trade.trade_id)
+
+            execute(self._db, f"""
+                UPDATE trades SET
+                    {', '.join(update_fields)}
+                WHERE id = ?
+            """, tuple(update_values))
             self._db.commit()
         except Exception as e:
             logger.error(f"Failed to persist trade: {e}")
