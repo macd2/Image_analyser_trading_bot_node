@@ -11,8 +11,9 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceLine,
+  ReferenceDot,
 } from 'recharts'
-import { SpreadTradeData, ChartDataSet, Candle, StrategyMetadata } from './SpreadTradeChart.types'
+import { SpreadTradeData, ChartDataSet, Candle, StrategyMetadata, TradeMarker } from './SpreadTradeChart.types'
 import { LoadingState, ErrorState } from './index'
 
 interface SpreadTradeChartProps {
@@ -164,6 +165,16 @@ function ZScorePane({
     is_mean_reverting: point.is_mean_reverting,
   }))
 
+  // Find marker positions in chart data
+  const findMarkerIndex = (marker: TradeMarker | undefined): number => {
+    if (!marker) return -1
+    return chartData.findIndex(d => d.timeLabel === marker.timeLabel)
+  }
+
+  const signalIndex = findMarkerIndex(data.signalMarker)
+  const fillIndex = findMarkerIndex(data.fillMarker)
+  const exitIndex = findMarkerIndex(data.exitMarker)
+
   // Calculate dynamic Y-axis domain based on data
   const zScores = data.zScores.map(p => p.z_score)
   const minZ = Math.min(...zScores)
@@ -242,6 +253,61 @@ function ZScorePane({
             strokeWidth={2}
             name="Z-Score"
           />
+
+          {/* Trade Event Markers */}
+          {signalIndex >= 0 && (
+            <ReferenceDot
+              x={chartData[signalIndex].timeLabel}
+              y={chartData[signalIndex].z_score}
+              r={6}
+              fill={data.signalMarker!.color}
+              stroke="white"
+              strokeWidth={2}
+              label={{
+                value: data.signalMarker!.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 12,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
+
+          {fillIndex >= 0 && (
+            <ReferenceDot
+              x={chartData[fillIndex].timeLabel}
+              y={chartData[fillIndex].z_score}
+              r={6}
+              fill={data.fillMarker!.color}
+              stroke="white"
+              strokeWidth={2}
+              label={{
+                value: data.fillMarker!.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 12,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
+
+          {exitIndex >= 0 && (
+            <ReferenceDot
+              x={chartData[exitIndex].timeLabel}
+              y={chartData[exitIndex].z_score}
+              r={6}
+              fill={data.exitMarker!.color}
+              stroke="white"
+              strokeWidth={2}
+              label={{
+                value: data.exitMarker!.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 12,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -271,6 +337,16 @@ function SpreadPricePane({
     upper_stop: point.spread_mean + 3.5 * point.spread_std,
     lower_stop: point.spread_mean - 3.5 * point.spread_std,
   }))
+
+  // Find marker positions in chart data
+  const findMarkerIndex = (marker: TradeMarker | undefined): number => {
+    if (!marker) return -1
+    return chartData.findIndex(d => d.timeLabel === marker.timeLabel)
+  }
+
+  const signalIndex = findMarkerIndex(data.signalMarker)
+  const fillIndex = findMarkerIndex(data.fillMarker)
+  const exitIndex = findMarkerIndex(data.exitMarker)
 
   // Debug logging
   if (chartData.length > 0) {
@@ -363,6 +439,61 @@ function SpreadPricePane({
             strokeWidth={2}
             name="spread"
           />
+
+          {/* Trade Event Markers */}
+          {signalIndex >= 0 && (
+            <ReferenceDot
+              x={chartData[signalIndex].timeLabel}
+              y={chartData[signalIndex].spread}
+              r={6}
+              fill={data.signalMarker!.color}
+              stroke="white"
+              strokeWidth={2}
+              label={{
+                value: data.signalMarker!.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 12,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
+
+          {fillIndex >= 0 && (
+            <ReferenceDot
+              x={chartData[fillIndex].timeLabel}
+              y={chartData[fillIndex].spread}
+              r={6}
+              fill={data.fillMarker!.color}
+              stroke="white"
+              strokeWidth={2}
+              label={{
+                value: data.fillMarker!.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 12,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
+
+          {exitIndex >= 0 && (
+            <ReferenceDot
+              x={chartData[exitIndex].timeLabel}
+              y={chartData[exitIndex].spread}
+              r={6}
+              fill={data.exitMarker!.color}
+              stroke="white"
+              strokeWidth={2}
+              label={{
+                value: data.exitMarker!.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 12,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -391,6 +522,16 @@ function AssetPricePane({
     price_x: point.price_x,
     price_y: point.price_y,
   }))
+
+  // Find marker positions in chart data
+  const findMarkerIndex = (marker: TradeMarker | undefined): number => {
+    if (!marker) return -1
+    return chartData.findIndex(d => d.timeLabel === marker.timeLabel)
+  }
+
+  const signalIndex = findMarkerIndex(data.signalMarker)
+  const fillIndex = findMarkerIndex(data.fillMarker)
+  const exitIndex = findMarkerIndex(data.exitMarker)
 
   // Calculate dynamic Y-axis domains for both assets
   const pricesX = data.prices.map(p => p.price_x)
@@ -474,6 +615,61 @@ function AssetPricePane({
             strokeWidth={2}
             name="price_y"
           />
+
+          {/* Trade Event Markers - positioned on primary asset (left axis) */}
+          {signalIndex >= 0 && (
+            <ReferenceDot
+              x={chartData[signalIndex].timeLabel}
+              y={chartData[signalIndex].price_x}
+              r={6}
+              fill={data.signalMarker!.color}
+              stroke="white"
+              strokeWidth={2}
+              label={{
+                value: data.signalMarker!.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 12,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
+
+          {fillIndex >= 0 && (
+            <ReferenceDot
+              x={chartData[fillIndex].timeLabel}
+              y={chartData[fillIndex].price_x}
+              r={6}
+              fill={data.fillMarker!.color}
+              stroke="white"
+              strokeWidth={2}
+              label={{
+                value: data.fillMarker!.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 12,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
+
+          {exitIndex >= 0 && (
+            <ReferenceDot
+              x={chartData[exitIndex].timeLabel}
+              y={chartData[exitIndex].price_x}
+              r={6}
+              fill={data.exitMarker!.color}
+              stroke="white"
+              strokeWidth={2}
+              label={{
+                value: data.exitMarker!.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 12,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -533,12 +729,37 @@ function buildChartData(
     })
   }
 
+  // Build markers
+  const signalMarker = trade.created_at ? {
+    timeLabel: formatTimestamp(new Date(trade.created_at).getTime() / 1000),
+    type: 'signal' as const,
+    color: '#3b82f6',
+    label: 'Signal',
+  } : undefined
+
+  const fillMarker = (trade.filled_at || trade.fill_time) ? {
+    timeLabel: formatTimestamp(new Date(trade.filled_at || trade.fill_time!).getTime() / 1000),
+    type: 'fill' as const,
+    color: '#f59e0b',
+    label: 'Fill',
+  } : undefined
+
+  const exitMarker = (trade.closed_at && trade.exit_price) ? {
+    timeLabel: formatTimestamp(new Date(trade.closed_at).getTime() / 1000),
+    type: 'exit' as const,
+    color: trade.exit_reason === 'tp_hit' ? '#22c55e' : '#ef4444',
+    label: trade.exit_reason === 'tp_hit' ? 'TP Hit' : 'SL Hit',
+  } : undefined
+
   return {
     zScores,
     spreads,
     prices,
     entryTime: trade.filled_at ? new Date(trade.filled_at).getTime() : undefined,
     exitTime: trade.closed_at ? new Date(trade.closed_at).getTime() : undefined,
+    signalMarker,
+    fillMarker,
+    exitMarker,
   }
 }
 
