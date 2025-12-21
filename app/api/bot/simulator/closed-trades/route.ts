@@ -34,6 +34,7 @@ interface ClosedTrade {
   cancelled_at?: string | null;
   timeframe: string;
   instance_name: string;
+  instance_id: string;
   strategy_name?: string;
   run_id: string;
   bars_open?: number;
@@ -48,6 +49,7 @@ interface ClosedTrade {
   // Strategy information
   strategy_type?: string | null;
   strategy_metadata?: any;
+  order_id_pair?: string | null;
 }
 
 export async function GET() {
@@ -76,6 +78,7 @@ export async function GET() {
         i.name as instance_name,
         i.settings as instance_settings,
         r.id as run_id,
+        r.instance_id,
         t.position_size_usd,
         t.risk_amount_usd,
         t.risk_percentage,
@@ -84,6 +87,7 @@ export async function GET() {
         t.sizing_method,
         t.risk_pct_used,
         t.strategy_type,
+        t.order_id_pair,
         COALESCE(t.strategy_metadata, rec.strategy_metadata) as strategy_metadata
       FROM trades t
       LEFT JOIN recommendations rec ON t.recommendation_id = rec.id

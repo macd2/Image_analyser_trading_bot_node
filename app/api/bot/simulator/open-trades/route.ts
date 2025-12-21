@@ -99,6 +99,7 @@ interface OpenTradeRow {
   strategy_type?: string | null;
   strategy_name?: string | null;
   strategy_metadata?: any;
+  order_id_pair?: string | null;
 }
 
 /**

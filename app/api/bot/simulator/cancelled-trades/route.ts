@@ -44,6 +44,7 @@ interface CancelledTrade {
   // Strategy information
   strategy_type?: string | null;
   strategy_metadata?: any;
+  order_id_pair?: string | null;
 }
 
 export async function GET() {
@@ -77,6 +78,7 @@ export async function GET() {
         t.position_size_usd,
         t.risk_amount_usd,
         t.strategy_type,
+        t.order_id_pair,
         COALESCE(t.strategy_metadata, rec.strategy_metadata) as strategy_metadata
       FROM trades t
       LEFT JOIN recommendations rec ON t.recommendation_id = rec.id
