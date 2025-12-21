@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { useBlink } from '@/hooks/useBlink'
 
 interface TrendData {
   timestamp: string
@@ -15,6 +14,7 @@ interface TrendData {
 export default function PerformanceTrends() {
   const [trends, setTrends] = useState<TrendData[]>([])
   const [loading, setLoading] = useState(true)
+  const [blinkingStats, setBlinkingStats] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     // Generate mock trend data based on current date
@@ -55,22 +55,21 @@ export default function PerformanceTrends() {
       return data
     }
 
-    setTrends(generateTrendData())
+    const newTrends = generateTrendData()
+    setTrends(newTrends)
+    // Trigger blink on first load
+    setBlinkingStats(new Set(['pnl', 'winRate', 'sharpe', 'drawdown']))
+    setTimeout(() => setBlinkingStats(new Set()), 600)
     setLoading(false)
   }, [])
 
   if (loading) return <div className="text-gray-400">Loading performance trends...</div>
 
-  // Blink hooks for summary stats
+  // Calculate summary stats
   const finalPnl = trends.length > 0 ? trends[trends.length - 1].cumulativePnl : 0
   const avgWinRate = trends.length > 0 ? trends.reduce((sum, t) => sum + t.winRate, 0) / trends.length : 0
   const avgSharpe = trends.length > 0 ? trends.reduce((sum, t) => sum + t.sharpeRatio, 0) / trends.length : 0
   const maxDrawdown = trends.length > 0 ? Math.max(...trends.map(t => t.drawdown)) : 0
-
-  const blinkPnl = useBlink(finalPnl)
-  const blinkWinRate = useBlink(avgWinRate)
-  const blinkSharpe = useBlink(avgSharpe)
-  const blinkDrawdown = useBlink(maxDrawdown)
 
   return (
     <div className="space-y-6">
@@ -134,27 +133,27 @@ export default function PerformanceTrends() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {trends.length > 0 && (
           <>
-            <div className={`bg-slate-800 rounded-lg p-4 border border-slate-700 ${blinkPnl ? 'blink' : ''}`}>
+            <div className={`bg-slate-800 rounded-lg p-4 border border-slate-700 ${blinkingStats.has('pnl') ? 'blink' : ''}`}>
               <p className="text-sm text-gray-400">Final P&L</p>
-              <p className={`text-2xl font-bold mt-1 ${finalPnl >= 0 ? 'text-green-400' : 'text-red-400'} ${blinkPnl ? 'text-blink' : ''}`}>
+              <p className={`text-2xl font-bold mt-1 ${finalPnl >= 0 ? 'text-green-400' : 'text-red-400'} ${blinkingStats.has('pnl') ? 'text-blink' : ''}`}>
                 ${finalPnl.toFixed(0)}
               </p>
             </div>
-            <div className={`bg-slate-800 rounded-lg p-4 border border-slate-700 ${blinkWinRate ? 'blink' : ''}`}>
+            <div className={`bg-slate-800 rounded-lg p-4 border border-slate-700 ${blinkingStats.has('winRate') ? 'blink' : ''}`}>
               <p className="text-sm text-gray-400">Avg Win Rate</p>
-              <p className={`text-2xl font-bold text-blue-400 mt-1 ${blinkWinRate ? 'text-blink' : ''}`}>
+              <p className={`text-2xl font-bold text-blue-400 mt-1 ${blinkingStats.has('winRate') ? 'text-blink' : ''}`}>
                 {avgWinRate.toFixed(1)}%
               </p>
             </div>
-            <div className={`bg-slate-800 rounded-lg p-4 border border-slate-700 ${blinkSharpe ? 'blink' : ''}`}>
+            <div className={`bg-slate-800 rounded-lg p-4 border border-slate-700 ${blinkingStats.has('sharpe') ? 'blink' : ''}`}>
               <p className="text-sm text-gray-400">Avg Sharpe</p>
-              <p className={`text-2xl font-bold text-yellow-400 mt-1 ${blinkSharpe ? 'text-blink' : ''}`}>
+              <p className={`text-2xl font-bold text-yellow-400 mt-1 ${blinkingStats.has('sharpe') ? 'text-blink' : ''}`}>
                 {avgSharpe.toFixed(2)}
               </p>
             </div>
-            <div className={`bg-slate-800 rounded-lg p-4 border border-slate-700 ${blinkDrawdown ? 'blink' : ''}`}>
+            <div className={`bg-slate-800 rounded-lg p-4 border border-slate-700 ${blinkingStats.has('drawdown') ? 'blink' : ''}`}>
               <p className="text-sm text-gray-400">Max Drawdown</p>
-              <p className={`text-2xl font-bold text-red-400 mt-1 ${blinkDrawdown ? 'text-blink' : ''}`}>
+              <p className={`text-2xl font-bold text-red-400 mt-1 ${blinkingStats.has('drawdown') ? 'text-blink' : ''}`}>
                 {maxDrawdown.toFixed(2)}%
               </p>
             </div>

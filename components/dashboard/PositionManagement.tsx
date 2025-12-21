@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { BarChart, Bar, LineChart, Line, ScatterChart, Scatter, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { useBlink } from '@/hooks/useBlink'
 
 interface PositionSizingMetrics {
   avg_position_size: number
@@ -22,6 +21,7 @@ export default function PositionManagement() {
   const [metrics, setMetrics] = useState<PositionSizingMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [blinkingKpis, setBlinkingKpis] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -30,6 +30,9 @@ export default function PositionManagement() {
         if (!res.ok) throw new Error('Failed to fetch position metrics')
         const data = await res.json()
         setMetrics(data)
+        // Trigger blink on first load
+        setBlinkingKpis(new Set([0, 1, 2, 3]))
+        setTimeout(() => setBlinkingKpis(new Set()), 600)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
       } finally {
@@ -44,18 +47,12 @@ export default function PositionManagement() {
   if (error) return <div className="text-red-400">Error: {error}</div>
   if (!metrics) return null
 
-  // Blink hooks for metrics
-  const blinkAvgSize = useBlink(metrics.avg_position_size)
-  const blinkMedianSize = useBlink(metrics.median_position_size)
-  const blinkRiskAmount = useBlink(metrics.avg_risk_amount)
-  const blinkCorrelation = useBlink(metrics.correlation.position_size_vs_pnl)
-
   // KPI Cards
   const kpis = [
-    { label: 'Avg Position Size', value: `$${metrics.avg_position_size.toFixed(2)}`, range: `$${metrics.min_position_size.toFixed(0)} - $${metrics.max_position_size.toFixed(0)}`, blink: blinkAvgSize },
-    { label: 'Median Position Size', value: `$${metrics.median_position_size.toFixed(2)}`, range: `${((metrics.median_position_size / metrics.avg_position_size) * 100).toFixed(0)}% of avg`, blink: blinkMedianSize },
-    { label: 'Avg Risk Amount', value: `$${metrics.avg_risk_amount.toFixed(2)}`, range: `${metrics.avg_risk_percentage.toFixed(2)}% per trade`, blink: blinkRiskAmount },
-    { label: 'Position-P&L Correlation', value: metrics.correlation.position_size_vs_pnl.toFixed(2), range: metrics.correlation.position_size_vs_pnl > 0.5 ? 'Strong' : 'Weak', blink: blinkCorrelation },
+    { label: 'Avg Position Size', value: `$${metrics.avg_position_size.toFixed(2)}`, range: `$${metrics.min_position_size.toFixed(0)} - $${metrics.max_position_size.toFixed(0)}` },
+    { label: 'Median Position Size', value: `$${metrics.median_position_size.toFixed(2)}`, range: `${((metrics.median_position_size / metrics.avg_position_size) * 100).toFixed(0)}% of avg` },
+    { label: 'Avg Risk Amount', value: `$${metrics.avg_risk_amount.toFixed(2)}`, range: `${metrics.avg_risk_percentage.toFixed(2)}% per trade` },
+    { label: 'Position-P&L Correlation', value: metrics.correlation.position_size_vs_pnl.toFixed(2), range: metrics.correlation.position_size_vs_pnl > 0.5 ? 'Strong' : 'Weak' },
   ]
 
   // Risk distribution over time (mock data)
@@ -89,13 +86,16 @@ export default function PositionManagement() {
     <div className="space-y-6">
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((kpi, idx) => (
-          <div key={idx} className={`bg-slate-800 rounded-lg p-4 border border-slate-700 ${kpi.blink ? 'blink' : ''}`}>
-            <p className="text-sm text-gray-400">{kpi.label}</p>
-            <p className={`text-2xl font-bold text-blue-400 mt-1 ${kpi.blink ? 'text-blink' : ''}`}>{kpi.value}</p>
-            <p className="text-xs text-gray-500 mt-1">{kpi.range}</p>
-          </div>
-        ))}
+        {kpis.map((kpi, idx) => {
+          const isBlinking = blinkingKpis.has(idx)
+          return (
+            <div key={idx} className={`bg-slate-800 rounded-lg p-4 border border-slate-700 ${isBlinking ? 'blink' : ''}`}>
+              <p className="text-sm text-gray-400">{kpi.label}</p>
+              <p className={`text-2xl font-bold text-blue-400 mt-1 ${isBlinking ? 'text-blink' : ''}`}>{kpi.value}</p>
+              <p className="text-xs text-gray-500 mt-1">{kpi.range}</p>
+            </div>
+          )
+        })}
       </div>
 
       {/* Charts Grid */}

@@ -32,7 +32,7 @@ export default function SystemHealth() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Blink hooks for each metric
+  // Blink hooks for each metric - MUST be called unconditionally
   const blinkPnl = useBlink(overview?.performance.total_pnl)
   const blinkWinRate = useBlink(overview?.performance.win_rate)
   const blinkInstances = useBlink(overview?.system_health.active_instances)

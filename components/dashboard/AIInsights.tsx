@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { AlertCircle, TrendingUp, Lightbulb, Zap } from 'lucide-react'
-import { useBlink } from '@/hooks/useBlink'
 
 interface AIInsights {
   top_performers: Array<{
@@ -37,6 +36,7 @@ export default function AIInsights() {
   const [insights, setInsights] = useState<AIInsights | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [blinkingPerformers, setBlinkingPerformers] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     const fetchInsights = async () => {
@@ -45,6 +45,11 @@ export default function AIInsights() {
         if (!res.ok) throw new Error('Failed to fetch AI insights')
         const data = await res.json()
         setInsights(data)
+        // Trigger blink for all top performers on first load
+        if (data.top_performers && data.top_performers.length > 0) {
+          setBlinkingPerformers(new Set(data.top_performers.map((_: any, idx: number) => idx)))
+          setTimeout(() => setBlinkingPerformers(new Set()), 600)
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
       } finally {
@@ -58,9 +63,6 @@ export default function AIInsights() {
   if (loading) return <div className="text-gray-400">Loading AI insights...</div>
   if (error) return <div className="text-red-400">Error: {error}</div>
   if (!insights) return null
-
-  // Blink hooks for top performers
-  const topPerformerBlinks = insights.top_performers.map(p => useBlink(p.sharpe_ratio))
 
   const getRiskColor = (level: string) => {
     switch (level) {
@@ -89,21 +91,24 @@ export default function AIInsights() {
           <h3 className="text-sm font-semibold text-white">Top Performers</h3>
         </div>
         <div className="space-y-3">
-          {insights.top_performers.map((performer, idx) => (
-            <div key={performer.rank} className={`bg-slate-700 rounded p-4 flex items-start justify-between ${topPerformerBlinks[idx] ? 'blink' : ''}`}>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-2xl">{performer.rank === 1 ? '🥇' : performer.rank === 2 ? '🥈' : '🥉'}</span>
-                  <p className="text-sm font-semibold text-white">{performer.strategy}</p>
+          {insights.top_performers.map((performer, idx) => {
+            const isBlinking = blinkingPerformers.has(idx)
+            return (
+              <div key={performer.rank} className={`bg-slate-700 rounded p-4 flex items-start justify-between ${isBlinking ? 'blink' : ''}`}>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-2xl">{performer.rank === 1 ? '🥇' : performer.rank === 2 ? '🥈' : '🥉'}</span>
+                    <p className="text-sm font-semibold text-white">{performer.strategy}</p>
+                  </div>
+                  <p className="text-xs text-gray-400">{performer.insight}</p>
                 </div>
-                <p className="text-xs text-gray-400">{performer.insight}</p>
+                <div className="text-right">
+                  <p className={`text-sm font-bold text-green-400 ${isBlinking ? 'text-blink' : ''}`}>{performer.sharpe_ratio.toFixed(2)} Sharpe</p>
+                  <p className="text-xs text-gray-400">{performer.win_rate.toFixed(1)}% Win Rate</p>
+                </div>
               </div>
-              <div className="text-right">
-                <p className={`text-sm font-bold text-green-400 ${topPerformerBlinks[idx] ? 'text-blink' : ''}`}>{performer.sharpe_ratio.toFixed(2)} Sharpe</p>
-                <p className="text-xs text-gray-400">{performer.win_rate.toFixed(1)}% Win Rate</p>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 

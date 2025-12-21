@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { BarChart, Bar, ScatterChart, Scatter, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { useBlink } from '@/hooks/useBlink'
 
 interface SymbolMetrics {
   symbol: string
@@ -23,6 +22,8 @@ export default function SymbolPerformance() {
   const [symbols, setSymbols] = useState<SymbolMetrics[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [blinkingRows, setBlinkingRows] = useState<Set<number>>(new Set())
+  const prevSymbolsRef = useRef<SymbolMetrics[]>([])
 
   useEffect(() => {
     const fetchSymbols = async () => {
@@ -30,7 +31,24 @@ export default function SymbolPerformance() {
         const res = await fetch('/api/dashboard/symbol-performance')
         if (!res.ok) throw new Error('Failed to fetch symbol performance')
         const data = await res.json()
-        setSymbols(data.symbols || [])
+        const newSymbols = data.symbols || []
+
+        // Detect which rows changed
+        const newBlinking = new Set<number>()
+        newSymbols.forEach((s: SymbolMetrics, idx: number) => {
+          const oldSymbol = prevSymbolsRef.current[idx]
+          if (oldSymbol && oldSymbol.total_pnl !== s.total_pnl) {
+            newBlinking.add(idx)
+          }
+        })
+
+        if (newBlinking.size > 0) {
+          setBlinkingRows(newBlinking)
+          setTimeout(() => setBlinkingRows(new Set()), 600)
+        }
+
+        setSymbols(newSymbols)
+        prevSymbolsRef.current = newSymbols
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
       } finally {
@@ -87,15 +105,15 @@ export default function SymbolPerformance() {
           </thead>
           <tbody>
             {symbols.map((s, idx) => {
-              const blinkRow = useBlink(s.total_pnl)
+              const isBlinking = blinkingRows.has(idx)
               return (
-                <tr key={idx} className={`border-b border-slate-700 hover:bg-slate-700/50 ${blinkRow ? 'blink' : ''}`}>
+                <tr key={idx} className={`border-b border-slate-700 hover:bg-slate-700/50 ${isBlinking ? 'blink' : ''}`}>
                   <td className="py-3 px-3 text-white font-medium">{s.symbol}</td>
                   <td className="py-3 px-3 text-right text-gray-300">{s.trade_count}</td>
                   <td className={`py-3 px-3 text-right font-medium ${s.win_rate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
                     {s.win_rate.toFixed(1)}%
                   </td>
-                  <td className={`py-3 px-3 text-right font-medium ${s.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'} ${blinkRow ? 'text-blink' : ''}`}>
+                  <td className={`py-3 px-3 text-right font-medium ${s.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'} ${isBlinking ? 'text-blink' : ''}`}>
                     ${s.total_pnl.toFixed(2)}
                   </td>
                   <td className={`py-3 px-3 text-right ${s.avg_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>

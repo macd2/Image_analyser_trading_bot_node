@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
-import { useBlink } from '@/hooks/useBlink'
 
 interface CorrelationMetrics {
   confidence_vs_winrate: number
@@ -33,6 +32,7 @@ export default function CorrelationAnalysis() {
   const [metrics, setMetrics] = useState<CorrelationMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [blinkingMetrics, setBlinkingMetrics] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -41,6 +41,9 @@ export default function CorrelationAnalysis() {
         if (!res.ok) throw new Error('Failed to fetch correlation metrics')
         const data = await res.json()
         setMetrics(data)
+        // Trigger blink on first load
+        setBlinkingMetrics(new Set(['confidence', 'position']))
+        setTimeout(() => setBlinkingMetrics(new Set()), 600)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
       } finally {
@@ -55,23 +58,19 @@ export default function CorrelationAnalysis() {
   if (error) return <div className="text-red-400">Error: {error}</div>
   if (!metrics) return null
 
-  // Blink hooks
-  const blinkConfidence = useBlink(metrics.confidence_vs_winrate)
-  const blinkPosition = useBlink(metrics.position_size_vs_pnl)
-
   // Correlation cards
   const correlations = [
     {
       label: 'Confidence vs Win Rate',
       value: metrics.confidence_vs_winrate.toFixed(2),
       strength: Math.abs(metrics.confidence_vs_winrate) > 0.7 ? 'Strong' : Math.abs(metrics.confidence_vs_winrate) > 0.4 ? 'Moderate' : 'Weak',
-      blink: blinkConfidence,
+      key: 'confidence',
     },
     {
       label: 'Position Size vs P&L',
       value: metrics.position_size_vs_pnl.toFixed(2),
       strength: Math.abs(metrics.position_size_vs_pnl) > 0.7 ? 'Strong' : Math.abs(metrics.position_size_vs_pnl) > 0.4 ? 'Moderate' : 'Weak',
-      blink: blinkPosition,
+      key: 'position',
     },
   ]
 
@@ -86,15 +85,18 @@ export default function CorrelationAnalysis() {
     <div className="space-y-6">
       {/* Correlation Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {correlations.map((corr, idx) => (
-          <div key={idx} className={`bg-slate-800 rounded-lg p-4 border border-slate-700 ${corr.blink ? 'blink' : ''}`}>
-            <p className="text-sm text-gray-400">{corr.label}</p>
-            <p className={`text-3xl font-bold mt-2 ${Math.abs(parseFloat(corr.value)) > 0.5 ? 'text-green-400' : 'text-yellow-400'} ${corr.blink ? 'text-blink' : ''}`}>
-              {corr.value}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">{corr.strength} correlation</p>
-          </div>
-        ))}
+        {correlations.map((corr) => {
+          const isBlinking = blinkingMetrics.has(corr.key)
+          return (
+            <div key={corr.key} className={`bg-slate-800 rounded-lg p-4 border border-slate-700 ${isBlinking ? 'blink' : ''}`}>
+              <p className="text-sm text-gray-400">{corr.label}</p>
+              <p className={`text-3xl font-bold mt-2 ${Math.abs(parseFloat(corr.value)) > 0.5 ? 'text-green-400' : 'text-yellow-400'} ${isBlinking ? 'text-blink' : ''}`}>
+                {corr.value}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">{corr.strength} correlation</p>
+            </div>
+          )
+        })}
       </div>
 
       {/* Charts Grid */}

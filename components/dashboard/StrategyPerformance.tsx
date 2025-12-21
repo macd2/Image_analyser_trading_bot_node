@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { BarChart, Bar, LineChart, Line, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
-import { useBlink } from '@/hooks/useBlink'
 
 interface StrategyMetrics {
   strategy_name: string
@@ -27,13 +26,34 @@ export default function StrategyPerformance() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Track blink state for all strategies
+  const [blinkingRows, setBlinkingRows] = useState<Set<number>>(new Set())
+  const prevStrategiesRef = useRef<StrategyMetrics[]>([])
+
   useEffect(() => {
     const fetchStrategies = async () => {
       try {
         const res = await fetch('/api/dashboard/strategy-performance')
         if (!res.ok) throw new Error('Failed to fetch strategy performance')
         const data = await res.json()
-        setStrategies(data.strategies || [])
+        const newStrategies = data.strategies || []
+
+        // Detect which rows changed
+        const newBlinking = new Set<number>()
+        newStrategies.forEach((s: StrategyMetrics, idx: number) => {
+          const oldStrategy = prevStrategiesRef.current[idx]
+          if (oldStrategy && oldStrategy.total_pnl !== s.total_pnl) {
+            newBlinking.add(idx)
+          }
+        })
+
+        if (newBlinking.size > 0) {
+          setBlinkingRows(newBlinking)
+          setTimeout(() => setBlinkingRows(new Set()), 600)
+        }
+
+        setStrategies(newStrategies)
+        prevStrategiesRef.current = newStrategies
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
       } finally {
@@ -95,15 +115,15 @@ export default function StrategyPerformance() {
           </thead>
           <tbody>
             {strategies.map((s, idx) => {
-              const blinkRow = useBlink(s.total_pnl)
+              const isBlinking = blinkingRows.has(idx)
               return (
-                <tr key={idx} className={`border-b border-slate-700 hover:bg-slate-700/50 ${blinkRow ? 'blink' : ''}`}>
+                <tr key={idx} className={`border-b border-slate-700 hover:bg-slate-700/50 ${isBlinking ? 'blink' : ''}`}>
                   <td className="py-3 px-3 text-white font-medium">{s.strategy_name} {s.timeframe}</td>
                   <td className="py-3 px-3 text-right text-gray-300">{s.trade_count}</td>
                   <td className={`py-3 px-3 text-right font-medium ${s.win_rate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
                     {s.win_rate.toFixed(1)}%
                   </td>
-                  <td className={`py-3 px-3 text-right font-medium ${s.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'} ${blinkRow ? 'text-blink' : ''}`}>
+                  <td className={`py-3 px-3 text-right font-medium ${s.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'} ${isBlinking ? 'text-blink' : ''}`}>
                     ${s.total_pnl.toFixed(2)}
                   </td>
                   <td className="py-3 px-3 text-right text-gray-300">{s.sharpe_ratio.toFixed(2)}</td>
