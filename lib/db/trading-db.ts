@@ -1128,6 +1128,11 @@ export interface TradeRow {
   strategy_type: string | null;
   strategy_name: string | null;
   strategy_metadata: Record<string, any> | null;
+  // Spread-based trading columns
+  pair_quantity: number | null;      // Quantity for pair symbol in spread-based trades
+  pair_fill_price: number | null;    // Fill price for pair symbol
+  pair_exit_price: number | null;    // Exit price for pair symbol
+  order_id_pair: string | null;      // Order ID for pair symbol (for coordinated orders)
 }
 
 /**
