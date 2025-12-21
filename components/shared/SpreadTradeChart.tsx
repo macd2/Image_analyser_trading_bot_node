@@ -266,10 +266,10 @@ function ZScorePane({
             name="Z-Score"
           />
 
-          {/* Trade Event Markers */}
+          {/* Trade Event Markers - using index-based positioning */}
           {signalIndex >= 0 && (
             <ReferenceDot
-              x={chartData[signalIndex].timeLabel}
+              x={signalIndex}
               y={chartData[signalIndex].z_score}
               r={6}
               fill={data.signalMarker!.color}
@@ -287,7 +287,7 @@ function ZScorePane({
 
           {fillIndex >= 0 && (
             <ReferenceDot
-              x={chartData[fillIndex].timeLabel}
+              x={fillIndex}
               y={chartData[fillIndex].z_score}
               r={6}
               fill={data.fillMarker!.color}
@@ -305,7 +305,7 @@ function ZScorePane({
 
           {exitIndex >= 0 && (
             <ReferenceDot
-              x={chartData[exitIndex].timeLabel}
+              x={exitIndex}
               y={chartData[exitIndex].z_score}
               r={6}
               fill={data.exitMarker!.color}
@@ -464,10 +464,10 @@ function SpreadPricePane({
             name="spread"
           />
 
-          {/* Trade Event Markers */}
+          {/* Trade Event Markers - using index-based positioning */}
           {signalIndex >= 0 && (
             <ReferenceDot
-              x={chartData[signalIndex].timeLabel}
+              x={signalIndex}
               y={chartData[signalIndex].spread}
               r={6}
               fill={data.signalMarker!.color}
@@ -485,7 +485,7 @@ function SpreadPricePane({
 
           {fillIndex >= 0 && (
             <ReferenceDot
-              x={chartData[fillIndex].timeLabel}
+              x={fillIndex}
               y={chartData[fillIndex].spread}
               r={6}
               fill={data.fillMarker!.color}
@@ -503,7 +503,7 @@ function SpreadPricePane({
 
           {exitIndex >= 0 && (
             <ReferenceDot
-              x={chartData[exitIndex].timeLabel}
+              x={exitIndex}
               y={chartData[exitIndex].spread}
               r={6}
               fill={data.exitMarker!.color}
@@ -652,10 +652,10 @@ function AssetPricePane({
             name="price_y"
           />
 
-          {/* Trade Event Markers - positioned on primary asset (left axis) */}
+          {/* Trade Event Markers - positioned on primary asset (left axis), using index-based positioning */}
           {signalIndex >= 0 && (
             <ReferenceDot
-              x={chartData[signalIndex].timeLabel}
+              x={signalIndex}
               y={chartData[signalIndex].price_x}
               r={6}
               fill={data.signalMarker!.color}
@@ -673,7 +673,7 @@ function AssetPricePane({
 
           {fillIndex >= 0 && (
             <ReferenceDot
-              x={chartData[fillIndex].timeLabel}
+              x={fillIndex}
               y={chartData[fillIndex].price_x}
               r={6}
               fill={data.fillMarker!.color}
@@ -691,7 +691,7 @@ function AssetPricePane({
 
           {exitIndex >= 0 && (
             <ReferenceDot
-              x={chartData[exitIndex].timeLabel}
+              x={exitIndex}
               y={chartData[exitIndex].price_x}
               r={6}
               fill={data.exitMarker!.color}
