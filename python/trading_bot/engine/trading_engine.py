@@ -434,32 +434,50 @@ class TradingEngine:
         """Execute paper trade (simulation)."""
         side = "Buy" if signal["recommendation"].upper() in ("BUY", "LONG") else "Sell"
 
-        # Calculate position size
-        wallet = self.order_executor.get_wallet_balance()
-        balance = wallet.get("available", 10000)  # Default for paper
+        # Check if this is a spread-based strategy with pre-calculated position sizes
+        is_spread_based = signal.get("strategy_type") == "spread_based" and signal.get("units_x") is not None
 
-        # Get trade history for Kelly Criterion if enabled
-        trade_history = None
-        if self.config.trading.use_kelly_criterion:
-            trade_history = self._get_closed_trades_for_kelly()
-
-        sizing = self.position_sizer.calculate_position_size(
-            symbol=symbol,
-            entry_price=signal["entry_price"],
-            stop_loss=signal["stop_loss"],
-            wallet_balance=balance,
-            confidence=signal.get("confidence", 0.75),
-            trade_history=trade_history,
-            strategy=strategy,
-        )
-
-        if "error" in sizing:
-            return {
-                "id": trade_id,
-                "status": "rejected",
-                "error": sizing["error"],
-                "timestamp": timestamp,
+        if is_spread_based:
+            # Use strategy-provided quantities for spread-based trades
+            qty = abs(signal.get("units_x", 0))
+            pair_qty = abs(signal.get("units_y", 0))
+            sizing = {
+                "position_size": qty,
+                "pair_position_size": pair_qty,
+                "sizing_method": "spread_based_dynamic",
+                "risk_pct_used": 0.02,  # Placeholder
+                "risk_amount": 0,  # Will be calculated from spread risk
+                "kelly_metrics": None,
             }
+        else:
+            # Use PositionSizer for price-based strategies
+            wallet = self.order_executor.get_wallet_balance()
+            balance = wallet.get("available", 10000)  # Default for paper
+
+            # Get trade history for Kelly Criterion if enabled
+            trade_history = None
+            if self.config.trading.use_kelly_criterion:
+                trade_history = self._get_closed_trades_for_kelly()
+
+            sizing = self.position_sizer.calculate_position_size(
+                symbol=symbol,
+                entry_price=signal["entry_price"],
+                stop_loss=signal["stop_loss"],
+                wallet_balance=balance,
+                confidence=signal.get("confidence", 0.75),
+                trade_history=trade_history,
+                strategy=strategy,
+            )
+
+            if "error" in sizing:
+                return {
+                    "id": trade_id,
+                    "status": "rejected",
+                    "error": sizing["error"],
+                    "timestamp": timestamp,
+                }
+
+            pair_qty = None
 
         # Calculate RR ratio for logging
         entry = signal.get("entry_price", 0)
@@ -478,6 +496,7 @@ class TradingEngine:
             "symbol": symbol,
             "side": side,
             "qty": sizing["position_size"],
+            "pair_qty": pair_qty,  # For spread-based trades
             "entry_price": signal["entry_price"],
             "take_profit": signal["take_profit"],
             "stop_loss": signal["stop_loss"],
@@ -493,7 +512,7 @@ class TradingEngine:
             "strategy_name": signal.get("strategy_name"),
             "ranking_context": signal.get("ranking_context"),
             "strategy_metadata": signal.get("strategy_metadata"),  # For exit logic and monitoring
-            "wallet_balance_at_trade": wallet.get("available"),
+            "wallet_balance_at_trade": wallet.get("available") if not is_spread_based else None,
             "kelly_metrics": sizing.get("kelly_metrics"),  # From position sizer
         }
 
@@ -537,47 +556,85 @@ class TradingEngine:
                 "timestamp": timestamp,
             }
 
-        # Calculate position size
-        # Get trade history for Kelly Criterion if enabled
-        trade_history = None
-        if self.config.trading.use_kelly_criterion:
-            trade_history = self._get_closed_trades_for_kelly()
+        # Check if this is a spread-based strategy with pre-calculated position sizes
+        is_spread_based = signal.get("strategy_type") == "spread_based" and signal.get("units_x") is not None
 
-        sizing = self.position_sizer.calculate_position_size(
-            symbol=symbol,
-            entry_price=signal["entry_price"],
-            stop_loss=signal["stop_loss"],
-            wallet_balance=wallet["available"],
-            confidence=signal.get("confidence", 0.75),
-            trade_history=trade_history,
-            strategy=strategy,
-            position_size_multiplier=signal.get("position_size_multiplier", 1.0),
-        )
-
-        if "error" in sizing:
-            rejection_reason = sizing["error"]
-            self._insert_rejected_trade(trade_id, symbol, signal, rejection_reason, recommendation_id, cycle_id, timestamp)
-            return {
-                "id": trade_id,
-                "status": "rejected",
-                "error": rejection_reason,
-                "timestamp": timestamp,
+        if is_spread_based:
+            # Use strategy-provided quantities for spread-based trades
+            qty = abs(signal.get("units_x", 0))
+            pair_qty = abs(signal.get("units_y", 0))
+            sizing = {
+                "position_size": qty,
+                "pair_position_size": pair_qty,
+                "sizing_method": "spread_based_dynamic",
+                "risk_pct_used": 0.02,  # Placeholder
+                "risk_amount": 0,  # Will be calculated from spread risk
+                "kelly_metrics": None,
             }
+        else:
+            # Use PositionSizer for price-based strategies
+            # Get trade history for Kelly Criterion if enabled
+            trade_history = None
+            if self.config.trading.use_kelly_criterion:
+                trade_history = self._get_closed_trades_for_kelly()
+
+            sizing = self.position_sizer.calculate_position_size(
+                symbol=symbol,
+                entry_price=signal["entry_price"],
+                stop_loss=signal["stop_loss"],
+                wallet_balance=wallet["available"],
+                confidence=signal.get("confidence", 0.75),
+                trade_history=trade_history,
+                strategy=strategy,
+                position_size_multiplier=signal.get("position_size_multiplier", 1.0),
+            )
+
+            if "error" in sizing:
+                rejection_reason = sizing["error"]
+                self._insert_rejected_trade(trade_id, symbol, signal, rejection_reason, recommendation_id, cycle_id, timestamp)
+                return {
+                    "id": trade_id,
+                    "status": "rejected",
+                    "error": rejection_reason,
+                    "timestamp": timestamp,
+                }
+
+            pair_qty = None
 
         # Set leverage
         leverage = self.config.trading.leverage
-        self.order_executor.set_leverage(symbol, leverage)
 
-        # Place order
-        result = self.order_executor.place_limit_order(
-            symbol=symbol,
-            side=side,
-            qty=sizing["position_size"],
-            price=signal["entry_price"],
-            take_profit=signal["take_profit"],
-            stop_loss=signal["stop_loss"],
-            order_link_id=trade_id,
-        )
+        if is_spread_based:
+            # For spread-based trades, set leverage for both symbols
+            pair_symbol = signal.get("pair_symbol")
+            self.order_executor.set_leverage(symbol, leverage)
+            if pair_symbol:
+                self.order_executor.set_leverage(pair_symbol, leverage)
+
+            # Place coordinated orders for both symbols
+            result = self.order_executor.place_spread_based_orders(
+                symbol_x=symbol,
+                symbol_y=pair_symbol,
+                qty_x=signal.get("units_x", 0),
+                qty_y=signal.get("units_y", 0),
+                price_x=signal["entry_price"],
+                price_y=signal.get("pair_entry_price", signal["entry_price"]),  # Fallback to main entry price
+                order_link_id=trade_id,
+            )
+        else:
+            # For price-based trades, set leverage for main symbol only
+            self.order_executor.set_leverage(symbol, leverage)
+
+            # Place single order
+            result = self.order_executor.place_limit_order(
+                symbol=symbol,
+                side=side,
+                qty=sizing["position_size"],
+                price=signal["entry_price"],
+                take_profit=signal["take_profit"],
+                stop_loss=signal["stop_loss"],
+                order_link_id=trade_id,
+            )
 
         if "error" in result:
             trade = {
@@ -600,13 +657,15 @@ class TradingEngine:
             "symbol": symbol,
             "side": side,
             "qty": sizing["position_size"],
+            "pair_qty": pair_qty,  # For spread-based trades
             "entry_price": signal["entry_price"],
             "take_profit": signal["take_profit"],
             "stop_loss": signal["stop_loss"],
             "rr_ratio": rr_ratio,
             "confidence": signal.get("confidence"),
             "timeframe": signal.get("timeframe"),  # Store timeframe for chart display
-            "order_id": result.get("order_id"),
+            "order_id": result.get("order_id") or result.get("order_id_x"),  # Handle both single and spread orders
+            "order_id_pair": result.get("order_id_y"),  # For spread-based trades
             "status": "submitted",
             "recommendation_id": recommendation_id,
             "timestamp": timestamp,
@@ -616,7 +675,7 @@ class TradingEngine:
             "strategy_name": signal.get("strategy_name"),
             "ranking_context": signal.get("ranking_context"),
             "strategy_metadata": signal.get("strategy_metadata"),  # For exit logic and monitoring
-            "wallet_balance_at_trade": wallet.get("available"),
+            "wallet_balance_at_trade": wallet.get("available") if not is_spread_based else None,
             "kelly_metrics": sizing.get("kelly_metrics"),  # From position sizer
         }
 
@@ -742,11 +801,11 @@ class TradingEngine:
             execute(conn, """
                 INSERT INTO trades
                 (id, recommendation_id, run_id, cycle_id, symbol, side, entry_price, take_profit,
-                 stop_loss, quantity, status, order_id, confidence, rr_ratio, timeframe, dry_run, created_at,
+                 stop_loss, quantity, pair_quantity, status, order_id, order_id_pair, confidence, rr_ratio, timeframe, dry_run, created_at,
                  position_size_usd, risk_amount_usd, risk_percentage, confidence_weight, risk_per_unit, sizing_method, risk_pct_used,
                  strategy_uuid, strategy_type, strategy_name, ranking_context, strategy_metadata, wallet_balance_at_trade, kelly_metrics,
                  position_sizing_inputs, position_sizing_outputs, order_parameters, execution_timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?)
@@ -761,8 +820,10 @@ class TradingEngine:
                 trade.get("take_profit"),
                 trade.get("stop_loss"),
                 trade.get("qty"),
+                trade.get("pair_qty"),  # For spread-based trades
                 trade["status"],
                 trade.get("order_id"),
+                trade.get("order_id_pair"),  # For spread-based trades
                 trade.get("confidence"),
                 trade.get("rr_ratio"),
                 timeframe,  # Use timeframe from trade or recommendation
