@@ -176,11 +176,17 @@ function ZScorePane({
 
   // Find marker positions in chart data by matching timeLabel
   const findMarkerIndex = (marker: TradeMarker | undefined): number => {
-    if (!marker) return -1
+    if (!marker) {
+      console.log('[ZScorePane] Marker is undefined')
+      return -1
+    }
+    console.log(`[ZScorePane] Looking for marker "${marker.label}" with timeLabel "${marker.timeLabel}"`)
+    console.log('[ZScorePane] Chart data length:', chartData.length)
+    console.log('[ZScorePane] First 5 timeLabels:', chartData.slice(0, 5).map(d => d.timeLabel))
     const index = chartData.findIndex(d => d.timeLabel === marker.timeLabel)
-    console.log(`[ZScorePane] Looking for marker "${marker.label}" with timeLabel "${marker.timeLabel}" - Found at index: ${index}`)
+    console.log(`[ZScorePane] Found marker at index: ${index}`)
     if (index < 0) {
-      console.warn(`[ZScorePane] Available timeLabels (first 5):`, chartData.slice(0, 5).map(d => d.timeLabel))
+      console.warn(`[ZScorePane] Marker NOT found! Available timeLabels (all):`, chartData.map(d => d.timeLabel))
     }
     return index
   }
@@ -189,11 +195,12 @@ function ZScorePane({
   const fillIndex = findMarkerIndex(data.fillMarker)
   const exitIndex = findMarkerIndex(data.exitMarker)
 
-  console.log('[ZScorePane] Marker indices:', { signalIndex, fillIndex, exitIndex })
+  console.log('[ZScorePane] Final marker indices:', { signalIndex, fillIndex, exitIndex })
 
   // Custom dot renderer for markers
   const MarkerDot = (props: any) => {
     const { cx, cy, fill, r, stroke, strokeWidth } = props
+    console.log('[ZScorePane] MarkerDot rendered:', { cx, cy, fill, r, stroke, strokeWidth })
     return (
       <circle
         cx={cx}
@@ -287,14 +294,21 @@ function ZScorePane({
             stroke="#f59e0b"
             dot={(props: any) => {
               const { cx, cy, payload, dataIndex } = props
+              // Log every dot render to see what's happening
+              if (dataIndex === 0 || dataIndex === signalIndex || dataIndex === fillIndex || dataIndex === exitIndex) {
+                console.log('[ZScorePane] Dot renderer called:', { dataIndex, signalIndex, fillIndex, exitIndex, cx, cy })
+              }
               // Check if this index is a marker
               if (dataIndex === signalIndex && data.signalMarker) {
+                console.log('[ZScorePane] Rendering signal marker at index:', dataIndex)
                 return <MarkerDot cx={cx} cy={cy} fill={data.signalMarker.color} r={8} stroke="white" strokeWidth={2} />
               }
               if (dataIndex === fillIndex && data.fillMarker) {
+                console.log('[ZScorePane] Rendering fill marker at index:', dataIndex)
                 return <MarkerDot cx={cx} cy={cy} fill={data.fillMarker.color} r={8} stroke="white" strokeWidth={2} />
               }
               if (dataIndex === exitIndex && data.exitMarker) {
+                console.log('[ZScorePane] Rendering exit marker at index:', dataIndex)
                 return <MarkerDot cx={cx} cy={cy} fill={data.exitMarker.color} r={8} stroke="white" strokeWidth={2} />
               }
               return null
@@ -715,15 +729,29 @@ function buildChartData(
   let signalMarker: TradeMarker | undefined
   if (trade.created_at) {
     const signalTime = Math.floor(new Date(trade.created_at).getTime() / 1000)
+    console.log('[buildChartData] Signal creation:', {
+      trade_created_at: trade.created_at,
+      signalTime,
+      zScoresLength: zScores.length,
+      firstZScoreTime: zScores[0]?.time,
+      lastZScoreTime: zScores[zScores.length - 1]?.time,
+    })
     const closestTime = findClosestCandleTime(signalTime)
+    console.log('[buildChartData] Closest candle time found:', closestTime)
     if (closestTime !== null) {
+      const formattedLabel = formatTimestamp(closestTime)
       signalMarker = {
-        timeLabel: formatTimestamp(closestTime),
+        timeLabel: formattedLabel,
         type: 'signal' as const,
         color: '#3b82f6',
         label: 'Signal',
       }
+      console.log('[buildChartData] Signal marker created:', signalMarker)
+    } else {
+      console.warn('[buildChartData] No closest candle time found for signal')
     }
+  } else {
+    console.warn('[buildChartData] No created_at for signal marker')
   }
 
   let fillMarker: TradeMarker | undefined
