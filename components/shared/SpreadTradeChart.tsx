@@ -197,21 +197,7 @@ function ZScorePane({
 
   console.log('[ZScorePane] Final marker indices:', { signalIndex, fillIndex, exitIndex })
 
-  // Custom dot renderer for markers
-  const MarkerDot = (props: any) => {
-    const { cx, cy, fill, r, stroke, strokeWidth } = props
-    console.log('[ZScorePane] MarkerDot rendered:', { cx, cy, fill, r, stroke, strokeWidth })
-    return (
-      <circle
-        cx={cx}
-        cy={cy}
-        r={r || 6}
-        fill={fill}
-        stroke={stroke || 'white'}
-        strokeWidth={strokeWidth || 2}
-      />
-    )
-  }
+
 
   // Calculate dynamic Y-axis domain based on data
   const zScores = data.zScores.map(p => p.z_score)
@@ -365,21 +351,6 @@ function SpreadPricePane({
   const signalIndex = findMarkerIndex(data.signalMarker)
   const fillIndex = findMarkerIndex(data.fillMarker)
   const exitIndex = findMarkerIndex(data.exitMarker)
-
-  // Custom dot renderer for markers
-  const MarkerDot = (props: any) => {
-    const { cx, cy, fill, r, stroke, strokeWidth } = props
-    return (
-      <circle
-        cx={cx}
-        cy={cy}
-        r={r || 6}
-        fill={fill}
-        stroke={stroke || 'white'}
-        strokeWidth={strokeWidth || 2}
-      />
-    )
-  }
 
   // Debug logging
   if (chartData.length > 0) {
@@ -582,21 +553,6 @@ function AssetPricePane({
   const signalIndex = findMarkerIndex(data.signalMarker)
   const fillIndex = findMarkerIndex(data.fillMarker)
   const exitIndex = findMarkerIndex(data.exitMarker)
-
-  // Custom dot renderer for markers
-  const MarkerDot = (props: any) => {
-    const { cx, cy, fill, r, stroke, strokeWidth } = props
-    return (
-      <circle
-        cx={cx}
-        cy={cy}
-        r={r || 6}
-        fill={fill}
-        stroke={stroke || 'white'}
-        strokeWidth={strokeWidth || 2}
-      />
-    )
-  }
 
   // Calculate dynamic Y-axis domains for both assets
   const pricesX = data.prices.map(p => p.price_x)
@@ -822,9 +778,9 @@ function buildChartData(
   metadata: StrategyMetadata,
   trade: SpreadTradeData
 ): ChartDataSet {
-  const zScores = []
-  const spreads = []
-  const prices = []
+  const zScores: any[] = []
+  const spreads: any[] = []
+  const prices: any[] = []
 
   // Align candles by timestamp
   const minLength = Math.min(primaryCandles.length, pairCandles.length)
