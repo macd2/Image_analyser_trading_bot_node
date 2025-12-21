@@ -168,7 +168,14 @@ function ZScorePane({
   // Find marker positions in chart data
   const findMarkerIndex = (marker: TradeMarker | undefined): number => {
     if (!marker) return -1
-    return chartData.findIndex(d => d.timeLabel === marker.timeLabel)
+    const index = chartData.findIndex(d => d.timeLabel === marker.timeLabel)
+    if (index >= 0) {
+      console.log(`[ZScorePane] Found ${marker.label} marker at index ${index}, timeLabel: ${marker.timeLabel}`)
+    } else {
+      console.warn(`[ZScorePane] Could not find ${marker.label} marker with timeLabel: ${marker.timeLabel}`)
+      console.warn(`[ZScorePane] Available timeLabels (first 5):`, chartData.slice(0, 5).map(d => d.timeLabel))
+    }
+    return index
   }
 
   const signalIndex = findMarkerIndex(data.signalMarker)
@@ -193,7 +200,12 @@ function ZScorePane({
       <ResponsiveContainer width="100%" height={height}>
         <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="timeLabel" stroke="#94a3b8" />
+          <XAxis
+            dataKey="timeLabel"
+            stroke="#94a3b8"
+            tick={{ fontSize: 12 }}
+            interval={Math.max(0, Math.floor(chartData.length / 6))}
+          />
           <YAxis
             stroke="#94a3b8"
             type="number"
@@ -341,7 +353,14 @@ function SpreadPricePane({
   // Find marker positions in chart data
   const findMarkerIndex = (marker: TradeMarker | undefined): number => {
     if (!marker) return -1
-    return chartData.findIndex(d => d.timeLabel === marker.timeLabel)
+    const index = chartData.findIndex(d => d.timeLabel === marker.timeLabel)
+    if (index >= 0) {
+      console.log(`[SpreadPricePane] Found ${marker.label} marker at index ${index}, timeLabel: ${marker.timeLabel}`)
+    } else {
+      console.warn(`[SpreadPricePane] Could not find ${marker.label} marker with timeLabel: ${marker.timeLabel}`)
+      console.warn(`[SpreadPricePane] Available timeLabels (first 5):`, chartData.slice(0, 5).map(d => d.timeLabel))
+    }
+    return index
   }
 
   const signalIndex = findMarkerIndex(data.signalMarker)
@@ -379,7 +398,12 @@ function SpreadPricePane({
       <ResponsiveContainer width="100%" height={height}>
         <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="timeLabel" stroke="#94a3b8" />
+          <XAxis
+            dataKey="timeLabel"
+            stroke="#94a3b8"
+            tick={{ fontSize: 12 }}
+            interval={Math.max(0, Math.floor(chartData.length / 6))}
+          />
           <YAxis
             stroke="#94a3b8"
             type="number"
@@ -526,7 +550,14 @@ function AssetPricePane({
   // Find marker positions in chart data
   const findMarkerIndex = (marker: TradeMarker | undefined): number => {
     if (!marker) return -1
-    return chartData.findIndex(d => d.timeLabel === marker.timeLabel)
+    const index = chartData.findIndex(d => d.timeLabel === marker.timeLabel)
+    if (index >= 0) {
+      console.log(`[AssetPricePane] Found ${marker.label} marker at index ${index}, timeLabel: ${marker.timeLabel}`)
+    } else {
+      console.warn(`[AssetPricePane] Could not find ${marker.label} marker with timeLabel: ${marker.timeLabel}`)
+      console.warn(`[AssetPricePane] Available timeLabels (first 5):`, chartData.slice(0, 5).map(d => d.timeLabel))
+    }
+    return index
   }
 
   const signalIndex = findMarkerIndex(data.signalMarker)
@@ -562,7 +593,12 @@ function AssetPricePane({
       <ResponsiveContainer width="100%" height={height}>
         <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="timeLabel" stroke="#94a3b8" />
+          <XAxis
+            dataKey="timeLabel"
+            stroke="#94a3b8"
+            tick={{ fontSize: 12 }}
+            interval={Math.max(0, Math.floor(chartData.length / 6))}
+          />
           <YAxis
             stroke="#94a3b8"
             yAxisId="left"
@@ -729,27 +765,66 @@ function buildChartData(
     })
   }
 
-  // Build markers
-  const signalMarker = trade.created_at ? {
-    timeLabel: formatTimestamp(new Date(trade.created_at).getTime() / 1000),
-    type: 'signal' as const,
-    color: '#3b82f6',
-    label: 'Signal',
-  } : undefined
+  // Helper to find closest candle time to a given timestamp
+  const findClosestCandleTime = (targetTimestamp: number): number | null => {
+    if (zScores.length === 0) return null
 
-  const fillMarker = (trade.filled_at || trade.fill_time) ? {
-    timeLabel: formatTimestamp(new Date(trade.filled_at || trade.fill_time!).getTime() / 1000),
-    type: 'fill' as const,
-    color: '#f59e0b',
-    label: 'Fill',
-  } : undefined
+    let closest = zScores[0].time
+    let minDiff = Math.abs(zScores[0].time - targetTimestamp)
 
-  const exitMarker = (trade.closed_at && trade.exit_price) ? {
-    timeLabel: formatTimestamp(new Date(trade.closed_at).getTime() / 1000),
-    type: 'exit' as const,
-    color: trade.exit_reason === 'tp_hit' ? '#22c55e' : '#ef4444',
-    label: trade.exit_reason === 'tp_hit' ? 'TP Hit' : 'SL Hit',
-  } : undefined
+    for (const point of zScores) {
+      const diff = Math.abs(point.time - targetTimestamp)
+      if (diff < minDiff) {
+        minDiff = diff
+        closest = point.time
+      }
+    }
+
+    return closest
+  }
+
+  // Build markers - use closest candle time instead of exact match
+  let signalMarker: TradeMarker | undefined
+  if (trade.created_at) {
+    const signalTime = Math.floor(new Date(trade.created_at).getTime() / 1000)
+    const closestTime = findClosestCandleTime(signalTime)
+    if (closestTime !== null) {
+      signalMarker = {
+        timeLabel: formatTimestamp(closestTime),
+        type: 'signal' as const,
+        color: '#3b82f6',
+        label: 'Signal',
+      }
+    }
+  }
+
+  let fillMarker: TradeMarker | undefined
+  if (trade.filled_at || trade.fill_time) {
+    const fillTime = Math.floor(new Date(trade.filled_at || trade.fill_time!).getTime() / 1000)
+    const closestTime = findClosestCandleTime(fillTime)
+    if (closestTime !== null) {
+      fillMarker = {
+        timeLabel: formatTimestamp(closestTime),
+        type: 'fill' as const,
+        color: '#f59e0b',
+        label: 'Fill',
+      }
+    }
+  }
+
+  let exitMarker: TradeMarker | undefined
+  if (trade.closed_at && trade.exit_price) {
+    const exitTime = Math.floor(new Date(trade.closed_at).getTime() / 1000)
+    const closestTime = findClosestCandleTime(exitTime)
+    if (closestTime !== null) {
+      exitMarker = {
+        timeLabel: formatTimestamp(closestTime),
+        type: 'exit' as const,
+        color: trade.exit_reason === 'tp_hit' ? '#22c55e' : '#ef4444',
+        label: trade.exit_reason === 'tp_hit' ? 'TP Hit' : 'SL Hit',
+      }
+    }
+  }
 
   return {
     zScores,
