@@ -392,3 +392,238 @@ class AlexAnalysisModule(BaseAnalysisModule):
         """Calculate market environment score."""
         return min(1.0, trend.get('strength', 0.5))
 
+    def validate_signal(self, signal: Dict[str, Any]) -> bool:
+        """
+        Validate price-based signal.
+
+        Checks:
+        - RR ratio >= min_rr (default 1.0)
+        - Entry/SL/TP prices are in correct order
+        - Prices are reasonable (not zero or negative)
+
+        Args:
+            signal: Signal dict with entry_price, stop_loss, take_profit
+
+        Returns:
+            True if valid
+
+        Raises:
+            ValueError: If validation fails
+        """
+        min_rr = self.get_config_value("min_rr", 1.0)
+
+        entry = signal.get("entry_price")
+        sl = signal.get("stop_loss")
+        tp = signal.get("take_profit")
+
+        if not all([entry, sl, tp]):
+            raise ValueError(f"Missing price levels: entry={entry}, sl={sl}, tp={tp}")
+
+        if entry <= 0 or sl <= 0 or tp <= 0:
+            raise ValueError(f"Prices must be positive: entry={entry}, sl={sl}, tp={tp}")
+
+        # Determine direction based on entry vs SL
+        is_long = entry > sl
+
+        if is_long:
+            if not (sl < entry < tp):
+                raise ValueError(
+                    f"Long signal prices in wrong order: SL({sl}) < Entry({entry}) < TP({tp})"
+                )
+            rr_ratio = (tp - entry) / (entry - sl)
+        else:
+            if not (tp < entry < sl):
+                raise ValueError(
+                    f"Short signal prices in wrong order: TP({tp}) < Entry({entry}) < SL({sl})"
+                )
+            rr_ratio = (entry - tp) / (sl - entry)
+
+        if rr_ratio < min_rr:
+            raise ValueError(
+                f"RR ratio {rr_ratio:.2f} below minimum {min_rr}"
+            )
+
+        return True
+
+    def calculate_risk_metrics(self, signal: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Calculate price-based risk metrics.
+
+        Returns:
+            Dict with: risk_per_unit, reward_per_unit, risk_reward_ratio
+        """
+        entry = signal.get("entry_price")
+        sl = signal.get("stop_loss")
+        tp = signal.get("take_profit")
+
+        is_long = entry > sl
+
+        if is_long:
+            risk_per_unit = entry - sl
+            reward_per_unit = tp - entry
+        else:
+            risk_per_unit = sl - entry
+            reward_per_unit = entry - tp
+
+        rr_ratio = reward_per_unit / risk_per_unit if risk_per_unit > 0 else 0
+
+        return {
+            "risk_per_unit": risk_per_unit,
+            "reward_per_unit": reward_per_unit,
+            "risk_reward_ratio": rr_ratio,
+        }
+
+    def get_exit_condition(self) -> Dict[str, Any]:
+        """
+        Get price-based exit condition metadata.
+
+        Returns:
+            Dict with TP and SL prices for simulator to check
+        """
+        return {
+            "type": "price_level",
+            "description": "Exit when price touches TP or SL level",
+        }
+
+    def get_monitoring_metadata(self) -> Dict[str, Any]:
+        """
+        Get price-based monitoring metadata.
+
+        Returns:
+            Dict with price levels and RR ratio for position monitor
+        """
+        return {
+            "type": "price_level",
+            "enable_position_tightening": self.get_config_value("enable_position_tightening", True),
+            "enable_sl_tightening": self.get_config_value("enable_sl_tightening", True),
+            "rr_tightening_steps": self.get_config_value("rr_tightening_steps", []),
+        }
+
+    def should_exit(
+        self,
+        trade: Dict[str, Any],
+        current_candle: Dict[str, Any],
+        pair_candle: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Check if price-based trade should exit.
+
+        For price-based strategies, exit when price touches TP or SL.
+
+        Args:
+            trade: Trade record with entry_price, stop_loss, take_profit
+            current_candle: Current candle {timestamp, open, high, low, close}
+            pair_candle: Not used for price-based (None)
+
+        Returns:
+            Dict with 'should_exit' bool and 'exit_details' dict
+        """
+        try:
+            entry_price = trade.get("entry_price")
+            stop_loss = trade.get("stop_loss")
+            take_profit = trade.get("take_profit")
+            current_price = current_candle.get("close")
+
+            if not all([entry_price, stop_loss, take_profit, current_price]):
+                return {
+                    "should_exit": False,
+                    "exit_details": {
+                        "reason": "no_exit",
+                        "error": "Missing required price data",
+                    }
+                }
+
+            # Determine direction
+            is_long = entry_price > stop_loss
+
+            # Check if price touched TP or SL
+            if is_long:
+                tp_touched = current_price >= take_profit
+                sl_touched = current_price <= stop_loss
+            else:
+                tp_touched = current_price <= take_profit
+                sl_touched = current_price >= stop_loss
+
+            if tp_touched:
+                return {
+                    "should_exit": True,
+                    "exit_details": {
+                        "reason": "tp_touched",
+                        "price": current_price,
+                        "tp": take_profit,
+                        "sl": stop_loss,
+                        "distance_to_tp": abs(current_price - take_profit),
+                        "distance_to_sl": abs(current_price - stop_loss),
+                        "direction": "long" if is_long else "short",
+                    }
+                }
+
+            if sl_touched:
+                return {
+                    "should_exit": True,
+                    "exit_details": {
+                        "reason": "sl_touched",
+                        "price": current_price,
+                        "tp": take_profit,
+                        "sl": stop_loss,
+                        "distance_to_tp": abs(current_price - take_profit),
+                        "distance_to_sl": abs(current_price - stop_loss),
+                        "direction": "long" if is_long else "short",
+                    }
+                }
+
+            # No exit condition met
+            return {
+                "should_exit": False,
+                "exit_details": {
+                    "reason": "no_exit",
+                    "price": current_price,
+                    "tp": take_profit,
+                    "sl": stop_loss,
+                    "distance_to_tp": abs(current_price - take_profit),
+                    "distance_to_sl": abs(current_price - stop_loss),
+                    "direction": "long" if is_long else "short",
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error in should_exit: {e}")
+            return {
+                "should_exit": False,
+                "exit_details": {
+                    "reason": "error",
+                    "error": str(e),
+                }
+            }
+
+    @classmethod
+    def get_required_settings(cls) -> Dict[str, Any]:
+        """
+        Get price-based strategy settings schema.
+
+        Returns:
+            Dict with settings schema for AlexAnalysisModule
+        """
+        return {
+            "enable_position_tightening": {
+                "type": "bool",
+                "default": True,
+                "description": "Enable position tightening (moving SL to breakeven or profit)",
+            },
+            "enable_sl_tightening": {
+                "type": "bool",
+                "default": True,
+                "description": "Enable stop loss tightening based on RR ratio",
+            },
+            "rr_tightening_steps": {
+                "type": "list",
+                "default": [],
+                "description": "List of RR ratio thresholds for SL tightening (e.g., [2.0, 3.0, 4.0])",
+            },
+            "min_rr": {
+                "type": "float",
+                "default": 1.0,
+                "description": "Minimum risk/reward ratio for signal validation",
+            },
+        }
+
