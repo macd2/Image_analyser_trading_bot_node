@@ -225,6 +225,8 @@ function ZScorePane({
   const tickInterval = (yDomain[1] - yDomain[0]) / (tickCount - 1)
   const yTicks = Array.from({ length: tickCount }, (_, i) => yDomain[0] + i * tickInterval)
 
+
+
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
       <h3 className="text-sm font-semibold text-white mb-3">Z-Score (Entry/Exit Signals)</h3>
@@ -242,6 +244,7 @@ function ZScorePane({
             type="number"
             domain={[yDomain[0], yDomain[1]]}
             ticks={yTicks}
+            tickFormatter={(value) => typeof value === 'number' ? value.toFixed(3) : String(value)}
           />
           <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }}
@@ -292,30 +295,30 @@ function ZScorePane({
             type="monotone"
             dataKey="z_score"
             stroke="#f59e0b"
-            dot={(props: any) => {
-              const { cx, cy, payload, dataIndex } = props
-              // Log every dot render to see what's happening
-              if (dataIndex === 0 || dataIndex === signalIndex || dataIndex === fillIndex || dataIndex === exitIndex) {
-                console.log('[ZScorePane] Dot renderer called:', { dataIndex, signalIndex, fillIndex, exitIndex, cx, cy })
-              }
-              // Check if this index is a marker
-              if (dataIndex === signalIndex && data.signalMarker) {
-                console.log('[ZScorePane] Rendering signal marker at index:', dataIndex)
-                return <MarkerDot cx={cx} cy={cy} fill={data.signalMarker.color} r={8} stroke="white" strokeWidth={2} />
-              }
-              if (dataIndex === fillIndex && data.fillMarker) {
-                console.log('[ZScorePane] Rendering fill marker at index:', dataIndex)
-                return <MarkerDot cx={cx} cy={cy} fill={data.fillMarker.color} r={8} stroke="white" strokeWidth={2} />
-              }
-              if (dataIndex === exitIndex && data.exitMarker) {
-                console.log('[ZScorePane] Rendering exit marker at index:', dataIndex)
-                return <MarkerDot cx={cx} cy={cy} fill={data.exitMarker.color} r={8} stroke="white" strokeWidth={2} />
-              }
-              return null
-            }}
+            dot={false}
             strokeWidth={2}
             name="Z-Score"
+            isAnimationActive={false}
           />
+
+          {/* Render signal marker using ReferenceDot with correct x/y values */}
+          {signalIndex >= 0 && data.signalMarker && (
+            <ReferenceDot
+              x={data.signalMarker.timeLabel}
+              y={data.zScores[signalIndex].z_score}
+              r={5}
+              fill={data.signalMarker.color}
+              stroke="white"
+              strokeWidth={1.5}
+              label={{
+                value: data.signalMarker.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 10,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -403,6 +406,8 @@ function SpreadPricePane({
   const tickInterval = (yDomain[1] - yDomain[0]) / (tickCount - 1)
   const yTicks = Array.from({ length: tickCount }, (_, i) => yDomain[0] + i * tickInterval)
 
+
+
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
       <h3 className="text-sm font-semibold text-white mb-3">Spread Price (Risk Management)</h3>
@@ -420,6 +425,7 @@ function SpreadPricePane({
             type="number"
             domain={[yDomain[0], yDomain[1]]}
             ticks={yTicks}
+            tickFormatter={(value) => typeof value === 'number' ? value.toFixed(6) : String(value)}
           />
           <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }}
@@ -470,23 +476,67 @@ function SpreadPricePane({
             type="monotone"
             dataKey="spread"
             stroke="#3b82f6"
-            dot={(props: any) => {
-              const { cx, cy, payload, dataIndex } = props
-              // Check if this index is a marker
-              if (dataIndex === signalIndex && data.signalMarker) {
-                return <MarkerDot cx={cx} cy={cy} fill={data.signalMarker.color} r={8} stroke="white" strokeWidth={2} />
-              }
-              if (dataIndex === fillIndex && data.fillMarker) {
-                return <MarkerDot cx={cx} cy={cy} fill={data.fillMarker.color} r={8} stroke="white" strokeWidth={2} />
-              }
-              if (dataIndex === exitIndex && data.exitMarker) {
-                return <MarkerDot cx={cx} cy={cy} fill={data.exitMarker.color} r={8} stroke="white" strokeWidth={2} />
-              }
-              return null
-            }}
+            dot={false}
             strokeWidth={2}
             name="spread"
           />
+
+          {/* Render signal marker */}
+          {signalIndex >= 0 && data.signalMarker && (
+            <ReferenceDot
+              x={data.signalMarker.timeLabel}
+              y={data.spreads[signalIndex].spread}
+              r={5}
+              fill={data.signalMarker.color}
+              stroke="white"
+              strokeWidth={1.5}
+              label={{
+                value: data.signalMarker.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 10,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
+
+          {/* Render fill marker */}
+          {fillIndex >= 0 && data.fillMarker && (
+            <ReferenceDot
+              x={data.fillMarker.timeLabel}
+              y={data.spreads[fillIndex].spread}
+              r={5}
+              fill={data.fillMarker.color}
+              stroke="white"
+              strokeWidth={1.5}
+              label={{
+                value: data.fillMarker.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 10,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
+
+          {/* Render exit marker */}
+          {exitIndex >= 0 && data.exitMarker && (
+            <ReferenceDot
+              x={data.exitMarker.timeLabel}
+              y={data.spreads[exitIndex].spread}
+              r={5}
+              fill={data.exitMarker.color}
+              stroke="white"
+              strokeWidth={1.5}
+              label={{
+                value: data.exitMarker.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 10,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -571,6 +621,8 @@ function AssetPricePane({
   const tickIntervalRight = (yDomainRight[1] - yDomainRight[0]) / (tickCountRight - 1)
   const yTicksRight = Array.from({ length: tickCountRight }, (_, i) => yDomainRight[0] + i * tickIntervalRight)
 
+
+
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
       <h3 className="text-sm font-semibold text-white mb-3">Asset Prices (Context)</h3>
@@ -589,6 +641,7 @@ function AssetPricePane({
             type="number"
             domain={[yDomainLeft[0], yDomainLeft[1]]}
             ticks={yTicksLeft}
+            tickFormatter={(value) => typeof value === 'number' ? value.toFixed(6) : String(value)}
           />
           <YAxis
             stroke="#94a3b8"
@@ -597,6 +650,7 @@ function AssetPricePane({
             type="number"
             domain={[yDomainRight[0], yDomainRight[1]]}
             ticks={yTicksRight}
+            tickFormatter={(value) => typeof value === 'number' ? value.toFixed(6) : String(value)}
           />
           <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }}
@@ -622,23 +676,69 @@ function AssetPricePane({
             type="monotone"
             dataKey="price_x"
             stroke="#06b6d4"
-            dot={(props: any) => {
-              const { cx, cy, payload, dataIndex } = props
-              // Check if this index is a marker
-              if (dataIndex === signalIndex && data.signalMarker) {
-                return <MarkerDot cx={cx} cy={cy} fill={data.signalMarker.color} r={8} stroke="white" strokeWidth={2} />
-              }
-              if (dataIndex === fillIndex && data.fillMarker) {
-                return <MarkerDot cx={cx} cy={cy} fill={data.fillMarker.color} r={8} stroke="white" strokeWidth={2} />
-              }
-              if (dataIndex === exitIndex && data.exitMarker) {
-                return <MarkerDot cx={cx} cy={cy} fill={data.exitMarker.color} r={8} stroke="white" strokeWidth={2} />
-              }
-              return null
-            }}
+            dot={false}
             strokeWidth={2}
             name="price_x"
           />
+
+          {/* Markers for price_x line */}
+          {signalIndex >= 0 && data.signalMarker && (
+            <ReferenceDot
+              x={data.signalMarker.timeLabel}
+              y={data.prices[signalIndex].price_x}
+              yAxisId="left"
+              r={5}
+              fill={data.signalMarker.color}
+              stroke="white"
+              strokeWidth={1.5}
+              label={{
+                value: data.signalMarker.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 10,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
+
+          {fillIndex >= 0 && data.fillMarker && (
+            <ReferenceDot
+              x={data.fillMarker.timeLabel}
+              y={data.prices[fillIndex].price_x}
+              yAxisId="left"
+              r={5}
+              fill={data.fillMarker.color}
+              stroke="white"
+              strokeWidth={1.5}
+              label={{
+                value: data.fillMarker.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 10,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
+
+          {exitIndex >= 0 && data.exitMarker && (
+            <ReferenceDot
+              x={data.exitMarker.timeLabel}
+              y={data.prices[exitIndex].price_x}
+              yAxisId="left"
+              r={5}
+              fill={data.exitMarker.color}
+              stroke="white"
+              strokeWidth={1.5}
+              label={{
+                value: data.exitMarker.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 10,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
+
           <Line
             yAxisId="right"
             type="monotone"
@@ -648,6 +748,64 @@ function AssetPricePane({
             strokeWidth={2}
             name="price_y"
           />
+
+          {/* Markers for price_y line */}
+          {signalIndex >= 0 && data.signalMarker && (
+            <ReferenceDot
+              x={data.signalMarker.timeLabel}
+              y={data.prices[signalIndex].price_y}
+              yAxisId="right"
+              r={5}
+              fill={data.signalMarker.color}
+              stroke="white"
+              strokeWidth={1.5}
+              label={{
+                value: data.signalMarker.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 10,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
+
+          {fillIndex >= 0 && data.fillMarker && (
+            <ReferenceDot
+              x={data.fillMarker.timeLabel}
+              y={data.prices[fillIndex].price_y}
+              yAxisId="right"
+              r={5}
+              fill={data.fillMarker.color}
+              stroke="white"
+              strokeWidth={1.5}
+              label={{
+                value: data.fillMarker.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 10,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
+
+          {exitIndex >= 0 && data.exitMarker && (
+            <ReferenceDot
+              x={data.exitMarker.timeLabel}
+              y={data.prices[exitIndex].price_y}
+              yAxisId="right"
+              r={5}
+              fill={data.exitMarker.color}
+              stroke="white"
+              strokeWidth={1.5}
+              label={{
+                value: data.exitMarker.label,
+                position: 'top',
+                fill: '#e2e8f0',
+                fontSize: 10,
+                fontWeight: 'bold',
+              }}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
