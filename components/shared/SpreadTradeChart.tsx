@@ -165,14 +165,21 @@ function ZScorePane({
     is_mean_reverting: point.is_mean_reverting,
   }))
 
-  // Find marker positions in chart data
+  // Debug: Log marker data
+  console.log('[ZScorePane] Markers:', {
+    signal: data.signalMarker,
+    fill: data.fillMarker,
+    exit: data.exitMarker,
+  })
+  console.log('[ZScorePane] Chart data length:', chartData.length)
+  console.log('[ZScorePane] First 3 chart data points:', chartData.slice(0, 3))
+
+  // Find marker positions in chart data by matching timeLabel
   const findMarkerIndex = (marker: TradeMarker | undefined): number => {
     if (!marker) return -1
     const index = chartData.findIndex(d => d.timeLabel === marker.timeLabel)
-    if (index >= 0) {
-      console.log(`[ZScorePane] Found ${marker.label} marker at index ${index}, timeLabel: ${marker.timeLabel}`)
-    } else {
-      console.warn(`[ZScorePane] Could not find ${marker.label} marker with timeLabel: ${marker.timeLabel}`)
+    console.log(`[ZScorePane] Looking for marker "${marker.label}" with timeLabel "${marker.timeLabel}" - Found at index: ${index}`)
+    if (index < 0) {
       console.warn(`[ZScorePane] Available timeLabels (first 5):`, chartData.slice(0, 5).map(d => d.timeLabel))
     }
     return index
@@ -181,6 +188,8 @@ function ZScorePane({
   const signalIndex = findMarkerIndex(data.signalMarker)
   const fillIndex = findMarkerIndex(data.fillMarker)
   const exitIndex = findMarkerIndex(data.exitMarker)
+
+  console.log('[ZScorePane] Marker indices:', { signalIndex, fillIndex, exitIndex })
 
   // Calculate dynamic Y-axis domain based on data
   const zScores = data.zScores.map(p => p.z_score)
@@ -795,6 +804,7 @@ function buildChartData(
         color: '#3b82f6',
         label: 'Signal',
       }
+      console.log('[buildChartData] Created signal marker:', signalMarker)
     }
   }
 
@@ -809,6 +819,7 @@ function buildChartData(
         color: '#f59e0b',
         label: 'Fill',
       }
+      console.log('[buildChartData] Created fill marker:', fillMarker)
     }
   }
 
@@ -823,8 +834,11 @@ function buildChartData(
         color: trade.exit_reason === 'tp_hit' ? '#22c55e' : '#ef4444',
         label: trade.exit_reason === 'tp_hit' ? 'TP Hit' : 'SL Hit',
       }
+      console.log('[buildChartData] Created exit marker:', exitMarker)
     }
   }
+
+  console.log('[buildChartData] Final markers:', { signalMarker, fillMarker, exitMarker })
 
   return {
     zScores,
