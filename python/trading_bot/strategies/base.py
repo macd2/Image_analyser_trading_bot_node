@@ -725,3 +725,27 @@ class BaseAnalysisModule(ABC):
                 f"position_size_multiplier must be 0.1-5.0, got {result['position_size_multiplier']}"
             )
 
+        # Validate optional spread-based position sizing fields
+        # These are only present for spread-based strategies (strategy_type == "spread_based")
+        if result.get("strategy_type") == "spread_based":
+            # For spread-based strategies, units_x and units_y should be present
+            optional_spread_fields = {
+                "units_x": (int, float, type(None)),
+                "units_y": (int, float, type(None)),
+                "pair_symbol": (str, type(None)),
+            }
+
+            for field, expected_type in optional_spread_fields.items():
+                if field in result:
+                    if not isinstance(result[field], expected_type):
+                        raise ValueError(
+                            f"Field '{field}' has wrong type. "
+                            f"Expected {expected_type}, got {type(result[field])}"
+                        )
+        else:
+            # For price-based strategies, these fields should be None or absent
+            if result.get("units_x") is not None or result.get("units_y") is not None:
+                raise ValueError(
+                    "units_x and units_y should only be present for spread_based strategies"
+                )
+

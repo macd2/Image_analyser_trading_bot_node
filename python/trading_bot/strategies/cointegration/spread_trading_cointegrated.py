@@ -5,6 +5,86 @@ from statsmodels.regression.linear_model import OLS
 import warnings
 warnings.filterwarnings('ignore')
 
+
+def calculate_dynamic_position(
+    portfolio_value: float,
+    risk_percent: float,
+    z_entry: float,
+    z_score_current: float,
+    spread_mean: float,
+    spread_std: float,
+    beta: float,
+    signal: int,
+    z_history: list,
+    confidence: float = 1.0
+):
+    """
+    Calculate dynamic position size for spread-based trading.
+
+    Integrated dynamic stop + sizing for cointegration strategies.
+
+    Args:
+        portfolio_value: Total portfolio value in USD
+        risk_percent: Risk percentage per trade (e.g., 0.02 for 2%)
+        z_entry: Z-score at entry (e.g., 2.0)
+        z_score_current: Current z-score (for confidence adjustment)
+        spread_mean: Mean of the spread
+        spread_std: Standard deviation of the spread
+        beta: Hedge ratio between the two symbols
+        signal: Trade signal (-1 for short spread, 1 for long spread)
+        z_history: Historical z-scores for adaptive stop calculation
+        confidence: Confidence multiplier (0.5-1.5)
+
+    Returns:
+        Dict with:
+            - units_y: Quantity for Y symbol (pair symbol)
+            - units_x: Quantity for X symbol (main symbol)
+            - spread_entry: Entry spread level
+            - spread_sl: Stop loss spread level
+            - z_sl: Z-score stop loss threshold
+            - spread_risk_usd: Risk amount in USD
+            - spread_risk_units: Risk in spread units
+    """
+    # 1. Calculate adaptive stop loss
+    z_sl_min = z_entry + 1.5
+    z_99 = np.percentile([abs(z) for z in z_history], 99) if z_history else z_sl_min
+    z_sl = max(z_sl_min, z_99)
+
+    # 2. Compute spread levels based on signal direction
+    if signal == -1:  # Short spread (sell Y, buy X)
+        spread_entry = spread_mean + z_entry * spread_std
+        spread_sl = spread_mean + z_sl * spread_std
+    else:  # Long spread (buy Y, sell X)
+        spread_entry = spread_mean - z_entry * spread_std
+        spread_sl = spread_mean - z_sl * spread_std
+
+    # 3. Risk in spread units
+    spread_risk = abs(spread_sl - spread_entry)
+
+    # 4. Base position size
+    risk_usd = portfolio_value * risk_percent * confidence
+    units_y = risk_usd / spread_risk if spread_risk > 0 else 0
+    units_x = units_y * abs(beta)
+
+    # 5. Apply direction
+    if signal == -1:  # Short spread
+        units_y = -units_y  # Sell Y
+        # units_x positive (buy X)
+    else:  # Long spread
+        # units_y positive (buy Y)
+        units_x = -units_x  # Sell X
+
+    return {
+        "units_y": units_y,
+        "units_x": units_x,
+        "spread_entry": spread_entry,
+        "spread_sl": spread_sl,
+        "z_sl": z_sl,
+        "spread_risk_usd": risk_usd,
+        "spread_risk_units": spread_risk
+    }
+
+
 class CointegrationStrategy:
     """
     Cointegration-based mean-reversion strategy with dynamic sizing.

@@ -20,7 +20,7 @@ import asyncio
 from pathlib import Path
 from datetime import datetime, timedelta
 from trading_bot.strategies.base import BaseAnalysisModule
-from trading_bot.strategies.cointegration.spread_trading_cointegrated import CointegrationStrategy
+from trading_bot.strategies.cointegration.spread_trading_cointegrated import CointegrationStrategy, calculate_dynamic_position
 from trading_bot.strategies.cointegration.price_levels import calculate_levels
 from trading_bot.strategies.cointegration.run_full_screener import run_screener
 from trading_bot.core.utils import normalize_symbol_for_bybit
@@ -690,6 +690,43 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         raw_multiplier = signal.get('size_multiplier', 1.0)
         normalized_multiplier = self.normalize_position_size_multiplier(raw_multiplier)
 
+        # Calculate dynamic position sizing for spread-based trades
+        units_x = None
+        units_y = None
+        if (signal_direction != 0 and beta is not None and spread_mean is not None and
+            spread_std is not None and z_history is not None):
+            try:
+                # Get portfolio value and risk percent from config
+                portfolio_value = self.get_config_value('portfolio_value', 10000)
+                risk_percent = self.get_config_value('risk_percent', 0.02)
+
+                # Calculate dynamic position
+                position_sizing = calculate_dynamic_position(
+                    portfolio_value=portfolio_value,
+                    risk_percent=risk_percent,
+                    z_entry=z_entry,
+                    z_score_current=z_score,
+                    spread_mean=spread_mean,
+                    spread_std=spread_std,
+                    beta=beta,
+                    signal=signal_direction,
+                    z_history=z_history,
+                    confidence=confidence
+                )
+
+                units_x = position_sizing['units_x']
+                units_y = position_sizing['units_y']
+
+                self.logger.debug(
+                    f"Position sizing for {symbol}/{pair_symbol}: "
+                    f"units_x={units_x:.4f}, units_y={units_y:.4f}, "
+                    f"risk_usd=${position_sizing['spread_risk_usd']:.2f}"
+                )
+            except Exception as e:
+                self.logger.warning(f"Failed to calculate dynamic position sizing for {symbol}: {e}")
+                units_x = None
+                units_y = None
+
         return {
             "symbol": symbol,
             "recommendation": recommendation,
@@ -697,6 +734,9 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             "setup_quality": signal.get('size_multiplier', 0.5),
             "position_size_multiplier": normalized_multiplier,
             "market_environment": 0.5,
+            "entry_price": entry_price,
+            "stop_loss": stop_loss,
+            "take_profit": take_profit,
             "analysis": {
                 "strategy": "cointegration",
                 "z_score": float(z_score),
@@ -716,6 +756,10 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             "strategy_name": self.STRATEGY_NAME,
             # Add strategy metadata for exit logic and monitoring
             "strategy_metadata": strategy_metadata,
+            # Spread-based position sizing (units for both symbols)
+            "units_x": units_x,
+            "units_y": units_y,
+            "pair_symbol": pair_symbol,
             # Add validation results for reproducibility
             "validation_results": {
                 "z_score_valid": z_score is not None,
