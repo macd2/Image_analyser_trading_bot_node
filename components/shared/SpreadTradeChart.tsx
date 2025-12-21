@@ -776,7 +776,10 @@ function buildChartData(
 
   // Helper to find closest candle time to a given timestamp
   const findClosestCandleTime = (targetTimestamp: number): number | null => {
-    if (zScores.length === 0) return null
+    if (zScores.length === 0) {
+      console.warn('[buildChartData] No zScores available for marker positioning')
+      return null
+    }
 
     let closest = zScores[0].time
     let minDiff = Math.abs(zScores[0].time - targetTimestamp)
@@ -789,14 +792,26 @@ function buildChartData(
       }
     }
 
+    console.log('[buildChartData] findClosestCandleTime:', { targetTimestamp, closest, minDiff, zScoresLength: zScores.length })
     return closest
   }
 
   // Build markers - use closest candle time instead of exact match
+  console.log('[buildChartData] Trade data for markers:', {
+    created_at: trade.created_at,
+    filled_at: trade.filled_at,
+    fill_time: trade.fill_time,
+    closed_at: trade.closed_at,
+    exit_price: trade.exit_price,
+  })
+
   let signalMarker: TradeMarker | undefined
   if (trade.created_at) {
+    console.log('[buildChartData] Creating signal marker from created_at:', trade.created_at)
     const signalTime = Math.floor(new Date(trade.created_at).getTime() / 1000)
+    console.log('[buildChartData] Signal time (seconds):', signalTime)
     const closestTime = findClosestCandleTime(signalTime)
+    console.log('[buildChartData] Closest candle time for signal:', closestTime)
     if (closestTime !== null) {
       signalMarker = {
         timeLabel: formatTimestamp(closestTime),
@@ -805,7 +820,11 @@ function buildChartData(
         label: 'Signal',
       }
       console.log('[buildChartData] Created signal marker:', signalMarker)
+    } else {
+      console.warn('[buildChartData] Could not find closest candle time for signal')
     }
+  } else {
+    console.warn('[buildChartData] No created_at for signal marker')
   }
 
   let fillMarker: TradeMarker | undefined
