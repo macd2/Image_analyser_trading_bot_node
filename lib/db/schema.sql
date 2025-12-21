@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS trades (
     take_profit REAL NOT NULL,
     leverage INTEGER DEFAULT 1,
     order_id TEXT UNIQUE,
+    order_id_pair TEXT,
     order_link_id TEXT,
     "orderLinkId" TEXT,
     status TEXT DEFAULT 'pending',
@@ -127,7 +128,10 @@ CREATE TABLE IF NOT EXISTS trades (
     confidence_weight REAL,
     risk_per_unit REAL,
     sizing_method TEXT,
-    risk_pct_used REAL
+    risk_pct_used REAL,
+    pair_quantity REAL,
+    pair_fill_price REAL,
+    pair_exit_price REAL
 );
 CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
 CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
