@@ -1058,11 +1058,11 @@ class DataAgent:
                 INSERT INTO trades
                 (id, recommendation_id, symbol, side, quantity, entry_price, take_profit, stop_loss, order_id, orderLinkId,
                  pnl, status, state, avg_exit_price, closed_size, created_at, placed_by, alteration_details,
-                 prompt_name, timeframe, confidence, risk_reward_ratio, order_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 prompt_name, timeframe, confidence, risk_reward_ratio, order_type, pair_quantity, pair_fill_price, pair_exit_price, order_id_pair)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (trade_id, recommendation_id, symbol, side, quantity, entry_price, take_profit, stop_loss, order_id, orderLinkId,
                   pnl, status, state, avg_exit_price, closed_size, created_at_val, placed_by, alteration_details,
-                  prompt_name, timeframe, confidence, risk_reward_ratio, order_type))
+                  prompt_name, timeframe, confidence, risk_reward_ratio, order_type, None, None, None, None))
 
             conn.commit()
             return True
@@ -1088,7 +1088,7 @@ class DataAgent:
             values = []
 
             for key, value in kwargs.items():
-                if key in ['pnl', 'status', 'state', 'avg_exit_price', 'closed_size', 'placed_by', 'last_tightened_milestone', 'alteration_details', 'entry_price', 'quantity', 'order_id', 'orderLinkId', 'updated_at']:
+                if key in ['pnl', 'status', 'state', 'avg_exit_price', 'closed_size', 'placed_by', 'last_tightened_milestone', 'alteration_details', 'entry_price', 'quantity', 'order_id', 'orderLinkId', 'updated_at', 'pair_quantity', 'pair_fill_price', 'pair_exit_price', 'order_id_pair', 'fill_price', 'exit_price', 'exit_reason', 'pnl_percent', 'filled_at', 'closed_at']:
                     set_clauses.append(f"{key} = ?")
                     values.append(value)
                 else:
