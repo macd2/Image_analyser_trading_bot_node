@@ -92,14 +92,24 @@ run_analysis_cycle(
   - `z_score_at_entry`: float (z-score at entry)
   - `pair_symbol`: str (paired symbol)
   - `z_exit_threshold`: float (exit threshold)
+  - `max_spread_deviation`: float (adaptive stop loss z-score)
+  - `price_x_at_entry`: float (main symbol price at entry)
+  - `price_y_at_entry`: float (pair symbol price at entry)
+- **OPTIONAL - Spread-Based Position Sizing**:
+  - `units_x`: float | None (quantity for main symbol, signed: positive=buy, negative=sell)
+  - `units_y`: float | None (quantity for pair symbol, signed: positive=buy, negative=sell)
+  - `pair_symbol`: str (paired symbol for spread-based trades)
 
 ### Invariants
 1. All Prompt Strategy invariants apply
-2. **Metadata Required**: strategy_metadata must have all 6 fields
+2. **Metadata Required**: strategy_metadata must have all fields
 3. **Z-Score Range**: z_score_at_entry typically ∈ [-3, 3]
 4. **Beta Positive**: beta > 0 (cointegrated pairs)
 5. **Spread Stats**: spread_std > 0
 6. **Pair Symbol**: pair_symbol is valid trading symbol
+7. **Position Sizing Optional**: units_x and units_y are optional (None for price-based strategies)
+8. **Units Signed**: units_x and units_y include direction (positive=buy, negative=sell)
+9. **Units Relationship**: |units_y| ≈ |units_x| * beta (hedge ratio maintained)
 
 ### Test Cases
 
