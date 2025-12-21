@@ -191,6 +191,21 @@ function ZScorePane({
 
   console.log('[ZScorePane] Marker indices:', { signalIndex, fillIndex, exitIndex })
 
+  // Custom dot renderer for markers
+  const MarkerDot = (props: any) => {
+    const { cx, cy, fill, r, stroke, strokeWidth } = props
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={r || 6}
+        fill={fill}
+        stroke={stroke || 'white'}
+        strokeWidth={strokeWidth || 2}
+      />
+    )
+  }
+
   // Calculate dynamic Y-axis domain based on data
   const zScores = data.zScores.map(p => p.z_score)
   const minZ = Math.min(...zScores)
@@ -270,59 +285,23 @@ function ZScorePane({
             type="monotone"
             dataKey="z_score"
             stroke="#f59e0b"
-            dot={false}
+            dot={(props: any) => {
+              const { cx, cy, payload, dataIndex } = props
+              // Check if this index is a marker
+              if (dataIndex === signalIndex && data.signalMarker) {
+                return <MarkerDot cx={cx} cy={cy} fill={data.signalMarker.color} r={8} stroke="white" strokeWidth={2} />
+              }
+              if (dataIndex === fillIndex && data.fillMarker) {
+                return <MarkerDot cx={cx} cy={cy} fill={data.fillMarker.color} r={8} stroke="white" strokeWidth={2} />
+              }
+              if (dataIndex === exitIndex && data.exitMarker) {
+                return <MarkerDot cx={cx} cy={cy} fill={data.exitMarker.color} r={8} stroke="white" strokeWidth={2} />
+              }
+              return null
+            }}
             strokeWidth={2}
             name="Z-Score"
           />
-
-          {/* Trade Event Markers - rendered as custom dots on the line */}
-          {signalIndex >= 0 && (
-            <Line
-              type="monotone"
-              dataKey="z_score"
-              data={[chartData[signalIndex]]}
-              stroke="none"
-              dot={{
-                fill: data.signalMarker!.color,
-                r: 8,
-                strokeWidth: 2,
-                stroke: 'white',
-              }}
-              isAnimationActive={false}
-            />
-          )}
-
-          {fillIndex >= 0 && (
-            <Line
-              type="monotone"
-              dataKey="z_score"
-              data={[chartData[fillIndex]]}
-              stroke="none"
-              dot={{
-                fill: data.fillMarker!.color,
-                r: 8,
-                strokeWidth: 2,
-                stroke: 'white',
-              }}
-              isAnimationActive={false}
-            />
-          )}
-
-          {exitIndex >= 0 && (
-            <Line
-              type="monotone"
-              dataKey="z_score"
-              data={[chartData[exitIndex]]}
-              stroke="none"
-              dot={{
-                fill: data.exitMarker!.color,
-                r: 8,
-                strokeWidth: 2,
-                stroke: 'white',
-              }}
-              isAnimationActive={false}
-            />
-          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -369,6 +348,21 @@ function SpreadPricePane({
   const signalIndex = findMarkerIndex(data.signalMarker)
   const fillIndex = findMarkerIndex(data.fillMarker)
   const exitIndex = findMarkerIndex(data.exitMarker)
+
+  // Custom dot renderer for markers
+  const MarkerDot = (props: any) => {
+    const { cx, cy, fill, r, stroke, strokeWidth } = props
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={r || 6}
+        fill={fill}
+        stroke={stroke || 'white'}
+        strokeWidth={strokeWidth || 2}
+      />
+    )
+  }
 
   // Debug logging
   if (chartData.length > 0) {
@@ -462,59 +456,23 @@ function SpreadPricePane({
             type="monotone"
             dataKey="spread"
             stroke="#3b82f6"
-            dot={false}
+            dot={(props: any) => {
+              const { cx, cy, payload, dataIndex } = props
+              // Check if this index is a marker
+              if (dataIndex === signalIndex && data.signalMarker) {
+                return <MarkerDot cx={cx} cy={cy} fill={data.signalMarker.color} r={8} stroke="white" strokeWidth={2} />
+              }
+              if (dataIndex === fillIndex && data.fillMarker) {
+                return <MarkerDot cx={cx} cy={cy} fill={data.fillMarker.color} r={8} stroke="white" strokeWidth={2} />
+              }
+              if (dataIndex === exitIndex && data.exitMarker) {
+                return <MarkerDot cx={cx} cy={cy} fill={data.exitMarker.color} r={8} stroke="white" strokeWidth={2} />
+              }
+              return null
+            }}
             strokeWidth={2}
             name="spread"
           />
-
-          {/* Trade Event Markers - rendered as custom dots on the line */}
-          {signalIndex >= 0 && (
-            <Line
-              type="monotone"
-              dataKey="spread"
-              data={[chartData[signalIndex]]}
-              stroke="none"
-              dot={{
-                fill: data.signalMarker!.color,
-                r: 8,
-                strokeWidth: 2,
-                stroke: 'white',
-              }}
-              isAnimationActive={false}
-            />
-          )}
-
-          {fillIndex >= 0 && (
-            <Line
-              type="monotone"
-              dataKey="spread"
-              data={[chartData[fillIndex]]}
-              stroke="none"
-              dot={{
-                fill: data.fillMarker!.color,
-                r: 8,
-                strokeWidth: 2,
-                stroke: 'white',
-              }}
-              isAnimationActive={false}
-            />
-          )}
-
-          {exitIndex >= 0 && (
-            <Line
-              type="monotone"
-              dataKey="spread"
-              data={[chartData[exitIndex]]}
-              stroke="none"
-              dot={{
-                fill: data.exitMarker!.color,
-                r: 8,
-                strokeWidth: 2,
-                stroke: 'white',
-              }}
-              isAnimationActive={false}
-            />
-          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -560,6 +518,21 @@ function AssetPricePane({
   const signalIndex = findMarkerIndex(data.signalMarker)
   const fillIndex = findMarkerIndex(data.fillMarker)
   const exitIndex = findMarkerIndex(data.exitMarker)
+
+  // Custom dot renderer for markers
+  const MarkerDot = (props: any) => {
+    const { cx, cy, fill, r, stroke, strokeWidth } = props
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={r || 6}
+        fill={fill}
+        stroke={stroke || 'white'}
+        strokeWidth={strokeWidth || 2}
+      />
+    )
+  }
 
   // Calculate dynamic Y-axis domains for both assets
   const pricesX = data.prices.map(p => p.price_x)
@@ -635,7 +608,20 @@ function AssetPricePane({
             type="monotone"
             dataKey="price_x"
             stroke="#06b6d4"
-            dot={false}
+            dot={(props: any) => {
+              const { cx, cy, payload, dataIndex } = props
+              // Check if this index is a marker
+              if (dataIndex === signalIndex && data.signalMarker) {
+                return <MarkerDot cx={cx} cy={cy} fill={data.signalMarker.color} r={8} stroke="white" strokeWidth={2} />
+              }
+              if (dataIndex === fillIndex && data.fillMarker) {
+                return <MarkerDot cx={cx} cy={cy} fill={data.fillMarker.color} r={8} stroke="white" strokeWidth={2} />
+              }
+              if (dataIndex === exitIndex && data.exitMarker) {
+                return <MarkerDot cx={cx} cy={cy} fill={data.exitMarker.color} r={8} stroke="white" strokeWidth={2} />
+              }
+              return null
+            }}
             strokeWidth={2}
             name="price_x"
           />
@@ -648,55 +634,6 @@ function AssetPricePane({
             strokeWidth={2}
             name="price_y"
           />
-
-          {/* Trade Event Markers - rendered as custom dots on the line */}
-          {signalIndex >= 0 && (
-            <Line
-              type="monotone"
-              dataKey="price_x"
-              data={[chartData[signalIndex]]}
-              stroke="none"
-              dot={{
-                fill: data.signalMarker!.color,
-                r: 8,
-                strokeWidth: 2,
-                stroke: 'white',
-              }}
-              isAnimationActive={false}
-            />
-          )}
-
-          {fillIndex >= 0 && (
-            <Line
-              type="monotone"
-              dataKey="price_x"
-              data={[chartData[fillIndex]]}
-              stroke="none"
-              dot={{
-                fill: data.fillMarker!.color,
-                r: 8,
-                strokeWidth: 2,
-                stroke: 'white',
-              }}
-              isAnimationActive={false}
-            />
-          )}
-
-          {exitIndex >= 0 && (
-            <Line
-              type="monotone"
-              dataKey="price_x"
-              data={[chartData[exitIndex]]}
-              stroke="none"
-              dot={{
-                fill: data.exitMarker!.color,
-                r: 8,
-                strokeWidth: 2,
-                stroke: 'white',
-              }}
-              isAnimationActive={false}
-            />
-          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
