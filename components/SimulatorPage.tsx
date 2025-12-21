@@ -181,6 +181,22 @@ function barsToDuration(bars: number, timeframe: string): string {
   }
 }
 
+// Helper function to get strategy type color
+function getStrategyTypeColor(strategyType?: string | null): string {
+  switch (strategyType) {
+    case 'spread_based':
+      return 'bg-purple-900/40 text-purple-300 border-purple-700/50'
+    case 'price_based':
+      return 'bg-blue-900/40 text-blue-300 border-blue-700/50'
+    case 'momentum':
+      return 'bg-orange-900/40 text-orange-300 border-orange-700/50'
+    case 'mean_reversion':
+      return 'bg-green-900/40 text-green-300 border-green-700/50'
+    default:
+      return 'bg-slate-800/40 text-slate-300 border-slate-700/50'
+  }
+}
+
 export function SimulatorPage() {
   const [stats, setStats] = useState<SimulatorStats | null>(null)
   const [openTrades, setOpenTrades] = useState<InstanceWithRuns[]>([])
@@ -1077,6 +1093,21 @@ export function SimulatorPage() {
                       })()
                     : null)
 
+                  // Extract pair symbol from strategy_metadata for spread-based trades
+                  const isSpreadBased = trade.strategy_type === 'spread_based'
+                  // Parse strategy_metadata if it's a JSON string
+                  let strategyMetadata = trade.strategy_metadata
+                  if (typeof strategyMetadata === 'string') {
+                    try {
+                      strategyMetadata = JSON.parse(strategyMetadata)
+                    } catch (e) {
+                      strategyMetadata = null
+                    }
+                  }
+                  const pairSymbol = isSpreadBased && strategyMetadata?.pair_symbol ? strategyMetadata.pair_symbol : null
+                  // Pair side is opposite of main symbol side for spread-based trades
+                  const pairSide = isSpreadBased ? (trade.side === 'Buy' ? 'Sell' : 'Buy') : null
+
                   return (
                     <div
                       key={trade.id}
@@ -1099,7 +1130,7 @@ export function SimulatorPage() {
                         setChartMode('live')
                       }}
                     >
-                      {/* Row 1: Instance info + Symbol + Side + Alert */}
+                      {/* Row 1: Instance info + Symbol(s) + Side + Alert */}
                       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-1 text-[10px] text-slate-500">
@@ -1154,7 +1185,14 @@ export function SimulatorPage() {
                               </button>
                             </div>
                           </div>
-                          <span className="font-bold text-white text-xl">{trade.symbol}</span>
+                          {/* Spread-based pair display */}
+                          {isSpreadBased && pairSymbol ? (
+                            <span className="font-bold text-white text-lg">
+                              {trade.symbol} [{trade.side}] ⟷ {pairSymbol} [{pairSide || 'Sell'}]
+                            </span>
+                          ) : (
+                            <span className="font-bold text-white text-xl">{trade.symbol}</span>
+                          )}
                           <span className={`text-xs px-2 py-1 rounded font-semibold ${isLong ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
                             {trade.side}
                           </span>
@@ -1268,29 +1306,170 @@ export function SimulatorPage() {
                           </div>
                         )}
 
-                        {/* Trade ID with Copy Button */}
-                        <div className="flex items-center gap-2 ml-auto">
-                          <span className="text-[10px] text-slate-600 font-mono" title="Trade ID">{trade.id.slice(0, 8)}...</span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              navigator.clipboard.writeText(trade.id)
-                              setCopiedId(trade.id)
-                              setCopiedType('trade')
-                              setTimeout(() => {
-                                setCopiedId(null)
-                                setCopiedType(null)
-                              }, 2000)
-                            }}
-                            className={`p-1 rounded transition-all ${
-                              copiedId === trade.id && copiedType === 'trade'
-                                ? 'bg-blue-600/50 text-blue-300'
-                                : 'hover:bg-blue-600/30 text-slate-500 hover:text-blue-400'
-                            }`}
-                            title="Copy Trade ID"
-                          >
-                            {copiedId === trade.id && copiedType === 'trade' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                          </button>
+                      </div>
+
+                      {/* ID Line - Bottom of card */}
+                      <div className="mt-3 pt-3 border-t border-slate-700/50 bg-slate-800/20 -mx-4 -mb-4 px-4 py-3 rounded-b-lg">
+                        <div className="flex flex-wrap gap-2 font-mono text-xs">
+                          {/* Strategy Type - Color Coded */}
+                          <div className={`flex items-center gap-1 px-2 py-1 rounded border ${getStrategyTypeColor(trade.strategy_type)}`}>
+                            <span className="opacity-70">Strategy:</span>
+                            <span className="font-semibold">{trade.strategy_type || 'unknown'}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.strategy_type || 'unknown')
+                                setCopiedId(`strategy-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `strategy-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Strategy Type"
+                            >
+                              {copiedId === `strategy-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Instance ID */}
+                          <div className="flex items-center gap-1 bg-slate-800/40 px-2 py-1 rounded border border-slate-700/50">
+                            <span className="text-slate-500">Instance:</span>
+                            <span className="text-slate-200">{instance_id.slice(0, 8)}...</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(instance_id)
+                                setCopiedId(`instance-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `instance-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Instance ID"
+                            >
+                              {copiedId === `instance-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Trade ID */}
+                          <div className="flex items-center gap-1 bg-slate-800/40 px-2 py-1 rounded border border-slate-700/50">
+                            <span className="text-slate-500">Trade:</span>
+                            <span className="text-slate-200">{trade.id.slice(0, 8)}...</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.id)
+                                setCopiedId(`trade-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `trade-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Trade ID"
+                            >
+                              {copiedId === `trade-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Recommendation ID */}
+                          {trade.id && (
+                            <div className="flex items-center gap-1 bg-slate-800/40 px-2 py-1 rounded border border-slate-700/50">
+                              <span className="text-slate-500">Rec:</span>
+                              <span className="text-slate-200">{trade.id.slice(0, 8)}...</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  navigator.clipboard.writeText(trade.id)
+                                  setCopiedId(`rec-${trade.id}`)
+                                  setCopiedType('id')
+                                  setTimeout(() => {
+                                    setCopiedId(null)
+                                    setCopiedType(null)
+                                  }, 2000)
+                                }}
+                                className={`ml-1 p-0.5 rounded transition-all ${
+                                  copiedId === `rec-${trade.id}` && copiedType === 'id'
+                                    ? 'bg-slate-600/50 text-slate-300'
+                                    : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                                }`}
+                                title="Copy Recommendation ID"
+                              >
+                                {copiedId === `rec-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Order ID */}
+                          <div className="flex items-center gap-1 bg-slate-800/40 px-2 py-1 rounded border border-slate-700/50">
+                            <span className="text-slate-500">Order:</span>
+                            <span className="text-slate-200">{trade.id.slice(0, 8)}...</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.id)
+                                setCopiedId(`order-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `order-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Order ID"
+                            >
+                              {copiedId === `order-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Pair Order ID (spread-based only) */}
+                          {isSpreadBased && trade.order_id_pair && (
+                            <div className="flex items-center gap-1 bg-purple-900/20 px-2 py-1 rounded border border-purple-700/50">
+                              <span className="text-purple-400">Pair:</span>
+                              <span className="text-purple-200">{trade.order_id_pair.slice(0, 8)}...</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  navigator.clipboard.writeText(trade.order_id_pair)
+                                  setCopiedId(`pair-${trade.id}`)
+                                  setCopiedType('id')
+                                  setTimeout(() => {
+                                    setCopiedId(null)
+                                    setCopiedType(null)
+                                  }, 2000)
+                                }}
+                                className={`ml-1 p-0.5 rounded transition-all ${
+                                  copiedId === `pair-${trade.id}` && copiedType === 'id'
+                                    ? 'bg-purple-600/50 text-purple-300'
+                                    : 'hover:bg-purple-600/30 text-purple-500 hover:text-purple-300'
+                                }`}
+                                title="Copy Pair Order ID"
+                              >
+                                {copiedId === `pair-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1321,6 +1500,20 @@ export function SimulatorPage() {
                 .map(trade => {
                   const isWin = trade.pnl > 0
                   const isLong = trade.side === 'Buy'
+                  // Extract pair symbol from strategy_metadata for spread-based trades
+                  const isSpreadBased = trade.strategy_type === 'spread_based'
+                  // Parse strategy_metadata if it's a JSON string
+                  let strategyMetadata = trade.strategy_metadata
+                  if (typeof strategyMetadata === 'string') {
+                    try {
+                      strategyMetadata = JSON.parse(strategyMetadata)
+                    } catch (e) {
+                      strategyMetadata = null
+                    }
+                  }
+                  const pairSymbol = isSpreadBased && strategyMetadata?.pair_symbol ? strategyMetadata.pair_symbol : null
+                  // Pair side is opposite of main symbol side for spread-based trades
+                  const pairSide = isSpreadBased ? (trade.side === 'Buy' ? 'Sell' : 'Buy') : null
 
                   return (
                     <div
@@ -1353,7 +1546,7 @@ export function SimulatorPage() {
                         setChartMode('historical')
                       }}
                     >
-                      {/* Row 1: Instance + Symbol + Side + Result + Date */}
+                      {/* Row 1: Instance + Symbol(s) + Side + Result + Date */}
                       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-1 text-[10px] text-slate-500">
@@ -1409,7 +1602,14 @@ export function SimulatorPage() {
                               )}
                             </div>
                           </div>
-                          <span className="font-bold text-white text-xl">{trade.symbol}</span>
+                          {/* Spread-based pair display */}
+                          {isSpreadBased && pairSymbol ? (
+                            <span className="font-bold text-white text-lg">
+                              {trade.symbol} [{trade.side}] ⟷ {pairSymbol} [{pairSide || 'Sell'}]
+                            </span>
+                          ) : (
+                            <span className="font-bold text-white text-xl">{trade.symbol}</span>
+                          )}
                           <span className={`text-xs px-2 py-1 rounded font-semibold ${isLong ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
                             {trade.side}
                           </span>
@@ -1525,6 +1725,171 @@ export function SimulatorPage() {
                           )}
                         </div>
                       )}
+
+                      {/* ID Line - Bottom of card */}
+                      <div className="mt-3 pt-3 border-t border-slate-700/50 bg-slate-800/20 -mx-4 -mb-4 px-4 py-3 rounded-b-lg">
+                        <div className="flex flex-wrap gap-2 font-mono text-xs">
+                          {/* Strategy Type - Color Coded */}
+                          <div className={`flex items-center gap-1 px-2 py-1 rounded border ${getStrategyTypeColor(trade.strategy_type)}`}>
+                            <span className="opacity-70">Strategy:</span>
+                            <span className="font-semibold">{trade.strategy_type || 'unknown'}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.strategy_type || 'unknown')
+                                setCopiedId(`strategy-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `strategy-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Strategy Type"
+                            >
+                              {copiedId === `strategy-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Instance ID */}
+                          <div className="flex items-center gap-1 bg-slate-800/40 px-2 py-1 rounded border border-slate-700/50">
+                            <span className="text-slate-500">Instance:</span>
+                            <span className="text-slate-200">{trade.instance_id?.slice(0, 8)}...</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.instance_id || '')
+                                setCopiedId(`instance-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `instance-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Instance ID"
+                            >
+                              {copiedId === `instance-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Trade ID */}
+                          <div className="flex items-center gap-1 bg-slate-800/40 px-2 py-1 rounded border border-slate-700/50">
+                            <span className="text-slate-500">Trade:</span>
+                            <span className="text-slate-200">{trade.id.slice(0, 8)}...</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.id)
+                                setCopiedId(`trade-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `trade-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Trade ID"
+                            >
+                              {copiedId === `trade-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Recommendation ID */}
+                          {trade.id && (
+                            <div className="flex items-center gap-1 bg-slate-800/40 px-2 py-1 rounded border border-slate-700/50">
+                              <span className="text-slate-500">Rec:</span>
+                              <span className="text-slate-200">{trade.id.slice(0, 8)}...</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  navigator.clipboard.writeText(trade.id)
+                                  setCopiedId(`rec-${trade.id}`)
+                                  setCopiedType('id')
+                                  setTimeout(() => {
+                                    setCopiedId(null)
+                                    setCopiedType(null)
+                                  }, 2000)
+                                }}
+                                className={`ml-1 p-0.5 rounded transition-all ${
+                                  copiedId === `rec-${trade.id}` && copiedType === 'id'
+                                    ? 'bg-slate-600/50 text-slate-300'
+                                    : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                                }`}
+                                title="Copy Recommendation ID"
+                              >
+                                {copiedId === `rec-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Order ID */}
+                          <div className="flex items-center gap-1 bg-slate-800/40 px-2 py-1 rounded border border-slate-700/50">
+                            <span className="text-slate-500">Order:</span>
+                            <span className="text-slate-200">{trade.id.slice(0, 8)}...</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.id)
+                                setCopiedId(`order-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `order-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Order ID"
+                            >
+                              {copiedId === `order-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Pair Order ID (spread-based only) */}
+                          {isSpreadBased && trade.order_id_pair && (
+                            <div className="flex items-center gap-1 bg-purple-900/20 px-2 py-1 rounded border border-purple-700/50">
+                              <span className="text-purple-400">Pair:</span>
+                              <span className="text-purple-200">{trade.order_id_pair.slice(0, 8)}...</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  navigator.clipboard.writeText(trade.order_id_pair)
+                                  setCopiedId(`pair-${trade.id}`)
+                                  setCopiedType('id')
+                                  setTimeout(() => {
+                                    setCopiedId(null)
+                                    setCopiedType(null)
+                                  }, 2000)
+                                }}
+                                className={`ml-1 p-0.5 rounded transition-all ${
+                                  copiedId === `pair-${trade.id}` && copiedType === 'id'
+                                    ? 'bg-purple-600/50 text-purple-300'
+                                    : 'hover:bg-purple-600/30 text-purple-500 hover:text-purple-300'
+                                }`}
+                                title="Copy Pair Order ID"
+                              >
+                                {copiedId === `pair-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )
                 })}
@@ -1550,6 +1915,20 @@ export function SimulatorPage() {
                 .map(trade => {
                   const isWin = trade.pnl > 0
                   const isLong = trade.side === 'Buy'
+                  // Extract pair symbol from strategy_metadata for spread-based trades
+                  const isSpreadBased = trade.strategy_type === 'spread_based'
+                  // Parse strategy_metadata if it's a JSON string
+                  let strategyMetadata = trade.strategy_metadata
+                  if (typeof strategyMetadata === 'string') {
+                    try {
+                      strategyMetadata = JSON.parse(strategyMetadata)
+                    } catch (e) {
+                      strategyMetadata = null
+                    }
+                  }
+                  const pairSymbol = isSpreadBased && strategyMetadata?.pair_symbol ? strategyMetadata.pair_symbol : null
+                  // Pair side is opposite of main symbol side for spread-based trades
+                  const pairSide = isSpreadBased ? (trade.side === 'Buy' ? 'Sell' : 'Buy') : null
 
                   return (
                     <div
@@ -1638,10 +2017,17 @@ export function SimulatorPage() {
                         </div>
                       </div>
 
-                      {/* Row 1: Symbol + Side + Cancelled Badge + P&L */}
+                      {/* Row 1: Symbol(s) + Side + Cancelled Badge + P&L */}
                       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
                         <div className="flex items-center gap-3">
-                          <span className="font-bold text-white text-xl">{trade.symbol}</span>
+                          {/* Spread-based pair display */}
+                          {isSpreadBased && pairSymbol ? (
+                            <span className="font-bold text-white text-lg">
+                              {trade.symbol} [{trade.side}] ⟷ {pairSymbol} [{pairSide || 'Sell'}]
+                            </span>
+                          ) : (
+                            <span className="font-bold text-white text-xl">{trade.symbol}</span>
+                          )}
                           <span className={`text-xs px-2 py-1 rounded font-semibold ${isLong ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
                             {trade.side}
                           </span>
@@ -1698,30 +2084,169 @@ export function SimulatorPage() {
                         <div><span className="text-slate-500">SL:</span> <span className="text-slate-400 font-mono">${trade.stop_loss?.toFixed(4)}</span></div>
                       </div>
 
-                      {/* Row 4: Trade ID with Copy Button */}
-                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-orange-600/30">
-                        <span className="text-xs text-slate-500">Trade ID:</span>
-                        <span className="text-xs font-mono text-slate-400" title="Trade ID">{trade.id.substring(0, 12)}...</span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            navigator.clipboard.writeText(trade.id)
-                            setCopiedId(trade.id)
-                            setCopiedType('trade')
-                            setTimeout(() => {
-                              setCopiedId(null)
-                              setCopiedType(null)
-                            }, 2000)
-                          }}
-                          className={`p-1 rounded transition-all ${
-                            copiedId === trade.id && copiedType === 'trade'
-                              ? 'bg-orange-600/50 text-orange-300'
-                              : 'hover:bg-orange-600/30 text-orange-400 hover:text-orange-300'
-                          }`}
-                          title="Copy Trade ID"
-                        >
-                          {copiedId === trade.id && copiedType === 'trade' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                        </button>
+                      {/* ID Line - Bottom of card */}
+                      <div className="mt-3 pt-3 border-t border-orange-600/30 bg-orange-900/10 -mx-4 -mb-4 px-4 py-3 rounded-b-lg">
+                        <div className="flex flex-wrap gap-2 font-mono text-xs">
+                          {/* Strategy Type - Color Coded */}
+                          <div className={`flex items-center gap-1 px-2 py-1 rounded border ${getStrategyTypeColor(trade.strategy_type)}`}>
+                            <span className="opacity-70">Strategy:</span>
+                            <span className="font-semibold">{trade.strategy_type || 'unknown'}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.strategy_type || 'unknown')
+                                setCopiedId(`strategy-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `strategy-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Strategy Type"
+                            >
+                              {copiedId === `strategy-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Instance ID */}
+                          <div className="flex items-center gap-1 bg-slate-800/40 px-2 py-1 rounded border border-slate-700/50">
+                            <span className="text-slate-500">Instance:</span>
+                            <span className="text-slate-200">{trade.instance_id?.slice(0, 8)}...</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.instance_id || '')
+                                setCopiedId(`instance-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `instance-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Instance ID"
+                            >
+                              {copiedId === `instance-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Trade ID */}
+                          <div className="flex items-center gap-1 bg-slate-800/40 px-2 py-1 rounded border border-slate-700/50">
+                            <span className="text-slate-500">Trade:</span>
+                            <span className="text-slate-200">{trade.id.slice(0, 8)}...</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.id)
+                                setCopiedId(`trade-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `trade-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Trade ID"
+                            >
+                              {copiedId === `trade-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Recommendation ID */}
+                          {trade.id && (
+                            <div className="flex items-center gap-1 bg-slate-800/40 px-2 py-1 rounded border border-slate-700/50">
+                              <span className="text-slate-500">Rec:</span>
+                              <span className="text-slate-200">{trade.id.slice(0, 8)}...</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  navigator.clipboard.writeText(trade.id)
+                                  setCopiedId(`rec-${trade.id}`)
+                                  setCopiedType('id')
+                                  setTimeout(() => {
+                                    setCopiedId(null)
+                                    setCopiedType(null)
+                                  }, 2000)
+                                }}
+                                className={`ml-1 p-0.5 rounded transition-all ${
+                                  copiedId === `rec-${trade.id}` && copiedType === 'id'
+                                    ? 'bg-slate-600/50 text-slate-300'
+                                    : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                                }`}
+                                title="Copy Recommendation ID"
+                              >
+                                {copiedId === `rec-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Order ID */}
+                          <div className="flex items-center gap-1 bg-slate-800/40 px-2 py-1 rounded border border-slate-700/50">
+                            <span className="text-slate-500">Order:</span>
+                            <span className="text-slate-200">{trade.id.slice(0, 8)}...</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.id)
+                                setCopiedId(`order-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `order-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Order ID"
+                            >
+                              {copiedId === `order-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Pair Order ID (spread-based only) */}
+                          {isSpreadBased && trade.order_id_pair && (
+                            <div className="flex items-center gap-1 bg-purple-900/20 px-2 py-1 rounded border border-purple-700/50">
+                              <span className="text-purple-400">Pair:</span>
+                              <span className="text-purple-200">{trade.order_id_pair.slice(0, 8)}...</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  navigator.clipboard.writeText(trade.order_id_pair)
+                                  setCopiedId(`pair-${trade.id}`)
+                                  setCopiedType('id')
+                                  setTimeout(() => {
+                                    setCopiedId(null)
+                                    setCopiedType(null)
+                                  }, 2000)
+                                }}
+                                className={`ml-1 p-0.5 rounded transition-all ${
+                                  copiedId === `pair-${trade.id}` && copiedType === 'id'
+                                    ? 'bg-purple-600/50 text-purple-300'
+                                    : 'hover:bg-purple-600/30 text-purple-500 hover:text-purple-300'
+                                }`}
+                                title="Copy Pair Order ID"
+                              >
+                                {copiedId === `pair-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )
