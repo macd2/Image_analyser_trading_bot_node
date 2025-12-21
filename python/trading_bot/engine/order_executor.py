@@ -127,6 +127,122 @@ class OrderExecutor:
             logger.error(f"Order placement error: {e}")
             return {"error": str(e)}
     
+    def place_spread_based_orders(
+        self,
+        symbol_x: str,
+        symbol_y: str,
+        qty_x: float,
+        qty_y: float,
+        price_x: float,
+        price_y: float,
+        order_link_id: Optional[str] = None,
+        time_in_force: str = "GTC",
+    ) -> Dict[str, Any]:
+        """
+        Place TWO coordinated orders for spread-based trading.
+
+        For spread-based strategies, we need to trade BOTH symbols with opposite sides.
+        This method places both orders with coordinated order_link_ids to track them together.
+
+        Args:
+            symbol_x: First symbol (e.g., "BTCUSDT")
+            symbol_y: Second symbol (e.g., "ETHUSDT")
+            qty_x: Quantity for symbol X
+            qty_y: Quantity for symbol Y
+            price_x: Entry price for symbol X
+            price_y: Entry price for symbol Y
+            order_link_id: Base order link ID (will be suffixed with _x and _y)
+            time_in_force: Time in force (default: GTC)
+
+        Returns:
+            Dict with both order results or error
+        """
+        if not self._session:
+            return {"error": "Session not initialized"}
+
+        base_link_id = order_link_id or str(uuid.uuid4())[:8]
+
+        # For spread-based trades, qty_x and qty_y have signs indicating direction
+        # qty_x > 0 means BUY, qty_x < 0 means SELL
+        # qty_y > 0 means BUY, qty_y < 0 means SELL
+        side_x = "Buy" if qty_x > 0 else "Sell"
+        side_y = "Buy" if qty_y > 0 else "Sell"
+
+        normalized_symbol_x = normalize_symbol_for_bybit(symbol_x)
+        normalized_symbol_y = normalize_symbol_for_bybit(symbol_y)
+
+        # Place first order (symbol X)
+        params_x: Dict[str, Any] = {
+            "category": "linear",
+            "symbol": normalized_symbol_x,
+            "side": side_x.capitalize(),
+            "orderType": "Limit",
+            "qty": str(abs(qty_x)),
+            "price": str(price_x),
+            "timeInForce": time_in_force,
+            "orderLinkId": f"{base_link_id}_x",
+        }
+
+        try:
+            response_x = self._session.place_order(**params_x)
+
+            if response_x.get("retCode") != 0:
+                error_msg = response_x.get("retMsg", "Unknown error")
+                logger.error(f"Order X failed: {error_msg}")
+                return {"error": f"Symbol X order failed: {error_msg}", "retCode": response_x.get("retCode")}
+
+            result_x = response_x.get("result", {})
+            order_id_x = result_x.get("orderId")
+
+            # Place second order (symbol Y)
+            params_y: Dict[str, Any] = {
+                "category": "linear",
+                "symbol": normalized_symbol_y,
+                "side": side_y.capitalize(),
+                "orderType": "Limit",
+                "qty": str(abs(qty_y)),
+                "price": str(price_y),
+                "timeInForce": time_in_force,
+                "orderLinkId": f"{base_link_id}_y",
+            }
+
+            response_y = self._session.place_order(**params_y)
+
+            if response_y.get("retCode") != 0:
+                error_msg = response_y.get("retMsg", "Unknown error")
+                logger.error(f"Order Y failed: {error_msg}. Cancelling order X ({order_id_x})")
+                # Cancel the first order since the second failed
+                self.cancel_order(symbol_x, order_id=order_id_x)
+                return {"error": f"Symbol Y order failed: {error_msg}. Order X cancelled.", "retCode": response_y.get("retCode")}
+
+            result_y = response_y.get("result", {})
+            order_id_y = result_y.get("orderId")
+
+            logger.info(
+                f"Spread-based orders placed: {symbol_x} {side_x} {abs(qty_x)} @ {price_x} (ID: {order_id_x}) | "
+                f"{symbol_y} {side_y} {abs(qty_y)} @ {price_y} (ID: {order_id_y})"
+            )
+
+            return {
+                "order_id_x": order_id_x,
+                "order_id_y": order_id_y,
+                "order_link_id_x": result_x.get("orderLinkId"),
+                "order_link_id_y": result_y.get("orderLinkId"),
+                "symbol_x": normalized_symbol_x,
+                "symbol_y": normalized_symbol_y,
+                "side_x": side_x,
+                "side_y": side_y,
+                "qty_x": abs(qty_x),
+                "qty_y": abs(qty_y),
+                "price_x": price_x,
+                "price_y": price_y,
+                "status": "submitted",
+            }
+
+        except Exception as e:
+            logger.error(f"Spread-based order placement error: {e}")
+            return {"error": str(e)}
+
     def place_market_order(
         self,
         symbol: str,
@@ -139,10 +255,10 @@ class OrderExecutor:
         """Place a market order with optional TP/SL."""
         if not self._session:
             return {"error": "Session not initialized"}
-        
+
         normalized_symbol = normalize_symbol_for_bybit(symbol)
         order_link_id = order_link_id or str(uuid.uuid4())[:8]
-        
+
         params: Dict[str, Any] = {
             "category": "linear",
             "symbol": normalized_symbol,
@@ -151,18 +267,18 @@ class OrderExecutor:
             "qty": str(qty),
             "orderLinkId": order_link_id,
         }
-        
+
         if take_profit:
             params["takeProfit"] = str(take_profit)
         if stop_loss:
             params["stopLoss"] = str(stop_loss)
-        
+
         try:
             response = self._session.place_order(**params)
-            
+
             if response.get("retCode") != 0:
                 return {"error": response.get("retMsg", "Unknown error")}
-            
+
             result = response.get("result", {})
             return {
                 "order_id": result.get("orderId"),
