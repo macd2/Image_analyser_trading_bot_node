@@ -193,6 +193,7 @@ interface FillResult {
   fillPrice: number | null;
   fillTimestamp: number | null;
   fillCandleIndex: number;
+  pair_fill_price?: number | null;  // For spread-based trades
 }
 
 interface ExitResult {
@@ -201,6 +202,7 @@ interface ExitResult {
   exitPrice: number | null;
   exitTimestamp: number | null;
   currentPrice: number;
+  pair_exit_price?: number | null;  // For spread-based trades
 }
 
 const TIMEFRAME_MAP: Record<string, string> = {
@@ -569,7 +571,8 @@ function findSpreadBasedFillCandle(
           filled: true,
           fillPrice: entryPrice,
           fillTimestamp: mainCandle.timestamp,
-          fillCandleIndex: i
+          fillCandleIndex: i,
+          pair_fill_price: pairEntryPrice
         };
       }
     }
@@ -771,13 +774,20 @@ async function checkStrategyExit(
           const result = JSON.parse(stdout);
 
           if (result.should_exit && result.exit_price && result.exit_reason) {
-            resolve({
+            const exitResult: ExitResult = {
               hit: true,
               reason: result.exit_reason,
               exitPrice: result.exit_price,
               exitTimestamp: result.exit_timestamp || candles[startFromIndex]?.timestamp || Date.now(),
               currentPrice: result.current_price || candles[candles.length - 1]?.close || 0
-            });
+            };
+
+            // Add pair_exit_price if available (for spread-based trades)
+            if (result.pair_exit_price !== undefined) {
+              exitResult.pair_exit_price = result.pair_exit_price;
+            }
+
+            resolve(exitResult);
           } else {
             resolve(null);
           }
@@ -1199,19 +1209,35 @@ export async function POST() {
           continue; // Skip this trade - do not update database with invalid data
         }
 
-        await dbExecute(`
+        // For spread-based trades, also update pair_fill_price and order_id_pair
+        let updateQuery = `
           UPDATE trades SET
             fill_price = ?,
             fill_time = ?,
             filled_at = ?,
-            status = 'filled'
-          WHERE id = ?
-        `, [
+            status = 'filled'`;
+
+        const updateParams: any[] = [
           fillResult.fillPrice,
           fillTime,
-          fillTime,
-          trade.id
-        ]);
+          fillTime
+        ];
+
+        // Add spread-based columns if this is a spread-based trade
+        if (trade.strategy_type === 'spread_based' && fillResult.pair_fill_price !== undefined) {
+          updateQuery += `, pair_fill_price = ?`;
+          updateParams.push(fillResult.pair_fill_price);
+        }
+
+        if (trade.strategy_type === 'spread_based' && trade.order_id_pair) {
+          updateQuery += `, order_id_pair = ?`;
+          updateParams.push(trade.order_id_pair);
+        }
+
+        updateQuery += ` WHERE id = ?`;
+        updateParams.push(trade.id);
+
+        await dbExecute(updateQuery, updateParams);
 
         filledCount++;
         fillCandleIndex = fillResult.fillCandleIndex + 1; // Start SL/TP check from NEXT candle
@@ -1288,13 +1314,41 @@ export async function POST() {
       const barsOpen = candlesAfterCreation.length - fillCandleIndex;
 
       if (exitResult.hit && exitResult.exitPrice && exitResult.reason) {
-        // Calculate P&L using fill price (which equals entry price for limit orders)
-        const fillPrice = trade.fill_price || entryPrice;
-        const qty = trade.quantity || 1;
-        const pnl = isLong
-          ? (exitResult.exitPrice - fillPrice) * qty
-          : (fillPrice - exitResult.exitPrice) * qty;
-        const pnlPercent = fillPrice > 0 ? (pnl / (fillPrice * qty)) * 100 : 0;
+        // Calculate P&L - handle both price-based and spread-based trades
+        let pnl: number;
+        let pnlPercent: number;
+
+        if (trade.strategy_type === 'spread_based' && trade.pair_quantity && trade.pair_fill_price && exitResult.pair_exit_price) {
+          // Spread-based trade: calculate P&L for both symbols
+          const mainFillPrice = trade.fill_price || entryPrice;
+          const mainQty = trade.quantity || 1;
+          const pairFillPrice = trade.pair_fill_price;
+          const pairQty = trade.pair_quantity;
+
+          // Main symbol P&L
+          const mainPnl = isLong
+            ? (exitResult.exitPrice - mainFillPrice) * mainQty
+            : (mainFillPrice - exitResult.exitPrice) * mainQty;
+
+          // Pair symbol P&L (opposite direction)
+          const pairPnl = isLong
+            ? (pairFillPrice - exitResult.pair_exit_price) * pairQty
+            : (exitResult.pair_exit_price - pairFillPrice) * pairQty;
+
+          pnl = mainPnl + pairPnl;
+
+          // P&L percent based on total notional value
+          const totalNotional = (mainFillPrice * mainQty) + (pairFillPrice * pairQty);
+          pnlPercent = totalNotional > 0 ? (pnl / totalNotional) * 100 : 0;
+        } else {
+          // Price-based trade: calculate P&L for main symbol only
+          const fillPrice = trade.fill_price || entryPrice;
+          const qty = trade.quantity || 1;
+          pnl = isLong
+            ? (exitResult.exitPrice - fillPrice) * qty
+            : (fillPrice - exitResult.exitPrice) * qty;
+          pnlPercent = fillPrice > 0 ? (pnl / (fillPrice * qty)) * 100 : 0;
+        }
 
         // Get exit timestamp as ISO string
         // exitTimestamp is a number (Unix ms), convert to Date
@@ -1389,23 +1443,33 @@ export async function POST() {
         }
 
         // Update trade in database with actual exit time
-        await dbExecute(`
+        let exitUpdateQuery = `
           UPDATE trades SET
             exit_price = ?,
             exit_reason = ?,
             closed_at = ?,
             pnl = ?,
             pnl_percent = ?,
-            status = 'closed'
-          WHERE id = ?
-        `, [
+            status = 'closed'`;
+
+        const exitUpdateParams: any[] = [
           exitResult.exitPrice,
           exitResult.reason,
           exitTime,
           Math.round(pnl * 100) / 100,
-          Math.round(pnlPercent * 100) / 100,
-          trade.id
-        ]);
+          Math.round(pnlPercent * 100) / 100
+        ];
+
+        // Add pair_exit_price for spread-based trades
+        if (trade.strategy_type === 'spread_based' && exitResult.pair_exit_price !== undefined) {
+          exitUpdateQuery += `, pair_exit_price = ?`;
+          exitUpdateParams.push(exitResult.pair_exit_price);
+        }
+
+        exitUpdateQuery += ` WHERE id = ?`;
+        exitUpdateParams.push(trade.id);
+
+        await dbExecute(exitUpdateQuery, exitUpdateParams);
 
         // CRITICAL: Update run aggregates when trade closes
         const isWin = pnl > 0;
