@@ -275,58 +275,52 @@ function ZScorePane({
             name="Z-Score"
           />
 
-          {/* Trade Event Markers - using index-based positioning */}
+          {/* Trade Event Markers - rendered as custom dots on the line */}
           {signalIndex >= 0 && (
-            <ReferenceDot
-              x={signalIndex}
-              y={chartData[signalIndex].z_score}
-              r={6}
-              fill={data.signalMarker!.color}
-              stroke="white"
-              strokeWidth={2}
-              label={{
-                value: data.signalMarker!.label,
-                position: 'top',
-                fill: '#e2e8f0',
-                fontSize: 12,
-                fontWeight: 'bold',
+            <Line
+              type="monotone"
+              dataKey="z_score"
+              data={[chartData[signalIndex]]}
+              stroke="none"
+              dot={{
+                fill: data.signalMarker!.color,
+                r: 8,
+                strokeWidth: 2,
+                stroke: 'white',
               }}
+              isAnimationActive={false}
             />
           )}
 
           {fillIndex >= 0 && (
-            <ReferenceDot
-              x={fillIndex}
-              y={chartData[fillIndex].z_score}
-              r={6}
-              fill={data.fillMarker!.color}
-              stroke="white"
-              strokeWidth={2}
-              label={{
-                value: data.fillMarker!.label,
-                position: 'top',
-                fill: '#e2e8f0',
-                fontSize: 12,
-                fontWeight: 'bold',
+            <Line
+              type="monotone"
+              dataKey="z_score"
+              data={[chartData[fillIndex]]}
+              stroke="none"
+              dot={{
+                fill: data.fillMarker!.color,
+                r: 8,
+                strokeWidth: 2,
+                stroke: 'white',
               }}
+              isAnimationActive={false}
             />
           )}
 
           {exitIndex >= 0 && (
-            <ReferenceDot
-              x={exitIndex}
-              y={chartData[exitIndex].z_score}
-              r={6}
-              fill={data.exitMarker!.color}
-              stroke="white"
-              strokeWidth={2}
-              label={{
-                value: data.exitMarker!.label,
-                position: 'top',
-                fill: '#e2e8f0',
-                fontSize: 12,
-                fontWeight: 'bold',
+            <Line
+              type="monotone"
+              dataKey="z_score"
+              data={[chartData[exitIndex]]}
+              stroke="none"
+              dot={{
+                fill: data.exitMarker!.color,
+                r: 8,
+                strokeWidth: 2,
+                stroke: 'white',
               }}
+              isAnimationActive={false}
             />
           )}
         </ComposedChart>
@@ -473,58 +467,52 @@ function SpreadPricePane({
             name="spread"
           />
 
-          {/* Trade Event Markers - using index-based positioning */}
+          {/* Trade Event Markers - rendered as custom dots on the line */}
           {signalIndex >= 0 && (
-            <ReferenceDot
-              x={signalIndex}
-              y={chartData[signalIndex].spread}
-              r={6}
-              fill={data.signalMarker!.color}
-              stroke="white"
-              strokeWidth={2}
-              label={{
-                value: data.signalMarker!.label,
-                position: 'top',
-                fill: '#e2e8f0',
-                fontSize: 12,
-                fontWeight: 'bold',
+            <Line
+              type="monotone"
+              dataKey="spread"
+              data={[chartData[signalIndex]]}
+              stroke="none"
+              dot={{
+                fill: data.signalMarker!.color,
+                r: 8,
+                strokeWidth: 2,
+                stroke: 'white',
               }}
+              isAnimationActive={false}
             />
           )}
 
           {fillIndex >= 0 && (
-            <ReferenceDot
-              x={fillIndex}
-              y={chartData[fillIndex].spread}
-              r={6}
-              fill={data.fillMarker!.color}
-              stroke="white"
-              strokeWidth={2}
-              label={{
-                value: data.fillMarker!.label,
-                position: 'top',
-                fill: '#e2e8f0',
-                fontSize: 12,
-                fontWeight: 'bold',
+            <Line
+              type="monotone"
+              dataKey="spread"
+              data={[chartData[fillIndex]]}
+              stroke="none"
+              dot={{
+                fill: data.fillMarker!.color,
+                r: 8,
+                strokeWidth: 2,
+                stroke: 'white',
               }}
+              isAnimationActive={false}
             />
           )}
 
           {exitIndex >= 0 && (
-            <ReferenceDot
-              x={exitIndex}
-              y={chartData[exitIndex].spread}
-              r={6}
-              fill={data.exitMarker!.color}
-              stroke="white"
-              strokeWidth={2}
-              label={{
-                value: data.exitMarker!.label,
-                position: 'top',
-                fill: '#e2e8f0',
-                fontSize: 12,
-                fontWeight: 'bold',
+            <Line
+              type="monotone"
+              dataKey="spread"
+              data={[chartData[exitIndex]]}
+              stroke="none"
+              dot={{
+                fill: data.exitMarker!.color,
+                r: 8,
+                strokeWidth: 2,
+                stroke: 'white',
               }}
+              isAnimationActive={false}
             />
           )}
         </ComposedChart>
@@ -661,58 +649,52 @@ function AssetPricePane({
             name="price_y"
           />
 
-          {/* Trade Event Markers - positioned on primary asset (left axis), using index-based positioning */}
+          {/* Trade Event Markers - rendered as custom dots on the line */}
           {signalIndex >= 0 && (
-            <ReferenceDot
-              x={signalIndex}
-              y={chartData[signalIndex].price_x}
-              r={6}
-              fill={data.signalMarker!.color}
-              stroke="white"
-              strokeWidth={2}
-              label={{
-                value: data.signalMarker!.label,
-                position: 'top',
-                fill: '#e2e8f0',
-                fontSize: 12,
-                fontWeight: 'bold',
+            <Line
+              type="monotone"
+              dataKey="price_x"
+              data={[chartData[signalIndex]]}
+              stroke="none"
+              dot={{
+                fill: data.signalMarker!.color,
+                r: 8,
+                strokeWidth: 2,
+                stroke: 'white',
               }}
+              isAnimationActive={false}
             />
           )}
 
           {fillIndex >= 0 && (
-            <ReferenceDot
-              x={fillIndex}
-              y={chartData[fillIndex].price_x}
-              r={6}
-              fill={data.fillMarker!.color}
-              stroke="white"
-              strokeWidth={2}
-              label={{
-                value: data.fillMarker!.label,
-                position: 'top',
-                fill: '#e2e8f0',
-                fontSize: 12,
-                fontWeight: 'bold',
+            <Line
+              type="monotone"
+              dataKey="price_x"
+              data={[chartData[fillIndex]]}
+              stroke="none"
+              dot={{
+                fill: data.fillMarker!.color,
+                r: 8,
+                strokeWidth: 2,
+                stroke: 'white',
               }}
+              isAnimationActive={false}
             />
           )}
 
           {exitIndex >= 0 && (
-            <ReferenceDot
-              x={exitIndex}
-              y={chartData[exitIndex].price_x}
-              r={6}
-              fill={data.exitMarker!.color}
-              stroke="white"
-              strokeWidth={2}
-              label={{
-                value: data.exitMarker!.label,
-                position: 'top',
-                fill: '#e2e8f0',
-                fontSize: 12,
-                fontWeight: 'bold',
+            <Line
+              type="monotone"
+              dataKey="price_x"
+              data={[chartData[exitIndex]]}
+              stroke="none"
+              dot={{
+                fill: data.exitMarker!.color,
+                r: 8,
+                strokeWidth: 2,
+                stroke: 'white',
               }}
+              isAnimationActive={false}
             />
           )}
         </ComposedChart>
