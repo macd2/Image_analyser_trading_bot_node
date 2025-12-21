@@ -712,7 +712,7 @@ async function checkStrategyExit(
           const startTime = candles[0].timestamp;
           const endTime = candles[candles.length - 1].timestamp;
 
-          // Query pair candles from klines table
+          // STEP 1: Query pair candles from klines table
           const pairCandles = await dbQuery<any>(`
             SELECT
               start_time as timestamp,
@@ -727,7 +727,34 @@ async function checkStrategyExit(
 
           pairCandlesData = pairCandles || [];
           if (pairCandlesData.length > 0) {
-            console.log(`[Auto-Close] Fetched ${pairCandlesData.length} pair candles for ${pairSymbol}`);
+            console.log(`[Auto-Close] Fetched ${pairCandlesData.length} pair candles for ${pairSymbol} from database`);
+          } else {
+            // STEP 2: If not in database, fetch from Bybit API
+            console.log(`[Auto-Close] No pair candles in database for ${pairSymbol}, fetching from Bybit API...`);
+            try {
+              await fetchAndStoreCandles(pairSymbol, timeframe);
+
+              // Now try to fetch from database again
+              const pairCandlesFromApi = await dbQuery<any>(`
+                SELECT
+                  start_time as timestamp,
+                  open_price as open,
+                  high_price as high,
+                  low_price as low,
+                  close_price as close
+                FROM klines
+                WHERE symbol = ? AND timeframe = ? AND start_time >= ? AND start_time <= ?
+                ORDER BY start_time ASC
+              `, [pairSymbol, timeframe, startTime, endTime]);
+
+              pairCandlesData = pairCandlesFromApi || [];
+              if (pairCandlesData.length > 0) {
+                console.log(`[Auto-Close] Fetched ${pairCandlesData.length} pair candles for ${pairSymbol} from Bybit API`);
+              }
+            } catch (apiError) {
+              console.warn(`[Auto-Close] Failed to fetch pair candles from Bybit API for ${pairSymbol}: ${apiError}`);
+              // Continue without pair candles - strategy will fetch from API if needed
+            }
           }
         }
       } catch (error) {
@@ -1037,7 +1064,7 @@ export async function POST() {
           // Spread-based strategy - need to check both symbols
           console.log(`[Auto-Close] ${trade.symbol} - Spread-based strategy detected, checking both symbols for fill`);
 
-          // Fetch pair candles
+          // Fetch pair candles from database first, then API if missing
           let pairCandles: Candle[] = [];
           try {
             const pairSymbol = strategyMetadata.pair_symbol;
@@ -1045,6 +1072,7 @@ export async function POST() {
               const startTime = candlesAfterCreation[0].timestamp;
               const endTime = candlesAfterCreation[candlesAfterCreation.length - 1].timestamp;
 
+              // STEP 1: Try to fetch from database
               const pairCandlesData = await dbQuery<any>(`
                 SELECT
                   start_time as timestamp,
@@ -1068,7 +1096,42 @@ export async function POST() {
               }));
 
               if (pairCandles.length > 0) {
-                console.log(`[Auto-Close] Fetched ${pairCandles.length} pair candles for ${pairSymbol}`);
+                console.log(`[Auto-Close] Fetched ${pairCandles.length} pair candles for ${pairSymbol} from database`);
+              } else {
+                // STEP 2: If not in database, fetch from Bybit API
+                console.log(`[Auto-Close] No pair candles in database for ${pairSymbol}, fetching from Bybit API...`);
+                try {
+                  await fetchAndStoreCandles(pairSymbol, timeframe);
+
+                  // Now try to fetch from database again
+                  const pairCandlesDataFromApi = await dbQuery<any>(`
+                    SELECT
+                      start_time as timestamp,
+                      open_price as open,
+                      high_price as high,
+                      low_price as low,
+                      close_price as close
+                    FROM klines
+                    WHERE symbol = ? AND timeframe = ? AND start_time >= ? AND start_time <= ?
+                    ORDER BY start_time ASC
+                  `, [pairSymbol, timeframe, startTime, endTime]);
+
+                  pairCandles = (pairCandlesDataFromApi || []).map(c => ({
+                    timestamp: c.timestamp,
+                    open: c.open,
+                    high: c.high,
+                    low: c.low,
+                    close: c.close,
+                    volume: 0,
+                    turnover: 0
+                  }));
+
+                  if (pairCandles.length > 0) {
+                    console.log(`[Auto-Close] Fetched ${pairCandles.length} pair candles for ${pairSymbol} from Bybit API`);
+                  }
+                } catch (apiError) {
+                  console.warn(`[Auto-Close] Failed to fetch pair candles from Bybit API for ${pairSymbol}: ${apiError}`);
+                }
               }
             }
           } catch (error) {
@@ -1092,10 +1155,9 @@ export async function POST() {
               spreadStd
             );
           } else {
-            // CRITICAL: Cannot fill spread-based trade without pair candles
-            // Spread-based entry requires BOTH symbols to be validated
-            // Do NOT fall back to price-based - that would be incorrect
-            console.warn(`[Auto-Close] ${trade.symbol} - SPREAD-BASED STRATEGY: No pair candles available, cannot validate fill. Trade remains unfilled.`);
+            // No pair candles available - trade cannot be filled yet
+            // Will retry on next auto-closer run when pair candles may be available
+            console.warn(`[Auto-Close] ${trade.symbol} - SPREAD-BASED STRATEGY: No pair candles available after API fetch, cannot validate fill. Trade remains unfilled and will retry.`);
             fillResult = { filled: false, fillPrice: null, fillTimestamp: null, fillCandleIndex: -1 };
           }
         } else {
