@@ -88,8 +88,14 @@ interface MonitorStatus {
   trades_checked: number
   trades_closed: number
   trades_cancelled?: number
+  // Global settings (fallback)
   max_open_bars_before_filled?: MaxOpenBarsConfig  // Max bars for pending trades (0 = no cancellation)
   max_open_bars_after_filled?: MaxOpenBarsConfig   // Max bars for filled trades (0 = no cancellation)
+  // Strategy-type-specific settings
+  max_open_bars_before_filled_price_based?: MaxOpenBarsConfig
+  max_open_bars_after_filled_price_based?: MaxOpenBarsConfig
+  max_open_bars_before_filled_spread_based?: MaxOpenBarsConfig
+  max_open_bars_after_filled_spread_based?: MaxOpenBarsConfig
   next_check: number
   results: Array<{
     trade_id: string
@@ -211,34 +217,67 @@ export function SimulatorPage() {
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null)
   const [monitorLoading, setMonitorLoading] = useState(false)
 
-  // Before filled settings
+  // Global settings (fallback)
   const [maxOpenBarsBeforeFilled, setMaxOpenBarsBeforeFilled] = useState<MaxOpenBarsConfig>({})
   const [savedMaxOpenBarsBeforeFilled, setSavedMaxOpenBarsBeforeFilled] = useState<MaxOpenBarsConfig>({})
-
-  // After filled settings
   const [maxOpenBarsAfterFilled, setMaxOpenBarsAfterFilled] = useState<MaxOpenBarsConfig>({})
   const [savedMaxOpenBarsAfterFilled, setSavedMaxOpenBarsAfterFilled] = useState<MaxOpenBarsConfig>({})
+
+  // Price-based strategy settings
+  const [maxOpenBarsBeforeFilledPriceBased, setMaxOpenBarsBeforeFilledPriceBased] = useState<MaxOpenBarsConfig>({})
+  const [savedMaxOpenBarsBeforeFilledPriceBased, setSavedMaxOpenBarsBeforeFilledPriceBased] = useState<MaxOpenBarsConfig>({})
+  const [maxOpenBarsAfterFilledPriceBased, setMaxOpenBarsAfterFilledPriceBased] = useState<MaxOpenBarsConfig>({})
+  const [savedMaxOpenBarsAfterFilledPriceBased, setSavedMaxOpenBarsAfterFilledPriceBased] = useState<MaxOpenBarsConfig>({})
+
+  // Spread-based strategy settings
+  const [maxOpenBarsBeforeFilledSpreadBased, setMaxOpenBarsBeforeFilledSpreadBased] = useState<MaxOpenBarsConfig>({})
+  const [savedMaxOpenBarsBeforeFilledSpreadBased, setSavedMaxOpenBarsBeforeFilledSpreadBased] = useState<MaxOpenBarsConfig>({})
+  const [maxOpenBarsAfterFilledSpreadBased, setMaxOpenBarsAfterFilledSpreadBased] = useState<MaxOpenBarsConfig>({})
+  const [savedMaxOpenBarsAfterFilledSpreadBased, setSavedMaxOpenBarsAfterFilledSpreadBased] = useState<MaxOpenBarsConfig>({})
 
   const [savingMaxBars, setSavingMaxBars] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [maxBarsConfigOpen, setMaxBarsConfigOpen] = useState(false)
+  const [maxBarsStrategyType, setMaxBarsStrategyType] = useState<'global' | 'price_based' | 'spread_based'>('global')
 
-  // Check if any max bars settings have changed
+  // Check if any max bars settings have changed (for current strategy type)
   const hasMaxBarsChanges = useMemo(() => {
-    const beforeChanged = TIMEFRAMES.some(tf => (maxOpenBarsBeforeFilled[tf] ?? 0) !== (savedMaxOpenBarsBeforeFilled[tf] ?? 0))
-    const afterChanged = TIMEFRAMES.some(tf => (maxOpenBarsAfterFilled[tf] ?? 0) !== (savedMaxOpenBarsAfterFilled[tf] ?? 0))
-    return beforeChanged || afterChanged
-  }, [maxOpenBarsBeforeFilled, savedMaxOpenBarsBeforeFilled, maxOpenBarsAfterFilled, savedMaxOpenBarsAfterFilled])
+    if (maxBarsStrategyType === 'global') {
+      const beforeChanged = TIMEFRAMES.some(tf => (maxOpenBarsBeforeFilled[tf] ?? 0) !== (savedMaxOpenBarsBeforeFilled[tf] ?? 0))
+      const afterChanged = TIMEFRAMES.some(tf => (maxOpenBarsAfterFilled[tf] ?? 0) !== (savedMaxOpenBarsAfterFilled[tf] ?? 0))
+      return beforeChanged || afterChanged
+    } else if (maxBarsStrategyType === 'price_based') {
+      const beforeChanged = TIMEFRAMES.some(tf => (maxOpenBarsBeforeFilledPriceBased[tf] ?? 0) !== (savedMaxOpenBarsBeforeFilledPriceBased[tf] ?? 0))
+      const afterChanged = TIMEFRAMES.some(tf => (maxOpenBarsAfterFilledPriceBased[tf] ?? 0) !== (savedMaxOpenBarsAfterFilledPriceBased[tf] ?? 0))
+      return beforeChanged || afterChanged
+    } else {
+      const beforeChanged = TIMEFRAMES.some(tf => (maxOpenBarsBeforeFilledSpreadBased[tf] ?? 0) !== (savedMaxOpenBarsBeforeFilledSpreadBased[tf] ?? 0))
+      const afterChanged = TIMEFRAMES.some(tf => (maxOpenBarsAfterFilledSpreadBased[tf] ?? 0) !== (savedMaxOpenBarsAfterFilledSpreadBased[tf] ?? 0))
+      return beforeChanged || afterChanged
+    }
+  }, [maxBarsStrategyType, maxOpenBarsBeforeFilled, savedMaxOpenBarsBeforeFilled, maxOpenBarsAfterFilled, savedMaxOpenBarsAfterFilled, maxOpenBarsBeforeFilledPriceBased, savedMaxOpenBarsBeforeFilledPriceBased, maxOpenBarsAfterFilledPriceBased, savedMaxOpenBarsAfterFilledPriceBased, maxOpenBarsBeforeFilledSpreadBased, savedMaxOpenBarsBeforeFilledSpreadBased, maxOpenBarsAfterFilledSpreadBased, savedMaxOpenBarsAfterFilledSpreadBased])
 
-  // Get list of changed timeframes for before filled
+  // Get list of changed timeframes for before filled (for current strategy type)
   const changedTimeframesBeforeFilled = useMemo(() => {
-    return TIMEFRAMES.filter(tf => (maxOpenBarsBeforeFilled[tf] ?? 0) !== (savedMaxOpenBarsBeforeFilled[tf] ?? 0))
-  }, [maxOpenBarsBeforeFilled, savedMaxOpenBarsBeforeFilled])
+    if (maxBarsStrategyType === 'global') {
+      return TIMEFRAMES.filter(tf => (maxOpenBarsBeforeFilled[tf] ?? 0) !== (savedMaxOpenBarsBeforeFilled[tf] ?? 0))
+    } else if (maxBarsStrategyType === 'price_based') {
+      return TIMEFRAMES.filter(tf => (maxOpenBarsBeforeFilledPriceBased[tf] ?? 0) !== (savedMaxOpenBarsBeforeFilledPriceBased[tf] ?? 0))
+    } else {
+      return TIMEFRAMES.filter(tf => (maxOpenBarsBeforeFilledSpreadBased[tf] ?? 0) !== (savedMaxOpenBarsBeforeFilledSpreadBased[tf] ?? 0))
+    }
+  }, [maxBarsStrategyType, maxOpenBarsBeforeFilled, savedMaxOpenBarsBeforeFilled, maxOpenBarsBeforeFilledPriceBased, savedMaxOpenBarsBeforeFilledPriceBased, maxOpenBarsBeforeFilledSpreadBased, savedMaxOpenBarsBeforeFilledSpreadBased])
 
-  // Get list of changed timeframes for after filled
+  // Get list of changed timeframes for after filled (for current strategy type)
   const changedTimeframesAfterFilled = useMemo(() => {
-    return TIMEFRAMES.filter(tf => (maxOpenBarsAfterFilled[tf] ?? 0) !== (savedMaxOpenBarsAfterFilled[tf] ?? 0))
-  }, [maxOpenBarsAfterFilled, savedMaxOpenBarsAfterFilled])
+    if (maxBarsStrategyType === 'global') {
+      return TIMEFRAMES.filter(tf => (maxOpenBarsAfterFilled[tf] ?? 0) !== (savedMaxOpenBarsAfterFilled[tf] ?? 0))
+    } else if (maxBarsStrategyType === 'price_based') {
+      return TIMEFRAMES.filter(tf => (maxOpenBarsAfterFilledPriceBased[tf] ?? 0) !== (savedMaxOpenBarsAfterFilledPriceBased[tf] ?? 0))
+    } else {
+      return TIMEFRAMES.filter(tf => (maxOpenBarsAfterFilledSpreadBased[tf] ?? 0) !== (savedMaxOpenBarsAfterFilledSpreadBased[tf] ?? 0))
+    }
+  }, [maxBarsStrategyType, maxOpenBarsAfterFilled, savedMaxOpenBarsAfterFilled, maxOpenBarsAfterFilledPriceBased, savedMaxOpenBarsAfterFilledPriceBased, maxOpenBarsAfterFilledSpreadBased, savedMaxOpenBarsAfterFilledSpreadBased])
 
   // Modal state for trade chart
   const [selectedTrade, setSelectedTrade] = useState<TradeData | null>(null)
@@ -277,6 +316,7 @@ export function SimulatorPage() {
       setMonitorStatus(data)
       // Sync max_open_bars configs from monitor status (both saved and editable)
       if (!hasMaxBarsChanges) {
+        // Global settings
         if (data.max_open_bars_before_filled && typeof data.max_open_bars_before_filled === 'object') {
           setMaxOpenBarsBeforeFilled(data.max_open_bars_before_filled)
           setSavedMaxOpenBarsBeforeFilled(data.max_open_bars_before_filled)
@@ -284,6 +324,24 @@ export function SimulatorPage() {
         if (data.max_open_bars_after_filled && typeof data.max_open_bars_after_filled === 'object') {
           setMaxOpenBarsAfterFilled(data.max_open_bars_after_filled)
           setSavedMaxOpenBarsAfterFilled(data.max_open_bars_after_filled)
+        }
+        // Price-based strategy settings
+        if (data.max_open_bars_before_filled_price_based && typeof data.max_open_bars_before_filled_price_based === 'object') {
+          setMaxOpenBarsBeforeFilledPriceBased(data.max_open_bars_before_filled_price_based)
+          setSavedMaxOpenBarsBeforeFilledPriceBased(data.max_open_bars_before_filled_price_based)
+        }
+        if (data.max_open_bars_after_filled_price_based && typeof data.max_open_bars_after_filled_price_based === 'object') {
+          setMaxOpenBarsAfterFilledPriceBased(data.max_open_bars_after_filled_price_based)
+          setSavedMaxOpenBarsAfterFilledPriceBased(data.max_open_bars_after_filled_price_based)
+        }
+        // Spread-based strategy settings
+        if (data.max_open_bars_before_filled_spread_based && typeof data.max_open_bars_before_filled_spread_based === 'object') {
+          setMaxOpenBarsBeforeFilledSpreadBased(data.max_open_bars_before_filled_spread_based)
+          setSavedMaxOpenBarsBeforeFilledSpreadBased(data.max_open_bars_before_filled_spread_based)
+        }
+        if (data.max_open_bars_after_filled_spread_based && typeof data.max_open_bars_after_filled_spread_based === 'object') {
+          setMaxOpenBarsAfterFilledSpreadBased(data.max_open_bars_after_filled_spread_based)
+          setSavedMaxOpenBarsAfterFilledSpreadBased(data.max_open_bars_after_filled_spread_based)
         }
       }
     } catch (err) {
@@ -806,6 +864,42 @@ export function SimulatorPage() {
           </CardTitle>
         </CardHeader>
         {maxBarsConfigOpen && (
+        <div className="px-6 py-3 border-t border-slate-700 bg-slate-800/50">
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => setMaxBarsStrategyType('global')}
+              className={`px-3 py-1.5 text-sm rounded transition-colors ${
+                maxBarsStrategyType === 'global'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              Global
+            </button>
+            <button
+              onClick={() => setMaxBarsStrategyType('price_based')}
+              className={`px-3 py-1.5 text-sm rounded transition-colors ${
+                maxBarsStrategyType === 'price_based'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              Price-Based
+            </button>
+            <button
+              onClick={() => setMaxBarsStrategyType('spread_based')}
+              className={`px-3 py-1.5 text-sm rounded transition-colors ${
+                maxBarsStrategyType === 'spread_based'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              Spread-Based
+            </button>
+          </div>
+        </div>
+        )}
+        {maxBarsConfigOpen && (
         <CardContent>
           {/* Table View */}
           <div className="overflow-x-auto mb-6">
@@ -821,10 +915,31 @@ export function SimulatorPage() {
               </thead>
               <tbody>
                 {TIMEFRAMES.map((tf, idx) => {
+                  // Get the correct state variables based on selected strategy type
+                  let barsBefore: number
+                  let barsAfter: number
+                  let setBarsBefore: (fn: (prev: MaxOpenBarsConfig) => MaxOpenBarsConfig) => void
+                  let setBarsAfter: (fn: (prev: MaxOpenBarsConfig) => MaxOpenBarsConfig) => void
+
+                  if (maxBarsStrategyType === 'global') {
+                    barsBefore = maxOpenBarsBeforeFilled[tf] ?? 0
+                    barsAfter = maxOpenBarsAfterFilled[tf] ?? 0
+                    setBarsBefore = setMaxOpenBarsBeforeFilled
+                    setBarsAfter = setMaxOpenBarsAfterFilled
+                  } else if (maxBarsStrategyType === 'price_based') {
+                    barsBefore = maxOpenBarsBeforeFilledPriceBased[tf] ?? 0
+                    barsAfter = maxOpenBarsAfterFilledPriceBased[tf] ?? 0
+                    setBarsBefore = setMaxOpenBarsBeforeFilledPriceBased
+                    setBarsAfter = setMaxOpenBarsAfterFilledPriceBased
+                  } else {
+                    barsBefore = maxOpenBarsBeforeFilledSpreadBased[tf] ?? 0
+                    barsAfter = maxOpenBarsAfterFilledSpreadBased[tf] ?? 0
+                    setBarsBefore = setMaxOpenBarsBeforeFilledSpreadBased
+                    setBarsAfter = setMaxOpenBarsAfterFilledSpreadBased
+                  }
+
                   const isChangedBefore = changedTimeframesBeforeFilled.includes(tf)
                   const isChangedAfter = changedTimeframesAfterFilled.includes(tf)
-                  const barsBefore = maxOpenBarsBeforeFilled[tf] ?? 0
-                  const barsAfter = maxOpenBarsAfterFilled[tf] ?? 0
                   const durationBefore = barsToDuration(barsBefore, tf)
                   const durationAfter = barsToDuration(barsAfter, tf)
 
@@ -842,7 +957,7 @@ export function SimulatorPage() {
                             value={barsBefore}
                             onChange={(e) => {
                               const val = parseInt(e.target.value) || 0
-                              setMaxOpenBarsBeforeFilled(prev => ({ ...prev, [tf]: val }))
+                              setBarsBefore(prev => ({ ...prev, [tf]: val }))
                             }}
                             className={`w-14 px-2 py-1.5 bg-slate-700 rounded text-white text-sm text-center ${
                               isChangedBefore ? 'border-2 border-yellow-400 ring-1 ring-yellow-400' : 'border border-slate-600'
@@ -868,7 +983,7 @@ export function SimulatorPage() {
                             value={barsAfter}
                             onChange={(e) => {
                               const val = parseInt(e.target.value) || 0
-                              setMaxOpenBarsAfterFilled(prev => ({ ...prev, [tf]: val }))
+                              setBarsAfter(prev => ({ ...prev, [tf]: val }))
                             }}
                             className={`w-14 px-2 py-1.5 bg-slate-700 rounded text-white text-sm text-center ${
                               isChangedAfter ? 'border-2 border-yellow-400 ring-1 ring-yellow-400' : 'border border-slate-600'
@@ -899,30 +1014,85 @@ export function SimulatorPage() {
               onClick={async () => {
                 setSavingMaxBars(true)
                 try {
+                  // Determine which settings to save based on selected strategy type
+                  let beforeFilledData: MaxOpenBarsConfig
+                  let afterFilledData: MaxOpenBarsConfig
+                  let strategyType: string | undefined
+
+                  if (maxBarsStrategyType === 'global') {
+                    beforeFilledData = maxOpenBarsBeforeFilled
+                    afterFilledData = maxOpenBarsAfterFilled
+                    strategyType = undefined
+                  } else if (maxBarsStrategyType === 'price_based') {
+                    beforeFilledData = maxOpenBarsBeforeFilledPriceBased
+                    afterFilledData = maxOpenBarsAfterFilledPriceBased
+                    strategyType = 'price_based'
+                  } else {
+                    beforeFilledData = maxOpenBarsBeforeFilledSpreadBased
+                    afterFilledData = maxOpenBarsAfterFilledSpreadBased
+                    strategyType = 'spread_based'
+                  }
+
                   // Save before filled
                   const resBeforeFilled = await fetch('/api/bot/simulator/monitor', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'set-max-bars', type: 'before_filled', max_open_bars: maxOpenBarsBeforeFilled })
+                    body: JSON.stringify({
+                      action: 'set-max-bars',
+                      type: 'before_filled',
+                      max_open_bars: beforeFilledData,
+                      ...(strategyType && { strategy_type: strategyType })
+                    })
                   })
                   if (!resBeforeFilled.ok) throw new Error('Failed to save before_filled settings')
                   const dataBeforeFilled = await resBeforeFilled.json()
-                  if (dataBeforeFilled.max_open_bars_before_filled) {
-                    setSavedMaxOpenBarsBeforeFilled(dataBeforeFilled.max_open_bars_before_filled)
-                    setMaxOpenBarsBeforeFilled(dataBeforeFilled.max_open_bars_before_filled)
+
+                  // Update the correct state based on strategy type
+                  const beforeFilledKey = strategyType
+                    ? `max_open_bars_before_filled_${strategyType}`
+                    : 'max_open_bars_before_filled'
+                  if (dataBeforeFilled[beforeFilledKey]) {
+                    if (maxBarsStrategyType === 'global') {
+                      setSavedMaxOpenBarsBeforeFilled(dataBeforeFilled[beforeFilledKey])
+                      setMaxOpenBarsBeforeFilled(dataBeforeFilled[beforeFilledKey])
+                    } else if (maxBarsStrategyType === 'price_based') {
+                      setSavedMaxOpenBarsBeforeFilledPriceBased(dataBeforeFilled[beforeFilledKey])
+                      setMaxOpenBarsBeforeFilledPriceBased(dataBeforeFilled[beforeFilledKey])
+                    } else {
+                      setSavedMaxOpenBarsBeforeFilledSpreadBased(dataBeforeFilled[beforeFilledKey])
+                      setMaxOpenBarsBeforeFilledSpreadBased(dataBeforeFilled[beforeFilledKey])
+                    }
                   }
 
                   // Save after filled
                   const resAfterFilled = await fetch('/api/bot/simulator/monitor', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'set-max-bars', type: 'after_filled', max_open_bars: maxOpenBarsAfterFilled })
+                    body: JSON.stringify({
+                      action: 'set-max-bars',
+                      type: 'after_filled',
+                      max_open_bars: afterFilledData,
+                      ...(strategyType && { strategy_type: strategyType })
+                    })
                   })
                   if (!resAfterFilled.ok) throw new Error('Failed to save after_filled settings')
                   const dataAfterFilled = await resAfterFilled.json()
-                  if (dataAfterFilled.max_open_bars_after_filled) {
-                    setSavedMaxOpenBarsAfterFilled(dataAfterFilled.max_open_bars_after_filled)
-                    setMaxOpenBarsAfterFilled(dataAfterFilled.max_open_bars_after_filled)
+
+                  // Update the correct state based on strategy type
+                  const afterFilledKey = strategyType
+                    ? `max_open_bars_after_filled_${strategyType}`
+                    : 'max_open_bars_after_filled'
+                  if (dataAfterFilled[afterFilledKey]) {
+                    if (maxBarsStrategyType === 'global') {
+                      setSavedMaxOpenBarsAfterFilled(dataAfterFilled[afterFilledKey])
+                      setMaxOpenBarsAfterFilled(dataAfterFilled[afterFilledKey])
+                    } else if (maxBarsStrategyType === 'price_based') {
+                      setSavedMaxOpenBarsAfterFilledPriceBased(dataAfterFilled[afterFilledKey])
+                      setMaxOpenBarsAfterFilledPriceBased(dataAfterFilled[afterFilledKey])
+                    } else {
+                      setSavedMaxOpenBarsAfterFilledSpreadBased(dataAfterFilled[afterFilledKey])
+                      setMaxOpenBarsAfterFilledSpreadBased(dataAfterFilled[afterFilledKey])
+                    }
                   }
 
                   await fetchMonitorStatus()

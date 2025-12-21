@@ -15,27 +15,69 @@ type MaxOpenBarsConfig = Record<string, number>;
 interface SimulatorSettings {
   max_open_bars_before_filled?: MaxOpenBarsConfig;
   max_open_bars_after_filled?: MaxOpenBarsConfig;
+  // Strategy-type-specific settings
+  max_open_bars_before_filled_price_based?: MaxOpenBarsConfig;
+  max_open_bars_after_filled_price_based?: MaxOpenBarsConfig;
+  max_open_bars_before_filled_spread_based?: MaxOpenBarsConfig;
+  max_open_bars_after_filled_spread_based?: MaxOpenBarsConfig;
 }
 
 // Read max_open_bars configs from database (persisted settings)
-async function getMaxOpenBarsConfigs(): Promise<{ before_filled: MaxOpenBarsConfig; after_filled: MaxOpenBarsConfig }> {
+async function getMaxOpenBarsConfigs(): Promise<{
+  before_filled: MaxOpenBarsConfig;
+  after_filled: MaxOpenBarsConfig;
+  before_filled_price_based: MaxOpenBarsConfig;
+  after_filled_price_based: MaxOpenBarsConfig;
+  before_filled_spread_based: MaxOpenBarsConfig;
+  after_filled_spread_based: MaxOpenBarsConfig;
+}> {
   try {
     const settings = await getSettings<SimulatorSettings>('simulator');
     return {
       before_filled: (settings?.max_open_bars_before_filled && typeof settings.max_open_bars_before_filled === 'object') ? settings.max_open_bars_before_filled : {},
-      after_filled: (settings?.max_open_bars_after_filled && typeof settings.max_open_bars_after_filled === 'object') ? settings.max_open_bars_after_filled : {}
+      after_filled: (settings?.max_open_bars_after_filled && typeof settings.max_open_bars_after_filled === 'object') ? settings.max_open_bars_after_filled : {},
+      before_filled_price_based: (settings?.max_open_bars_before_filled_price_based && typeof settings.max_open_bars_before_filled_price_based === 'object') ? settings.max_open_bars_before_filled_price_based : {},
+      after_filled_price_based: (settings?.max_open_bars_after_filled_price_based && typeof settings.max_open_bars_after_filled_price_based === 'object') ? settings.max_open_bars_after_filled_price_based : {},
+      before_filled_spread_based: (settings?.max_open_bars_before_filled_spread_based && typeof settings.max_open_bars_before_filled_spread_based === 'object') ? settings.max_open_bars_before_filled_spread_based : {},
+      after_filled_spread_based: (settings?.max_open_bars_after_filled_spread_based && typeof settings.max_open_bars_after_filled_spread_based === 'object') ? settings.max_open_bars_after_filled_spread_based : {}
     };
   } catch {
     // Ignore errors, return defaults
   }
-  return { before_filled: {}, after_filled: {} }; // Empty = all disabled
+  return {
+    before_filled: {},
+    after_filled: {},
+    before_filled_price_based: {},
+    after_filled_price_based: {},
+    before_filled_spread_based: {},
+    after_filled_spread_based: {}
+  }; // Empty = all disabled
 }
 
-async function getMaxOpenBarsForTimeframe(timeframe: string, tradeStatus: 'pending_fill' | 'paper_trade' | 'filled'): Promise<number> {
+async function getMaxOpenBarsForTimeframe(
+  timeframe: string,
+  tradeStatus: 'pending_fill' | 'paper_trade' | 'filled',
+  strategyType?: string | null
+): Promise<number> {
   const configs = await getMaxOpenBarsConfigs();
 
-  // Use before_filled config for pending/paper trades, after_filled for filled trades
-  const config = (tradeStatus === 'filled') ? configs.after_filled : configs.before_filled;
+  // Determine which config to use based on strategy type
+  let config: MaxOpenBarsConfig;
+
+  if (strategyType === 'price_based') {
+    // Use price-based strategy config, fall back to global if not set
+    config = (tradeStatus === 'filled')
+      ? { ...configs.after_filled, ...configs.after_filled_price_based }
+      : { ...configs.before_filled, ...configs.before_filled_price_based };
+  } else if (strategyType === 'spread_based') {
+    // Use spread-based strategy config, fall back to global if not set
+    config = (tradeStatus === 'filled')
+      ? { ...configs.after_filled, ...configs.after_filled_spread_based }
+      : { ...configs.before_filled, ...configs.before_filled_spread_based };
+  } else {
+    // Unknown or null strategy type - use global config
+    config = (tradeStatus === 'filled') ? configs.after_filled : configs.before_filled;
+  }
 
   // Try exact match first, then normalized (1D -> 1d)
   return config[timeframe] ?? config[timeframe.toLowerCase()] ?? 0;
@@ -905,8 +947,12 @@ export async function POST() {
         const stopLoss = trade.stop_loss || 0;
         const takeProfit = trade.take_profit || 0;
 
-        // Get max open bars for this trade's timeframe and status (0 = disabled)
-        const maxOpenBars = await getMaxOpenBarsForTimeframe(timeframe, trade.status as 'pending_fill' | 'paper_trade' | 'filled');
+        // Get max open bars for this trade's timeframe, status, and strategy type (0 = disabled)
+        const maxOpenBars = await getMaxOpenBarsForTimeframe(
+          timeframe,
+          trade.status as 'pending_fill' | 'paper_trade' | 'filled',
+          trade.strategy_type
+        );
 
         // Parse trade creation time - validate it's a valid date
         const createdAt = normalizeTimestamp(trade.created_at);

@@ -19,8 +19,13 @@ const SIMULATOR_SETTINGS_KEY = 'simulator'
 
 // Settings stored in database (persisted)
 interface SimulatorSettings {
-  max_open_bars_before_filled: MaxOpenBarsConfig  // Max bars for pending trades (before filled)
-  max_open_bars_after_filled: MaxOpenBarsConfig   // Max bars for filled trades (before cancelled)
+  max_open_bars_before_filled: MaxOpenBarsConfig  // Max bars for pending trades (before filled) - GLOBAL FALLBACK
+  max_open_bars_after_filled: MaxOpenBarsConfig   // Max bars for filled trades (before cancelled) - GLOBAL FALLBACK
+  // Strategy-type-specific settings (override global if present)
+  max_open_bars_before_filled_price_based?: MaxOpenBarsConfig  // Price-based strategy pending trades
+  max_open_bars_after_filled_price_based?: MaxOpenBarsConfig   // Price-based strategy filled trades
+  max_open_bars_before_filled_spread_based?: MaxOpenBarsConfig // Spread-based strategy pending trades
+  max_open_bars_after_filled_spread_based?: MaxOpenBarsConfig  // Spread-based strategy filled trades
   use_fixed_capital?: boolean                      // Use fixed capital instead of Bybit balance
   fixed_capital_usd?: number                       // Fixed capital amount in USD
 }
@@ -52,13 +57,21 @@ interface RuntimeStatus {
 
 // Combined status returned to frontend
 interface MonitorStatus extends RuntimeStatus {
+  // Global settings (fallback)
   max_open_bars_before_filled?: MaxOpenBarsConfig
   max_open_bars_after_filled?: MaxOpenBarsConfig
+  // Strategy-type-specific settings
+  max_open_bars_before_filled_price_based?: MaxOpenBarsConfig
+  max_open_bars_after_filled_price_based?: MaxOpenBarsConfig
+  max_open_bars_before_filled_spread_based?: MaxOpenBarsConfig
+  max_open_bars_after_filled_spread_based?: MaxOpenBarsConfig
+  // Other settings
   use_fixed_capital?: boolean
   fixed_capital_usd?: number
 }
 
 // Default per-timeframe max open bars (0 = no cancellation)
+// GLOBAL DEFAULTS - used as fallback when strategy-type-specific settings not configured
 const DEFAULT_MAX_OPEN_BARS_BEFORE_FILLED: MaxOpenBarsConfig = {
   '1m': 0, '3m': 0, '5m': 0, '15m': 0, '30m': 0,
   '1h': 0, '2h': 0, '4h': 0, '6h': 0, '12h': 0,
@@ -71,22 +84,62 @@ const DEFAULT_MAX_OPEN_BARS_AFTER_FILLED: MaxOpenBarsConfig = {
   '1d': 0, '1D': 0
 }
 
+// PRICE-BASED STRATEGY DEFAULTS
+const DEFAULT_MAX_OPEN_BARS_BEFORE_FILLED_PRICE_BASED: MaxOpenBarsConfig = {
+  '1m': 0, '3m': 0, '5m': 0, '15m': 0, '30m': 0,
+  '1h': 0, '2h': 0, '4h': 0, '6h': 0, '12h': 0,
+  '1d': 0, '1D': 0
+}
+
+const DEFAULT_MAX_OPEN_BARS_AFTER_FILLED_PRICE_BASED: MaxOpenBarsConfig = {
+  '1m': 0, '3m': 0, '5m': 0, '15m': 0, '30m': 0,
+  '1h': 0, '2h': 0, '4h': 0, '6h': 0, '12h': 0,
+  '1d': 0, '1D': 0
+}
+
+// SPREAD-BASED STRATEGY DEFAULTS
+const DEFAULT_MAX_OPEN_BARS_BEFORE_FILLED_SPREAD_BASED: MaxOpenBarsConfig = {
+  '1m': 0, '3m': 0, '5m': 0, '15m': 0, '30m': 0,
+  '1h': 0, '2h': 0, '4h': 0, '6h': 0, '12h': 0,
+  '1d': 0, '1D': 0
+}
+
+const DEFAULT_MAX_OPEN_BARS_AFTER_FILLED_SPREAD_BASED: MaxOpenBarsConfig = {
+  '1m': 0, '3m': 0, '5m': 0, '15m': 0, '30m': 0,
+  '1h': 0, '2h': 0, '4h': 0, '6h': 0, '12h': 0,
+  '1d': 0, '1D': 0
+}
+
 // Get settings from database (persisted)
 async function getSimulatorSettings(): Promise<SimulatorSettings> {
   try {
     const settings = await getSettings<SimulatorSettings>(SIMULATOR_SETTINGS_KEY)
 
     return {
+      // Global settings (fallback)
       max_open_bars_before_filled: { ...DEFAULT_MAX_OPEN_BARS_BEFORE_FILLED, ...(settings?.max_open_bars_before_filled || {}) },
       max_open_bars_after_filled: { ...DEFAULT_MAX_OPEN_BARS_AFTER_FILLED, ...(settings?.max_open_bars_after_filled || {}) },
+      // Strategy-type-specific settings (override global if present)
+      max_open_bars_before_filled_price_based: { ...DEFAULT_MAX_OPEN_BARS_BEFORE_FILLED_PRICE_BASED, ...(settings?.max_open_bars_before_filled_price_based || {}) },
+      max_open_bars_after_filled_price_based: { ...DEFAULT_MAX_OPEN_BARS_AFTER_FILLED_PRICE_BASED, ...(settings?.max_open_bars_after_filled_price_based || {}) },
+      max_open_bars_before_filled_spread_based: { ...DEFAULT_MAX_OPEN_BARS_BEFORE_FILLED_SPREAD_BASED, ...(settings?.max_open_bars_before_filled_spread_based || {}) },
+      max_open_bars_after_filled_spread_based: { ...DEFAULT_MAX_OPEN_BARS_AFTER_FILLED_SPREAD_BASED, ...(settings?.max_open_bars_after_filled_spread_based || {}) },
+      // Other settings
       use_fixed_capital: settings?.use_fixed_capital ?? false,
       fixed_capital_usd: settings?.fixed_capital_usd ?? 10000
     }
   } catch (e) {
     console.error('Failed to read simulator settings from DB:', e)
     return {
+      // Global settings (fallback)
       max_open_bars_before_filled: { ...DEFAULT_MAX_OPEN_BARS_BEFORE_FILLED },
       max_open_bars_after_filled: { ...DEFAULT_MAX_OPEN_BARS_AFTER_FILLED },
+      // Strategy-type-specific settings (defaults)
+      max_open_bars_before_filled_price_based: { ...DEFAULT_MAX_OPEN_BARS_BEFORE_FILLED_PRICE_BASED },
+      max_open_bars_after_filled_price_based: { ...DEFAULT_MAX_OPEN_BARS_AFTER_FILLED_PRICE_BASED },
+      max_open_bars_before_filled_spread_based: { ...DEFAULT_MAX_OPEN_BARS_BEFORE_FILLED_SPREAD_BASED },
+      max_open_bars_after_filled_spread_based: { ...DEFAULT_MAX_OPEN_BARS_AFTER_FILLED_SPREAD_BASED },
+      // Other settings
       use_fixed_capital: false,
       fixed_capital_usd: 10000
     }
@@ -152,8 +205,15 @@ async function getStatus(): Promise<MonitorStatus> {
   const runtime = getRuntimeStatus()
   return {
     ...runtime,
+    // Global settings
     max_open_bars_before_filled: settings.max_open_bars_before_filled,
     max_open_bars_after_filled: settings.max_open_bars_after_filled,
+    // Strategy-type-specific settings
+    max_open_bars_before_filled_price_based: settings.max_open_bars_before_filled_price_based,
+    max_open_bars_after_filled_price_based: settings.max_open_bars_after_filled_price_based,
+    max_open_bars_before_filled_spread_based: settings.max_open_bars_before_filled_spread_based,
+    max_open_bars_after_filled_spread_based: settings.max_open_bars_after_filled_spread_based,
+    // Other settings
     use_fixed_capital: settings.use_fixed_capital,
     fixed_capital_usd: settings.fixed_capital_usd
   }
@@ -260,12 +320,26 @@ export async function POST(request: NextRequest) {
       // { type: "before_filled", timeframe: "1h", max_bars: 24 }
       // { type: "after_filled", timeframe: "1h", max_bars: 24 }
       // { type: "before_filled", max_open_bars: { "1h": 24, "4h": 12 } }
-      const { type, timeframe, max_bars, max_open_bars } = body
+      // { type: "before_filled", strategy_type: "price_based", timeframe: "1h", max_bars: 24 }
+      // { type: "before_filled", strategy_type: "spread_based", max_open_bars: { "1h": 24 } }
+      const { type, timeframe, max_bars, max_open_bars, strategy_type } = body
       const currentSettings = await getSimulatorSettings()
 
-      // Determine which setting to update (default to before_filled for backward compatibility)
-      const settingType = type === 'after_filled' ? 'max_open_bars_after_filled' : 'max_open_bars_before_filled'
-      let updatedMaxBars = { ...currentSettings[settingType] }
+      // Determine which setting to update
+      // If strategy_type is specified, use strategy-type-specific setting
+      // Otherwise, use global setting (backward compatibility)
+      let settingType: string
+      if (strategy_type === 'price_based') {
+        settingType = type === 'after_filled' ? 'max_open_bars_after_filled_price_based' : 'max_open_bars_before_filled_price_based'
+      } else if (strategy_type === 'spread_based') {
+        settingType = type === 'after_filled' ? 'max_open_bars_after_filled_spread_based' : 'max_open_bars_before_filled_spread_based'
+      } else {
+        // No strategy type specified - use global setting (backward compatibility)
+        settingType = type === 'after_filled' ? 'max_open_bars_after_filled' : 'max_open_bars_before_filled'
+      }
+
+      const currentValue = currentSettings[settingType as keyof SimulatorSettings]
+      let updatedMaxBars: MaxOpenBarsConfig = (typeof currentValue === 'object' && currentValue !== null) ? { ...currentValue } : {}
 
       if (timeframe && typeof max_bars === 'number') {
         // Update single timeframe
@@ -276,17 +350,15 @@ export async function POST(request: NextRequest) {
       }
 
       // Save to database (persisted)
-      const updatePayload = settingType === 'max_open_bars_after_filled'
-        ? { max_open_bars_after_filled: updatedMaxBars }
-        : { max_open_bars_before_filled: updatedMaxBars }
-
+      const updatePayload = { [settingType]: updatedMaxBars }
       await saveSimulatorSettings(updatePayload)
 
+      const strategyLabel = strategy_type ? ` (${strategy_type})` : ''
       return NextResponse.json({
         success: true,
         message: timeframe
-          ? `Max open bars (${type || 'before_filled'}) for ${timeframe} set to ${max_bars}`
-          : `Max open bars (${type || 'before_filled'}) updated`,
+          ? `Max open bars (${type || 'before_filled'}${strategyLabel}) for ${timeframe} set to ${max_bars}`
+          : `Max open bars (${type || 'before_filled'}${strategyLabel}) updated`,
         [settingType]: updatedMaxBars
       })
 
