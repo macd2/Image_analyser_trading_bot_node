@@ -54,6 +54,7 @@ interface OpenPaperTrade {
   strategy_type?: string | null
   strategy_name?: string | null
   strategy_metadata?: any
+  order_id_pair?: string | null
 }
 
 interface CycleWithTrades {
@@ -141,6 +142,7 @@ interface ClosedTrade {
   risk_per_unit?: number
   sizing_method?: string
   risk_pct_used?: number
+  order_id_pair?: string | null
 }
 
 // Cancelled trades have same structure as closed trades
@@ -242,7 +244,7 @@ export function SimulatorPage() {
   const [selectedTrade, setSelectedTrade] = useState<TradeData | null>(null)
   const [chartMode, setChartMode] = useState<'live' | 'historical'>('live')
   const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [copiedType, setCopiedType] = useState<'trade' | 'run' | 'rec' | null>(null)
+  const [copiedType, setCopiedType] = useState<'trade' | 'run' | 'rec' | 'id' | null>(null)
 
   // Connect to real-time updates
   const { tickers } = useRealtime()
@@ -1451,7 +1453,7 @@ export function SimulatorPage() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  navigator.clipboard.writeText(trade.order_id_pair)
+                                  navigator.clipboard.writeText(trade.order_id_pair!)
                                   setCopiedId(`pair-${trade.id}`)
                                   setCopiedType('id')
                                   setTimeout(() => {
@@ -1869,7 +1871,7 @@ export function SimulatorPage() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  navigator.clipboard.writeText(trade.order_id_pair)
+                                  navigator.clipboard.writeText(trade.order_id_pair!)
                                   setCopiedId(`pair-${trade.id}`)
                                   setCopiedType('id')
                                   setTimeout(() => {
@@ -2227,7 +2229,7 @@ export function SimulatorPage() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  navigator.clipboard.writeText(trade.order_id_pair)
+                                  navigator.clipboard.writeText(trade.order_id_pair!)
                                   setCopiedId(`pair-${trade.id}`)
                                   setCopiedType('id')
                                   setTimeout(() => {
