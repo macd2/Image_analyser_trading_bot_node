@@ -65,12 +65,22 @@ export interface PricePoint {
   price_y: number;
 }
 
+export interface TradeMarker {
+  timeLabel: string;
+  type: 'signal' | 'fill' | 'exit';
+  color: string;
+  label: string;
+}
+
 export interface ChartDataSet {
   zScores: ZScorePoint[];
   spreads: SpreadPoint[];
   prices: PricePoint[];
   entryTime?: number;
   exitTime?: number;
+  signalMarker?: TradeMarker;
+  fillMarker?: TradeMarker;
+  exitMarker?: TradeMarker;
 }
 
 export interface SpreadTradeChartProps {
