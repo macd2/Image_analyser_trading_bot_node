@@ -289,6 +289,7 @@ function ZScorePane({
                 stroke: 'white',
               }}
               isAnimationActive={false}
+              yAxisId="left"
             />
           )}
 
@@ -305,6 +306,7 @@ function ZScorePane({
                 stroke: 'white',
               }}
               isAnimationActive={false}
+              yAxisId="left"
             />
           )}
 
@@ -321,6 +323,7 @@ function ZScorePane({
                 stroke: 'white',
               }}
               isAnimationActive={false}
+              yAxisId="left"
             />
           )}
         </ComposedChart>
@@ -481,6 +484,7 @@ function SpreadPricePane({
                 stroke: 'white',
               }}
               isAnimationActive={false}
+              yAxisId="left"
             />
           )}
 
@@ -497,6 +501,7 @@ function SpreadPricePane({
                 stroke: 'white',
               }}
               isAnimationActive={false}
+              yAxisId="left"
             />
           )}
 
@@ -513,6 +518,7 @@ function SpreadPricePane({
                 stroke: 'white',
               }}
               isAnimationActive={false}
+              yAxisId="left"
             />
           )}
         </ComposedChart>
@@ -663,6 +669,7 @@ function AssetPricePane({
                 stroke: 'white',
               }}
               isAnimationActive={false}
+              yAxisId="left"
             />
           )}
 
@@ -679,6 +686,7 @@ function AssetPricePane({
                 stroke: 'white',
               }}
               isAnimationActive={false}
+              yAxisId="left"
             />
           )}
 
@@ -695,6 +703,7 @@ function AssetPricePane({
                 stroke: 'white',
               }}
               isAnimationActive={false}
+              yAxisId="left"
             />
           )}
         </ComposedChart>
