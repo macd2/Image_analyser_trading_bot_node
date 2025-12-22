@@ -12,7 +12,7 @@ Output: JSON with {"should_exit": bool, "exit_price": float, "exit_reason": str,
 import sys
 import json
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 # Setup logging to stderr
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s', stream=sys.stderr)
@@ -23,7 +23,7 @@ def check_strategy_exit(
     strategy_name: str,
     candles: List[Dict[str, Any]],
     trade_data: Dict[str, Any],
-    pair_candles: List[Dict[str, Any]] = None
+    pair_candles: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     """
     Check if trade should exit using strategy.should_exit().
@@ -146,6 +146,19 @@ def check_strategy_exit(
         # Iterate through candles and check for exit
         # NOTE: For spread-based strategies, pair_candles are provided from the database cache
         # If not available, the strategy's should_exit() method can fetch from live API as fallback
+        last_exit_result = None  # Track last exit_result for stop/TP syncing when holding
+
+        # Determine position side (LONG or SHORT)
+        # trade_data["side"] can be 'Buy' (LONG) or 'Sell' (SHORT)
+        is_long = trade_data.get("side", "Buy").lower() in ["buy", "long"]
+
+        # Track simulated stops/TPs as they change each candle
+        simulated_stops = {
+            "stop_loss": trade_data.get("stop_loss"),
+            "take_profit": trade_data.get("take_profit")
+        }
+        stop_updates = []  # Audit trail of all stop/TP changes
+
         for i, candle in enumerate(candles):
             try:
                 current_candle_dict = {
@@ -184,32 +197,189 @@ def check_strategy_exit(
                     logger.error(f"ERROR: strategy.should_exit() returned non-dict for trade {trade_id}: {type(exit_result)}")
                     continue
 
+                # Track last exit_result for stop/TP syncing when holding position
+                last_exit_result = exit_result
+
+                # Update simulated stops if strategy provides new ones
+                exit_details = exit_result.get("exit_details", {})
+
+                if "stop_level" in exit_details:
+                    new_sl = exit_details["stop_level"]
+                    if simulated_stops["stop_loss"] and abs(new_sl - simulated_stops["stop_loss"]) > 0.0001:
+                        stop_updates.append({
+                            "candle_index": i,
+                            "timestamp": current_candle_dict.get("timestamp"),
+                            "type": "stop_loss",
+                            "old": simulated_stops["stop_loss"],
+                            "new": new_sl
+                        })
+                        simulated_stops["stop_loss"] = new_sl
+
+                if "tp_level" in exit_details:
+                    new_tp = exit_details["tp_level"]
+                    if simulated_stops["take_profit"] and abs(new_tp - simulated_stops["take_profit"]) > 0.0001:
+                        stop_updates.append({
+                            "candle_index": i,
+                            "timestamp": current_candle_dict.get("timestamp"),
+                            "type": "take_profit",
+                            "old": simulated_stops["take_profit"],
+                            "new": new_tp
+                        })
+                        simulated_stops["take_profit"] = new_tp
+
+                # Check if SL/TP was hit using CURRENT simulated stops
+                # This respects the dynamic stop/TP changes from the strategy
+                candle_high = current_candle_dict.get("high", 0)
+                candle_low = current_candle_dict.get("low", 0)
+
+                if is_long:
+                    # Long position: SL hit if low <= stopLoss, TP hit if high >= takeProfit
+                    sl_hit = simulated_stops["stop_loss"] and candle_low <= simulated_stops["stop_loss"]
+                    tp_hit = simulated_stops["take_profit"] and candle_high >= simulated_stops["take_profit"]
+
+                    if sl_hit and tp_hit:
+                        # Both hit in same candle - determine which first by checking open price
+                        if abs(current_candle_dict.get("open", 0) - simulated_stops["stop_loss"]) < abs(current_candle_dict.get("open", 0) - simulated_stops["take_profit"]):
+                            return {
+                                "should_exit": True,
+                                "exit_price": simulated_stops["stop_loss"],
+                                "exit_reason": "sl_hit",
+                                "exit_timestamp": current_candle_dict.get("timestamp"),
+                                "current_price": current_candle_dict.get("close"),
+                                "stop_updates": stop_updates,
+                                "final_stops": simulated_stops
+                            }
+                        else:
+                            return {
+                                "should_exit": True,
+                                "exit_price": simulated_stops["take_profit"],
+                                "exit_reason": "tp_hit",
+                                "exit_timestamp": current_candle_dict.get("timestamp"),
+                                "current_price": current_candle_dict.get("close"),
+                                "stop_updates": stop_updates,
+                                "final_stops": simulated_stops
+                            }
+                    elif sl_hit:
+                        return {
+                            "should_exit": True,
+                            "exit_price": simulated_stops["stop_loss"],
+                            "exit_reason": "sl_hit",
+                            "exit_timestamp": current_candle_dict.get("timestamp"),
+                            "current_price": current_candle_dict.get("close"),
+                            "stop_updates": stop_updates,
+                            "final_stops": simulated_stops
+                        }
+                    elif tp_hit:
+                        return {
+                            "should_exit": True,
+                            "exit_price": simulated_stops["take_profit"],
+                            "exit_reason": "tp_hit",
+                            "exit_timestamp": current_candle_dict.get("timestamp"),
+                            "current_price": current_candle_dict.get("close"),
+                            "stop_updates": stop_updates,
+                            "final_stops": simulated_stops
+                        }
+                else:
+                    # Short position: SL hit if high >= stopLoss, TP hit if low <= takeProfit
+                    sl_hit = simulated_stops["stop_loss"] and candle_high >= simulated_stops["stop_loss"]
+                    tp_hit = simulated_stops["take_profit"] and candle_low <= simulated_stops["take_profit"]
+
+                    if sl_hit and tp_hit:
+                        # Both hit in same candle - determine which first
+                        if abs(current_candle_dict.get("open", 0) - simulated_stops["stop_loss"]) < abs(current_candle_dict.get("open", 0) - simulated_stops["take_profit"]):
+                            return {
+                                "should_exit": True,
+                                "exit_price": simulated_stops["stop_loss"],
+                                "exit_reason": "sl_hit",
+                                "exit_timestamp": current_candle_dict.get("timestamp"),
+                                "current_price": current_candle_dict.get("close"),
+                                "stop_updates": stop_updates,
+                                "final_stops": simulated_stops
+                            }
+                        else:
+                            return {
+                                "should_exit": True,
+                                "exit_price": simulated_stops["take_profit"],
+                                "exit_reason": "tp_hit",
+                                "exit_timestamp": current_candle_dict.get("timestamp"),
+                                "current_price": current_candle_dict.get("close"),
+                                "stop_updates": stop_updates,
+                                "final_stops": simulated_stops
+                            }
+                    elif sl_hit:
+                        return {
+                            "should_exit": True,
+                            "exit_price": simulated_stops["stop_loss"],
+                            "exit_reason": "sl_hit",
+                            "exit_timestamp": current_candle_dict.get("timestamp"),
+                            "current_price": current_candle_dict.get("close"),
+                            "stop_updates": stop_updates,
+                            "final_stops": simulated_stops
+                        }
+                    elif tp_hit:
+                        return {
+                            "should_exit": True,
+                            "exit_price": simulated_stops["take_profit"],
+                            "exit_reason": "tp_hit",
+                            "exit_timestamp": current_candle_dict.get("timestamp"),
+                            "current_price": current_candle_dict.get("close"),
+                            "stop_updates": stop_updates,
+                            "final_stops": simulated_stops
+                        }
+
                 # Check if should exit
                 if exit_result.get("should_exit"):
-                    exit_details = exit_result.get("exit_details", {})
                     reason = exit_details.get("reason", "strategy_exit")
 
                     logger.info(f"Strategy exit triggered for trade {trade_id} at candle {i}: {reason}")
-                    return {
+
+                    # Build response with optional strategy-calculated stops
+                    response = {
                         "should_exit": True,
                         "exit_price": current_candle_dict.get("close"),
                         "exit_reason": reason,
                         "exit_timestamp": current_candle_dict.get("timestamp"),
-                        "current_price": current_candle_dict.get("close")
+                        "current_price": current_candle_dict.get("close"),
+                        "stop_updates": stop_updates,
+                        "final_stops": simulated_stops
                     }
+
+                    # Include strategy-calculated stops if provided (for consistency with PositionMonitor)
+                    if "stop_level" in exit_details:
+                        response["stop_level"] = exit_details.get("stop_level")
+                    if "tp_level" in exit_details:
+                        response["tp_level"] = exit_details.get("tp_level")
+
+                    return response
             except Exception as e:
                 logger.error(f"ERROR: Exception in candle {i} for trade {trade_id}: {e}", exc_info=True)
                 continue
 
         # No exit condition met
         logger.info(f"No exit condition met for trade {trade_id} after checking {len(candles)} candles")
-        return {
+
+        # Return response with optional strategy-calculated stops from last candle check
+        # This allows strategies to provide dynamic stop/TP levels even when holding
+        response = {
             "should_exit": False,
             "exit_price": None,
             "exit_reason": None,
             "exit_timestamp": None,
-            "current_price": candles[-1].get("close") if candles else None
+            "current_price": candles[-1].get("close") if candles else None,
+            "stop_updates": stop_updates,  # Include audit trail of all stop/TP changes
+            "final_stops": simulated_stops  # Include final simulated stops
         }
+
+        # If we have a last exit_result from the loop, include strategy-calculated stops
+        # This provides consistency with PositionMonitor's stop/TP syncing
+        if last_exit_result:
+            exit_details = last_exit_result.get("exit_details", {})
+            if "stop_level" in exit_details:
+                response["stop_level"] = exit_details.get("stop_level")
+            if "tp_level" in exit_details:
+                response["tp_level"] = exit_details.get("tp_level")
+
+        return response
 
     except Exception as e:
         logger.error(f"ERROR: Unexpected error checking strategy exit for trade {trade_id}: {e}", exc_info=True)
