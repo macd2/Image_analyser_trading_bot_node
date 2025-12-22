@@ -14,6 +14,7 @@ from trading_bot.strategies.factory import StrategyFactory
 from trading_bot.strategies.alex.alex_analysis_module import AlexAnalysisModule
 from trading_bot.strategies.cointegration.cointegration_analysis_module import CointegrationAnalysisModule
 from trading_bot.strategies.prompt.prompt_strategy import PromptStrategy
+from trading_bot.strategies.new_listing.new_listing_strategy import NewListingStrategy
 
 __all__ = [
     "BaseAnalysisModule",
@@ -22,10 +23,12 @@ __all__ = [
     "AlexAnalysisModule",
     "CointegrationAnalysisModule",
     "PromptStrategy",
+    "NewListingStrategy",
 ]
 
 # Register strategies with factory
 StrategyFactory.register_strategy("AiImageAnalyzer", PromptStrategy)
 StrategyFactory.register_strategy("MarketStructure", AlexAnalysisModule)
 StrategyFactory.register_strategy("CointegrationSpreadTrader", CointegrationAnalysisModule)
+StrategyFactory.register_strategy("NewListingStrategy", NewListingStrategy)
 
