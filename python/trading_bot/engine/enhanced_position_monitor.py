@@ -401,6 +401,17 @@ class EnhancedPositionMonitor:
                         exit_result
                     )
                     return  # Exit early - don't apply other tightening
+                else:
+                    # Strategy says to hold - sync strategy-calculated stops/TPs to exchange
+                    # This ensures exchange orders always match strategy logic
+                    if exit_result:
+                        self._sync_strategy_stops(
+                            position=position,
+                            exit_result=exit_result,
+                            instance_id=instance_id,
+                            run_id=run_id,
+                            trade_id=trade_id,
+                        )
             except Exception as e:
                 logger.error(f"Error checking strategy exit for {position.symbol}: {e}", exc_info=True)
 
@@ -456,7 +467,8 @@ class EnhancedPositionMonitor:
             trade_id: Trade ID for logging
 
         Returns:
-            Dict with exit details if should exit, None otherwise
+            Dict with exit details if should exit, or full exit_result if holding (for stop/TP syncing).
+            Returns None only if strategy is not provided or error occurs.
         """
         if not strategy:
             return None
@@ -489,7 +501,9 @@ class EnhancedPositionMonitor:
                     "exit_details": exit_details,
                 }
 
-            return None
+            # Return full result even when holding (should_exit=False)
+            # This allows _sync_strategy_stops() to access exit_details for stop/TP syncing
+            return exit_result
 
         except Exception as e:
             logger.error(f"Error checking strategy exit: {e}")
@@ -556,6 +570,97 @@ class EnhancedPositionMonitor:
                 f"[{instance_id}] Error closing position for strategy exit: {e}",
                 exc_info=True
             )
+
+    def _sync_strategy_stops(
+        self,
+        position: PositionState,
+        exit_result: Dict[str, Any],
+        instance_id: str,
+        run_id: str,
+        trade_id: Optional[str],
+    ) -> bool:
+        """
+        Sync strategy-calculated stops/TPs to exchange orders.
+
+        Called every monitoring cycle to keep exchange orders synchronized with
+        strategy-calculated levels (even when holding position).
+
+        Args:
+            position: Current position state
+            exit_result: Result from strategy.should_exit()
+            instance_id: Instance ID for audit trail
+            run_id: Run ID for audit trail
+            trade_id: Trade ID for linking
+
+        Returns:
+            True if any updates were made, False otherwise
+        """
+        exit_details = exit_result.get("exit_details", {})
+
+        # Extract strategy-provided levels (optional)
+        stop_level = exit_details.get("stop_level")
+        tp_level = exit_details.get("tp_level")
+
+        # If strategy doesn't provide custom levels, skip sync
+        if not stop_level and not tp_level:
+            return False
+
+        symbol = position.symbol
+        updated = False
+
+        # Update stop loss if changed (tolerance: 0.0001)
+        if stop_level and abs(stop_level - position.stop_loss) > 0.0001:
+            try:
+                result = self.executor.set_trading_stop(
+                    symbol=symbol,
+                    stop_loss=stop_level,
+                )
+
+                if "error" not in result:
+                    updated = True
+                    logger.info(
+                        f"[{instance_id}] 📍 SL SYNCED: {symbol} "
+                        f"{position.stop_loss:.4f} → {stop_level:.4f}"
+                    )
+
+                    if instance_id and run_id and trade_id:
+                        self._log_position_action(
+                            instance_id, run_id, trade_id, symbol,
+                            "strategy_stop_synced",
+                            f"SL: {position.stop_loss:.4f} → {stop_level:.4f}"
+                        )
+                else:
+                    logger.error(f"Failed to sync SL for {symbol}: {result.get('error')}")
+            except Exception as e:
+                logger.error(f"Error syncing SL for {symbol}: {e}")
+
+        # Update take profit if changed (tolerance: 0.0001)
+        if tp_level and abs(tp_level - position.take_profit) > 0.0001:
+            try:
+                result = self.executor.set_trading_stop(
+                    symbol=symbol,
+                    take_profit=tp_level,
+                )
+
+                if "error" not in result:
+                    updated = True
+                    logger.info(
+                        f"[{instance_id}] 📍 TP SYNCED: {symbol} "
+                        f"{position.take_profit:.4f} → {tp_level:.4f}"
+                    )
+
+                    if instance_id and run_id and trade_id:
+                        self._log_position_action(
+                            instance_id, run_id, trade_id, symbol,
+                            "strategy_tp_synced",
+                            f"TP: {position.take_profit:.4f} → {tp_level:.4f}"
+                        )
+                else:
+                    logger.error(f"Failed to sync TP for {symbol}: {result.get('error')}")
+            except Exception as e:
+                logger.error(f"Error syncing TP for {symbol}: {e}")
+
+        return updated
 
     def _fetch_trade_data_for_strategy_exit(
         self,
