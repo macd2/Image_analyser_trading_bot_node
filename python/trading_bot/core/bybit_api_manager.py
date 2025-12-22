@@ -488,3 +488,9 @@ class BybitAPIManager:
         # Remove recv_window as it's handled by circuit breaker
         kwargs.pop('recv_window', None)
         return self._execute_with_circuit_breaker(lambda s, **kw: s.get_executions(**kw), **kwargs)
+
+    def get_announcements(self, **kwargs) -> Dict[str, Any]:
+        """Get Bybit announcements (public endpoint, no auth required)."""
+        # Remove recv_window as it's not needed for public endpoints
+        kwargs.pop('recv_window', None)
+        return self._execute_with_circuit_breaker(lambda s, **kw: s.get_announcement(**kw), **kwargs)
