@@ -93,7 +93,7 @@ Again, exit_price is set to currentPrice (line 544). So indeed, the simulator se
 [ ] each part of the trading cycle must be instance aware
 [ ] each step of the trading cycle must check its own data iteegrety 
 [ ] each part of the trading cylce must be timeframe and boundery aware
-- example sources must check if there already images for the current timeframe and boundery
+- example sources must check if there already images fnow or the current timeframe and boundery
 - cleaner must only clean images that are outside the crrent boundery based on tieframe 
 [ ] analyzer must only analze images if there is no recomendation for current timeframe and boundery and instance than return results as if it analyzed them but with the note of chached results so later parts of the code can run 
 [ ] execution must check in dry run of the given recomendation was already executed based on database status in live trading ofcause based on exchnage data
@@ -262,4 +262,6 @@ old agent mories:
 - Complete trade traceability system: Every trade is fully traceable from analysis through closure with strategy_uuid linking all phases (recommendations→trades→executions→position_monitor_logs→error_logs). Each trade stores: strategy_uuid, strategy_type, strategy_name, strategy_config, all settings, all actions, all errors, complete timestamps. Enables full reproducibility and testing.
 - Complete traceability system: (1) Input snapshot - raw_prompt + market_data already stored in raw_response JSON; (2) Intermediate calculations - stored as raw_response from model; (3) Decision context - MISSING: setup_quality, market_environment in recommendations; ranking_score, ranking_position, total_signals_analyzed, total_signals_ranked, available_slots in trades; (4) Execution context - MISSING: wallet_balance_at_trade, kelly_fraction_used, kelly_metrics in trades; (5) Monitoring context - MISSING: new trade_monitoring_log table for all adjustments/exit_checks with action_type, original_value, adjusted_value, reason, monitoring_metadata, exit_condition_result. Store efficiently as JSON columns, use centralized DB layer with proper connection release.
 
+
+------
 
