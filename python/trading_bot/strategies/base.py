@@ -431,32 +431,61 @@ class BaseAnalysisModule(ABC):
             Dict with:
             - 'should_exit': bool - whether to exit the trade
             - 'exit_details': dict - detailed exit context for logging
-              - 'reason': str - why exit was triggered (e.g., 'tp_touched', 'sl_touched', 'z_score_exit', 'no_exit')
-              - Additional fields depend on strategy type (price, z_score, spread, etc.)
+              - 'reason': str - why exit was triggered (required)
+                Examples: 'tp_touched', 'sl_touched', 'z_score_exit', 'no_exit', 'trailing_stop_hit'
+
+              - 'stop_level': float - OPTIONAL - The actual stop loss level to use
+                Only provide if strategy calculates custom stops. If omitted, PositionMonitor
+                will use global tightening. Can be calculated any way (trailing, static, dynamic, breakeven).
+
+              - 'tp_level': float - OPTIONAL - The actual take profit level to use
+                Only provide if strategy calculates custom TPs. If omitted, PositionMonitor
+                will use global tightening. Can be calculated any way (dynamic, static, emergency).
+
+              - 'stop_type': str - OPTIONAL - How stop_level was calculated
+                Examples: 'trailing', 'static', 'dynamic', 'breakeven', 'z_score'
+
+              - 'tp_type': str - OPTIONAL - How tp_level was calculated
+                Examples: 'dynamic', 'static', 'emergency', 'z_score'
+
+              - Additional fields depend on strategy type (price, z_score, spread, phase, etc.)
+
+        IMPORTANT: Return stop_level and tp_level EVERY monitoring cycle (even when should_exit=False)
+        if your strategy calculates custom stops/TPs. These represent the CURRENT effective levels
+        that PositionMonitor will sync to exchange orders.
 
         Examples:
-            Price-based: {
-                'should_exit': True,
+            Price-based (no custom stops - uses global tightening): {
+                'should_exit': False,
                 'exit_details': {
-                    'reason': 'tp_touched',
+                    'reason': 'no_exit',
                     'price': 101.5,
-                    'tp': 101.5,
-                    'sl': 99.5,
-                    'distance_to_tp': 0.0,
+                    'distance_to_tp': 5.0,
                     'distance_to_sl': 2.0
                 }
             }
-            Spread-based: {
-                'should_exit': True,
+
+            Trailing stop (custom stops - synced to exchange): {
+                'should_exit': False,
                 'exit_details': {
-                    'reason': 'z_score_exit',
-                    'z_score': 0.45,
-                    'spread': 0.5,
-                    'threshold': 0.5,
-                    'threshold_crossed': True,
-                    'beta': 1.2,
-                    'spread_mean': 0.0,
-                    'spread_std': 0.1,
+                    'reason': 'no_exit',
+                    'stop_level': 100.5,      # Strategy-calculated trailing stop
+                    'tp_level': 110.0,        # Strategy-calculated dynamic TP
+                    'stop_type': 'trailing',
+                    'tp_type': 'dynamic',
+                    'phase': 2,
+                    'highest_seen': 105.0
+                }
+            }
+
+            Spread-based (partial custom stops): {
+                'should_exit': False,
+                'exit_details': {
+                    'reason': 'no_exit',
+                    'stop_level': 0.5,        # Z-score threshold for stop
+                    'stop_type': 'z_score',
+                    'z_score': 0.2,
+                    'spread': 0.15,
                     'pair_symbol': 'ETHUSDT'
                 }
             }
