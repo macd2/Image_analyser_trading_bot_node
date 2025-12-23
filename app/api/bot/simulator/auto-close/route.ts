@@ -570,57 +570,50 @@ function findFillCandle(
 }
 
 /**
- * Find the first candle where spread-based trade entry is valid
- * For spread-based strategies, entry is signal-based, not price-based
+ * Find fill candle for spread-based trades (SIGNAL-BASED APPROACH)
  *
- * Entry is filled when:
- * 1. Both symbols' prices are touched (main and pair)
- * 2. The spread at that point is close to the entry spread (within tolerance)
+ * For spread-based cointegration strategies, trades are SIGNAL-BASED, not PRICE-LEVEL-BASED.
+ * This means:
+ * - Trade fills immediately at signal time (or next candle after signal)
+ * - Entry price = current price at signal time
+ * - No need to wait for specific price levels to be touched
  *
- * This prevents false fills where one symbol touches but the spread is invalid
+ * The signal is generated when z-score crosses the entry threshold (e.g., z >= 2.0 or z <= -2.0).
+ * The trade should fill at the FIRST CANDLE after signal generation.
  */
 function findSpreadBasedFillCandle(
   mainCandles: Candle[],
   pairCandles: Candle[],
   entryPrice: number,
-  pairEntryPrice: number,
-  beta: number,
-  entrySpread: number,
-  spreadStd: number
+  pairEntryPrice: number
 ): FillResult {
-  // Tolerance: allow spread to be within 1.5 standard deviations of entry spread
-  const spreadTolerance = 1.5 * spreadStd;
+  // Signal-based fill: Trade fills at the FIRST CANDLE after signal generation
+  // This is because the signal was already generated when the trade was created
+  // The trade should fill immediately at the next available candle
 
-  // Both candle arrays must have same length and be aligned by timestamp
-  const minLength = Math.min(mainCandles.length, pairCandles.length);
-
-  for (let i = 0; i < minLength; i++) {
-    const mainCandle = mainCandles[i];
-    const pairCandle = pairCandles[i];
-
-    // Check if both symbols' entry prices are touched in this candle
-    const mainTouched = mainCandle.low <= entryPrice && entryPrice <= mainCandle.high;
-    const pairTouched = pairCandle.low <= pairEntryPrice && pairEntryPrice <= pairCandle.high;
-
-    if (mainTouched && pairTouched) {
-      // Both symbols touched - verify spread is valid
-      const currentSpread = pairCandle.close - beta * mainCandle.close;
-      const spreadDiff = Math.abs(currentSpread - entrySpread);
-
-      if (spreadDiff <= spreadTolerance) {
-        // Spread is within tolerance - trade is filled
-        return {
-          filled: true,
-          fillPrice: entryPrice,
-          fillTimestamp: mainCandle.timestamp,
-          fillCandleIndex: i,
-          pair_fill_price: pairEntryPrice
-        };
-      }
-    }
+  if (mainCandles.length === 0 || pairCandles.length === 0) {
+    return { filled: false, fillPrice: null, fillTimestamp: null, fillCandleIndex: -1 };
   }
 
-  return { filled: false, fillPrice: null, fillTimestamp: null, fillCandleIndex: -1 };
+  // For signal-based trades, fill at the first candle
+  // This represents the trade filling at the signal time (or next candle)
+  const mainCandle = mainCandles[0];
+  const pairCandle = pairCandles[0];
+
+  // Verify we have valid candles with prices
+  if (!mainCandle || !pairCandle || mainCandle.close <= 0 || pairCandle.close <= 0) {
+    return { filled: false, fillPrice: null, fillTimestamp: null, fillCandleIndex: -1 };
+  }
+
+  // Signal-based fill: Use current prices at signal time as fill prices
+  // The entry_price and pair_entry_price stored in the trade are the prices at signal time
+  return {
+    filled: true,
+    fillPrice: entryPrice,
+    fillTimestamp: mainCandle.timestamp,
+    fillCandleIndex: 0,
+    pair_fill_price: pairEntryPrice
+  };
 }
 
 /**
@@ -1107,104 +1100,29 @@ export async function POST() {
         let fillResult: FillResult;
 
         if (strategyMetadata && strategyMetadata.pair_symbol) {
-          // Spread-based strategy - need to check both symbols
-          console.log(`[Auto-Close] ${trade.symbol} - Spread-based strategy detected, checking both symbols for fill`);
+          // Spread-based strategy - SIGNAL-BASED FILL
+          // For signal-based trades, fill immediately at signal time without waiting for pair candles
+          console.log(`[Auto-Close] ${trade.symbol} - Spread-based strategy detected (signal-based fill)`);
 
-          // Fetch pair candles from database first, then API if missing
-          let pairCandles: Candle[] = [];
-          try {
-            const pairSymbol = strategyMetadata.pair_symbol;
-            if (candlesAfterCreation.length > 0) {
-              const startTime = candlesAfterCreation[0].timestamp;
-              const endTime = candlesAfterCreation[candlesAfterCreation.length - 1].timestamp;
+          // Signal-based fill: Trade fills at the first candle after signal generation
+          // No need to fetch pair candles - the signal was already generated when trade was created
+          const pairEntryPrice = strategyMetadata.price_y_at_entry || 0;
 
-              // STEP 1: Try to fetch from database
-              const pairCandlesData = await dbQuery<any>(`
-                SELECT
-                  start_time as timestamp,
-                  open_price as open,
-                  high_price as high,
-                  low_price as low,
-                  close_price as close
-                FROM klines
-                WHERE symbol = ? AND timeframe = ? AND start_time >= ? AND start_time <= ?
-                ORDER BY start_time ASC
-              `, [pairSymbol, timeframe, startTime, endTime]);
+          // Create a minimal pair candles array for the function signature
+          // For signal-based fills, we only need the first candle to get the timestamp
+          const minimalPairCandles: Candle[] = candlesAfterCreation.length > 0
+            ? [candlesAfterCreation[0]]  // Use first main candle as reference
+            : [];
 
-              pairCandles = (pairCandlesData || []).map(c => ({
-                timestamp: c.timestamp,
-                open: c.open,
-                high: c.high,
-                low: c.low,
-                close: c.close,
-                volume: 0,
-                turnover: 0
-              }));
+          fillResult = findSpreadBasedFillCandle(
+            candlesAfterCreation,
+            minimalPairCandles,
+            entryPrice,
+            pairEntryPrice
+          );
 
-              if (pairCandles.length > 0) {
-                console.log(`[Auto-Close] Fetched ${pairCandles.length} pair candles for ${pairSymbol} from database`);
-              } else {
-                // STEP 2: If not in database, fetch from Bybit API
-                console.log(`[Auto-Close] No pair candles in database for ${pairSymbol}, fetching from Bybit API...`);
-                try {
-                  await fetchAndStoreCandles(pairSymbol, timeframe);
-
-                  // Now try to fetch from database again
-                  const pairCandlesDataFromApi = await dbQuery<any>(`
-                    SELECT
-                      start_time as timestamp,
-                      open_price as open,
-                      high_price as high,
-                      low_price as low,
-                      close_price as close
-                    FROM klines
-                    WHERE symbol = ? AND timeframe = ? AND start_time >= ? AND start_time <= ?
-                    ORDER BY start_time ASC
-                  `, [pairSymbol, timeframe, startTime, endTime]);
-
-                  pairCandles = (pairCandlesDataFromApi || []).map(c => ({
-                    timestamp: c.timestamp,
-                    open: c.open,
-                    high: c.high,
-                    low: c.low,
-                    close: c.close,
-                    volume: 0,
-                    turnover: 0
-                  }));
-
-                  if (pairCandles.length > 0) {
-                    console.log(`[Auto-Close] Fetched ${pairCandles.length} pair candles for ${pairSymbol} from Bybit API`);
-                  }
-                } catch (apiError) {
-                  console.warn(`[Auto-Close] Failed to fetch pair candles from Bybit API for ${pairSymbol}: ${apiError}`);
-                }
-              }
-            }
-          } catch (error) {
-            console.warn(`[Auto-Close] Failed to fetch pair candles for spread-based fill detection: ${error}`);
-          }
-
-          if (pairCandles.length > 0) {
-            // Use spread-based fill detection
-            const pairEntryPrice = strategyMetadata.price_y_at_entry || 0;
-            const beta = strategyMetadata.beta || 1.0;
-            const spreadMean = strategyMetadata.spread_mean || 0;
-            const spreadStd = strategyMetadata.spread_std || 1.0;
-
-            fillResult = findSpreadBasedFillCandle(
-              candlesAfterCreation,
-              pairCandles,
-              entryPrice,
-              pairEntryPrice,
-              beta,
-              spreadMean,
-              spreadStd
-            );
-          } else {
-            // No pair candles available - trade cannot be filled yet
-            // Will retry on next auto-closer run when pair candles may be available
-            console.warn(`[Auto-Close] ${trade.symbol} - SPREAD-BASED STRATEGY: No pair candles available after API fetch, cannot validate fill. Trade remains unfilled and will retry.`);
-            fillResult = { filled: false, fillPrice: null, fillTimestamp: null, fillCandleIndex: -1 };
+          if (fillResult.filled) {
+            console.log(`[Auto-Close] ${trade.symbol} - SPREAD-BASED FILL: Trade filled at signal time (signal-based approach)`);
           }
         } else {
           // Price-based strategy - use simple entry price check
