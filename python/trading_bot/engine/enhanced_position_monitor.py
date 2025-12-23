@@ -58,6 +58,7 @@ class AgeCancellationConfig:
     """Age-based order cancellation configuration"""
     enabled: bool = False
     max_age_bars: Dict[str, float] = field(default_factory=dict)  # Timeframe -> max bars
+    max_age_seconds: Optional[int] = None  # Time-based cancellation (e.g., 300 = 5 minutes)
 
 
 @dataclass
@@ -97,6 +98,9 @@ class PositionTrackingState:
     fill_price_x: Optional[float] = None
     fill_price_y: Optional[float] = None
     both_filled: bool = False
+    # Partial fill handling (Phase 3)
+    first_leg_fill_time: Optional[datetime] = None  # When first leg filled
+    partial_fill_timeout_seconds: int = 60  # 1 minute timeout for second leg
 
 
 class EnhancedPositionMonitor:
@@ -199,6 +203,146 @@ class EnhancedPositionMonitor:
         self._on_position_closed = on_position_closed
         self._on_sl_tightened = on_sl_tightened
         self._on_order_cancelled = on_order_cancelled
+
+    # ==================== WEBSOCKET EVENT HANDLERS ====================
+
+    def on_execution_update(self, execution: Any, instance_id: str, run_id: str) -> None:
+        """
+        Handle execution update from WebSocket (real-time fill notification).
+
+        This is called when an order is filled via the execution stream.
+        For spread-based trades, tracks fills for both legs and triggers exit when both filled.
+
+        Args:
+            execution: ExecutionRecord from WebSocket (has order_id, symbol, exec_qty, exec_price, etc.)
+            instance_id: Instance ID for audit trail
+            run_id: Run ID for audit trail
+
+        MULTI-INSTANCE: Filters orders by instance_id via order_link_id prefix.
+        """
+        order_id = execution.order_id
+        symbol = execution.symbol
+        exec_qty = execution.exec_qty
+        exec_price = execution.exec_price
+
+        # Check if this order is tracked
+        if order_id not in self._order_state:
+            return
+
+        order_info = self._order_state[order_id]
+
+        # Verify instance match (order_link_id contains instance_id prefix)
+        if order_info.get("instance_id") != instance_id:
+            return
+
+        logger.info(
+            f"[{instance_id}] 📊 EXECUTION: {symbol} {execution.side} "
+            f"qty={exec_qty} @ {exec_price}"
+        )
+
+        # For spread-based trades, track fills for both legs
+        if order_info.get("is_spread_based"):
+            self._handle_spread_execution(
+                order_id, order_info, execution, instance_id, run_id
+            )
+            # Check for partial fill timeout (Phase 3)
+            self._check_partial_fill_timeouts(instance_id, run_id)
+        else:
+            # For regular trades, just log the execution
+            self._log_position_action(
+                instance_id, run_id, order_info.get("trade_id"), symbol,
+                "order_filled", f"Order {order_id} filled: {exec_qty} @ {exec_price}"
+            )
+
+    def _handle_spread_execution(
+        self,
+        order_id: str,
+        order_info: Dict[str, Any],
+        execution: Any,
+        instance_id: str,
+        run_id: str,
+    ) -> None:
+        """
+        Handle execution for spread-based trades.
+
+        Tracks fills for both legs (X and Y symbols) and triggers exit when both filled.
+        Implements partial fill handling: if one leg fills but other doesn't within 1 minute,
+        close the filled leg and cancel the unfilled order.
+        """
+        symbol = execution.symbol
+        exec_qty = execution.exec_qty
+        exec_price = execution.exec_price
+
+        # Determine which leg this is (X or Y)
+        order_id_x = order_info.get("order_id_x")
+        order_id_y = order_info.get("order_id_y")
+        symbol_x = order_info.get("symbol")
+        symbol_y = order_info.get("pair_symbol")
+
+        if order_id == order_id_x:
+            # X leg filled
+            order_info["fill_price_x"] = exec_price
+            order_info["fill_qty_x"] = exec_qty
+            logger.info(f"[{instance_id}] ✅ X leg filled: {symbol_x} {exec_qty} @ {exec_price}")
+        elif order_id == order_id_y:
+            # Y leg filled
+            order_info["fill_price_y"] = exec_price
+            order_info["fill_qty_y"] = exec_qty
+            logger.info(f"[{instance_id}] ✅ Y leg filled: {symbol_y} {exec_qty} @ {exec_price}")
+        else:
+            return
+
+        # IMPORTANT: Update BOTH order entries with fill info so timeout check works
+        # regardless of which order_id we're iterating over
+        if order_id_x in self._order_state:
+            self._order_state[order_id_x]["fill_price_x"] = order_info.get("fill_price_x")
+            self._order_state[order_id_x]["fill_qty_x"] = order_info.get("fill_qty_x")
+            self._order_state[order_id_x]["fill_price_y"] = order_info.get("fill_price_y")
+            self._order_state[order_id_x]["fill_qty_y"] = order_info.get("fill_qty_y")
+        if order_id_y in self._order_state:
+            self._order_state[order_id_y]["fill_price_x"] = order_info.get("fill_price_x")
+            self._order_state[order_id_y]["fill_qty_x"] = order_info.get("fill_qty_x")
+            self._order_state[order_id_y]["fill_price_y"] = order_info.get("fill_price_y")
+            self._order_state[order_id_y]["fill_qty_y"] = order_info.get("fill_qty_y")
+
+        # Check if both legs are now filled
+        fill_price_x = order_info.get("fill_price_x")
+        fill_price_y = order_info.get("fill_price_y")
+
+        if fill_price_x and fill_price_y and not order_info.get("both_filled"):
+            order_info["both_filled"] = True
+
+            # Update BOTH order entries with both_filled flag
+            if order_id_x in self._order_state:
+                self._order_state[order_id_x]["both_filled"] = True
+            if order_id_y in self._order_state:
+                self._order_state[order_id_y]["both_filled"] = True
+
+            logger.info(
+                f"[{instance_id}] 🎯 BOTH LEGS FILLED: {symbol_x} @ {fill_price_x}, "
+                f"{symbol_y} @ {fill_price_y}"
+            )
+
+            self._log_position_action(
+                instance_id, run_id, order_info.get("trade_id"), symbol,
+                "spread_both_filled",
+                f"Both legs filled: {symbol_x} @ {fill_price_x}, {symbol_y} @ {fill_price_y}"
+            )
+        elif (fill_price_x or fill_price_y) and not order_info.get("first_leg_fill_time"):
+            # First leg filled, start 1-minute timeout for second leg
+            order_info["first_leg_fill_time"] = datetime.now(timezone.utc)
+            filled_leg = "X" if fill_price_x else "Y"
+            unfilled_leg = "Y" if fill_price_x else "X"
+            logger.info(
+                f"[{instance_id}] ⏱️ PARTIAL FILL: {filled_leg} leg filled, "
+                f"waiting {order_info.get('partial_fill_timeout_seconds', 60)}s for {unfilled_leg} leg"
+            )
+
+            self._log_position_action(
+                instance_id, run_id, order_info.get("trade_id"), symbol,
+                "spread_partial_fill",
+                f"First leg ({filled_leg}) filled, waiting for second leg ({unfilled_leg})"
+            )
 
     # ==================== EVENT HANDLERS ====================
 
@@ -447,34 +591,218 @@ class EnhancedPositionMonitor:
         # For now, positions are primarily tracked via event-driven updates
         pass
 
-    def _check_all_orders(self) -> None:
-        """Check all tracked orders for age-based cancellation"""
-        if not self.age_cancellation_config.enabled:
+    def _check_partial_fill_timeouts(self, instance_id: str, run_id: str) -> None:
+        """
+        Check for partial fill timeouts (Phase 3).
+
+        If one leg of a spread-based trade fills but the other doesn't within 1 minute:
+        1. Close the filled leg via market order
+        2. Cancel the unfilled order
+        3. Log the event
+
+        MULTI-INSTANCE: Filters by instance_id.
+        """
+        now = datetime.now(timezone.utc)
+        processed_pairs = set()  # Track processed order pairs to avoid double-handling
+
+        for order_id, order_info in list(self._order_state.items()):
+            # Skip non-spread-based orders
+            if not order_info.get("is_spread_based"):
+                continue
+
+            # Skip if instance doesn't match
+            if order_info.get("instance_id") != instance_id:
+                continue
+
+            # Skip if both legs already filled
+            if order_info.get("both_filled"):
+                continue
+
+            # Skip if no partial fill yet
+            first_fill_time = order_info.get("first_leg_fill_time")
+            if not first_fill_time:
+                continue
+
+            # Skip if we already processed this pair
+            pair_key = (order_info.get("order_id_x"), order_info.get("order_id_y"))
+            if pair_key in processed_pairs:
+                continue
+            processed_pairs.add(pair_key)
+
+            # Check if timeout exceeded
+            timeout_seconds = order_info.get("partial_fill_timeout_seconds", 60)
+            elapsed = (now - first_fill_time).total_seconds()
+
+            if elapsed > timeout_seconds:
+                self._handle_partial_fill_timeout(
+                    order_id, order_info, instance_id, run_id, elapsed
+                )
+
+    def _handle_partial_fill_timeout(
+        self,
+        order_id: str,
+        order_info: Dict[str, Any],
+        instance_id: str,
+        run_id: str,
+        elapsed_seconds: float,
+    ) -> None:
+        """
+        Handle partial fill timeout: close filled leg and cancel unfilled order.
+
+        Args:
+            order_id: Order ID that triggered timeout
+            order_info: Order tracking info
+            instance_id: Instance ID for audit trail
+            run_id: Run ID for audit trail
+            elapsed_seconds: Seconds elapsed since first fill
+        """
+        order_id_x = order_info.get("order_id_x")
+        order_id_y = order_info.get("order_id_y")
+
+        # Determine symbol_x and symbol_y based on order_id_x and order_id_y
+        # NOT based on the current order_info's symbol (which might be either X or Y)
+        if order_id == order_id_x:
+            symbol_x = order_info.get("symbol")
+            symbol_y = order_info.get("pair_symbol")
+        else:
+            # order_id == order_id_y, so swap them
+            symbol_x = order_info.get("pair_symbol")
+            symbol_y = order_info.get("symbol")
+
+        fill_price_x = order_info.get("fill_price_x")
+        fill_price_y = order_info.get("fill_price_y")
+        fill_qty_x = order_info.get("fill_qty_x")
+        fill_qty_y = order_info.get("fill_qty_y")
+        trade_id = order_info.get("trade_id")
+
+        logger.warning(
+            f"[{instance_id}] ⚠️ PARTIAL FILL TIMEOUT ({elapsed_seconds:.1f}s): "
+            f"X={fill_price_x is not None}, Y={fill_price_y is not None}"
+        )
+
+        # Determine which leg filled and which didn't
+        if fill_price_x and not fill_price_y:
+            # X filled, Y didn't - close X and cancel Y
+            filled_symbol = symbol_x
+            filled_qty = fill_qty_x
+            unfilled_symbol = symbol_y
+            unfilled_order_id = order_id_y
+            filled_leg = "X"
+            unfilled_leg = "Y"
+        elif fill_price_y and not fill_price_x:
+            # Y filled, X didn't - close Y and cancel X
+            filled_symbol = symbol_y
+            filled_qty = fill_qty_y
+            unfilled_symbol = symbol_x
+            unfilled_order_id = order_id_x
+            filled_leg = "Y"
+            unfilled_leg = "X"
+        else:
+            # Both filled or neither filled - shouldn't happen
+            logger.warning(f"[{instance_id}] Unexpected partial fill state: X={fill_price_x}, Y={fill_price_y}")
+            return
+
+        logger.info(
+            f"[{instance_id}] 🔄 PARTIAL FILL RECOVERY: "
+            f"Closing {filled_leg} leg ({filled_symbol}) and cancelling {unfilled_leg} leg ({unfilled_symbol})"
+        )
+
+        # Step 1: Close the filled leg via market order
+        close_result = self.executor.close_position(symbol=filled_symbol)
+
+        if "error" in close_result:
+            logger.error(
+                f"[{instance_id}] Failed to close {filled_leg} leg ({filled_symbol}): {close_result['error']}"
+            )
+            self._log_position_action(
+                instance_id, run_id, trade_id, filled_symbol,
+                "partial_fill_close_failed",
+                f"Failed to close {filled_leg} leg: {close_result['error']}"
+            )
+        else:
+            logger.info(f"[{instance_id}] ✅ Closed {filled_leg} leg ({filled_symbol})")
+            self._log_position_action(
+                instance_id, run_id, trade_id, filled_symbol,
+                "partial_fill_closed",
+                f"Closed {filled_leg} leg ({filled_symbol}) after {elapsed_seconds:.1f}s timeout"
+            )
+
+        # Step 2: Cancel the unfilled order
+        cancel_result = self.executor.cancel_order(
+            symbol=unfilled_symbol,
+            order_id=unfilled_order_id
+        )
+
+        if "error" in cancel_result:
+            logger.error(
+                f"[{instance_id}] Failed to cancel {unfilled_leg} leg ({unfilled_symbol}): {cancel_result['error']}"
+            )
+            self._log_position_action(
+                instance_id, run_id, trade_id, unfilled_symbol,
+                "partial_fill_cancel_failed",
+                f"Failed to cancel {unfilled_leg} leg: {cancel_result['error']}"
+            )
+        else:
+            logger.info(f"[{instance_id}] ✅ Cancelled {unfilled_leg} leg ({unfilled_symbol})")
+            self._log_position_action(
+                instance_id, run_id, trade_id, unfilled_symbol,
+                "partial_fill_cancelled",
+                f"Cancelled {unfilled_leg} leg ({unfilled_symbol}) after {elapsed_seconds:.1f}s timeout"
+            )
+
+        # Mark as handled so we don't retry
+        order_info["partial_fill_handled"] = True
+
+    def _check_all_orders(
+        self,
+        age_cancellation_config: Optional[AgeCancellationConfig] = None
+    ) -> None:
+        """Check all tracked orders for age-based cancellation (bar-based or time-based)
+
+        Args:
+            age_cancellation_config: Optional config override (e.g., from strategy)
+        """
+        # Use provided config or fall back to global
+        config = age_cancellation_config or self.age_cancellation_config
+
+        if not config.enabled:
             return
 
         now = datetime.now(timezone.utc)
         orders_to_cancel = []
 
         for order_id, order_info in self._order_state.items():
+            created_time = datetime.fromisoformat(order_info["created_time"])
+            age_seconds = (now - created_time).total_seconds()
+
+            # Check time-based cancellation first (if configured)
+            if config.max_age_seconds and config.max_age_seconds > 0:
+                if age_seconds >= config.max_age_seconds:
+                    orders_to_cancel.append((order_id, order_info, age_seconds, "time"))
+                    continue
+
+            # Check bar-based cancellation (if configured)
             timeframe = order_info.get("timeframe", "1h")
-            max_age_bars = self.age_cancellation_config.max_age_bars.get(timeframe, 0)
+            max_age_bars = config.max_age_bars.get(timeframe, 0)
 
             if max_age_bars <= 0:
                 continue
 
             # Calculate order age in bars
-            created_time = datetime.fromisoformat(order_info["created_time"])
-            age_seconds = (now - created_time).total_seconds()
             bar_seconds = self._timeframe_to_seconds(timeframe)
             age_bars = age_seconds / bar_seconds if bar_seconds > 0 else 0
 
             if age_bars >= max_age_bars:
-                orders_to_cancel.append((order_id, order_info, age_bars))
+                orders_to_cancel.append((order_id, order_info, age_bars, "bars"))
 
         # Cancel aged orders
-        for order_id, order_info, age_bars in orders_to_cancel:
+        for order_data in orders_to_cancel:
+            order_id = order_data[0]
+            order_info = order_data[1]
+            age_value = order_data[2]
+            age_type = order_data[3]
             self._cancel_aged_order(
-                order_id, order_info, age_bars
+                order_id, order_info, age_value, age_type
             )
 
     # ==================== TIGHTENING LOGIC ====================
@@ -517,6 +845,25 @@ class EnhancedPositionMonitor:
                 monitoring_metadata = strategy.get_monitoring_metadata()
             except Exception as e:
                 logger.warning(f"Failed to get monitoring metadata from strategy: {e}")
+
+        # Check if strategy specifies age-based cancellation override
+        # (e.g., spread-based strategies ALWAYS have age-based cancellation enabled)
+        strategy_age_cancellation_config = None
+        if monitoring_metadata and "enable_age_cancellation" in monitoring_metadata:
+            # Strategy overrides global config
+            strategy_age_cancellation_config = AgeCancellationConfig(
+                enabled=monitoring_metadata["enable_age_cancellation"],
+                max_age_bars=monitoring_metadata.get("age_cancellation_bars", {}),
+                max_age_seconds=monitoring_metadata.get("age_cancellation_seconds")
+            )
+            logger.debug(
+                f"[{instance_id}] Using strategy-specific age cancellation config: "
+                f"enabled={strategy_age_cancellation_config.enabled}, "
+                f"seconds={strategy_age_cancellation_config.max_age_seconds}, "
+                f"bars={strategy_age_cancellation_config.max_age_bars}"
+            )
+            # Check orders with strategy's config
+            self._check_all_orders(age_cancellation_config=strategy_age_cancellation_config)
 
         # 0. STRATEGY-SPECIFIC EXIT CHECK (highest priority)
         # Check if strategy says to exit BEFORE any tightening
@@ -1240,9 +1587,17 @@ class EnhancedPositionMonitor:
         self,
         order_id: str,
         order_info: Dict[str, Any],
-        age_bars: float,
+        age_value: float,
+        age_type: str = "bars",
     ) -> None:
-        """Cancel an order that has aged beyond threshold"""
+        """Cancel an order that has aged beyond threshold
+
+        Args:
+            order_id: Order ID to cancel
+            order_info: Order info dict
+            age_value: Age value (bars or seconds)
+            age_type: Type of age measurement ("bars" or "time")
+        """
 
         symbol = order_info["symbol"]
         instance_id = order_info["instance_id"]
@@ -1252,14 +1607,20 @@ class EnhancedPositionMonitor:
         result = self.executor.cancel_order(symbol=symbol, order_id=order_id)
 
         if "error" not in result:
+            # Format age message based on type
+            if age_type == "time":
+                age_msg = f"{int(age_value)} seconds"
+            else:
+                age_msg = f"{age_value:.1f} bars"
+
             logger.info(
                 f"[{instance_id}] 🚫 ORDER CANCELLED: {symbol} order {order_id} "
-                f"aged {age_bars:.1f} bars"
+                f"aged {age_msg}"
             )
 
             self._log_position_action(
                 instance_id, run_id, None, symbol,
-                "order_cancelled_age", f"Order {order_id} cancelled after {age_bars:.1f} bars"
+                "order_cancelled_age", f"Order {order_id} cancelled after {age_msg}"
             )
 
             # Remove from tracking
@@ -1267,7 +1628,7 @@ class EnhancedPositionMonitor:
 
             # Callback
             if self._on_order_cancelled:
-                self._on_order_cancelled(order_id, symbol, age_bars)
+                self._on_order_cancelled(order_id, symbol, age_value)
         else:
             logger.error(
                 f"[{instance_id}] Failed to cancel aged order {order_id}: {result['error']}"
