@@ -86,6 +86,17 @@ class PositionTrackingState:
     last_tightening_step: int = -1
     tp_proximity_activated: bool = False
     age_tightening_applied: bool = False
+    # Spread-based trading fields
+    is_spread_based: bool = False
+    pair_symbol: Optional[str] = None
+    pair_entry_price: Optional[float] = None
+    pair_side: Optional[str] = None
+    pair_fill_price: Optional[float] = None
+    order_id_x: Optional[str] = None
+    order_id_y: Optional[str] = None
+    fill_price_x: Optional[float] = None
+    fill_price_y: Optional[float] = None
+    both_filled: bool = False
 
 
 class EnhancedPositionMonitor:
@@ -288,6 +299,134 @@ class EnhancedPositionMonitor:
             if order_id in self._order_state:
                 del self._order_state[order_id]
 
+    def on_spread_based_orders_placed(
+        self,
+        instance_id: str,
+        run_id: str,
+        trade_id: str,
+        symbol_x: str,
+        symbol_y: str,
+        order_id_x: str,
+        order_id_y: str,
+        qty_x: float,
+        qty_y: float,
+        price_x: float,
+        price_y: float,
+        strategy_metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Register spread-based orders for tracking.
+        Called when place_spread_based_orders() succeeds.
+
+        Args:
+            instance_id: Instance ID for audit trail
+            run_id: Run ID for audit trail
+            trade_id: Trade ID for linking
+            symbol_x: Main symbol (e.g., BTCUSDT)
+            symbol_y: Pair symbol (e.g., ETHUSDT)
+            order_id_x: Order ID for symbol X
+            order_id_y: Order ID for symbol Y
+            qty_x: Quantity for symbol X
+            qty_y: Quantity for symbol Y
+            price_x: Entry price for symbol X
+            price_y: Entry price for symbol Y
+            strategy_metadata: Strategy metadata for exit logic
+        """
+        position_key = (instance_id, symbol_x)
+
+        # Initialize spread-based position tracking
+        if position_key not in self._position_state:
+            self._position_state[position_key] = PositionTrackingState(
+                instance_id=instance_id,
+                symbol=symbol_x,
+                entry_price=price_x,
+                original_sl=0.0,  # Will be set from trade data
+                current_sl=0.0,
+                take_profit=0.0,
+                side="Buy" if qty_x > 0 else "Sell",
+                entry_time=datetime.now(timezone.utc),
+                timeframe="",
+                is_spread_based=True,
+                pair_symbol=symbol_y,
+                pair_entry_price=price_y,
+                pair_side="Buy" if qty_y > 0 else "Sell",
+                order_id_x=order_id_x,
+                order_id_y=order_id_y,
+            )
+
+            logger.info(
+                f"[{instance_id}] Spread-based orders registered: "
+                f"{symbol_x} {qty_x} @ {price_x} (ID: {order_id_x}) | "
+                f"{symbol_y} {qty_y} @ {price_y} (ID: {order_id_y})"
+            )
+            self._log_position_action(
+                instance_id, run_id, trade_id, symbol_x,
+                "spread_orders_placed",
+                f"Spread orders placed for {symbol_x}/{symbol_y}"
+            )
+
+    def on_spread_based_order_filled(
+        self,
+        instance_id: str,
+        run_id: str,
+        trade_id: str,
+        symbol: str,
+        order_id: str,
+        fill_price: float,
+        fill_qty: float,
+    ) -> None:
+        """
+        Handle fill for one leg of a spread-based trade.
+        Checks if both legs are filled.
+
+        Args:
+            instance_id: Instance ID for audit trail
+            run_id: Run ID for audit trail
+            trade_id: Trade ID for linking
+            symbol: Symbol that was filled
+            order_id: Order ID that was filled
+            fill_price: Fill price
+            fill_qty: Fill quantity
+        """
+        # Find the position tracking state
+        position_key = None
+        for key, state in self._position_state.items():
+            if key[0] == instance_id and state.is_spread_based:
+                if state.symbol == symbol or state.pair_symbol == symbol:
+                    position_key = key
+                    break
+
+        if not position_key:
+            logger.warning(f"[{instance_id}] No spread position found for {symbol}")
+            return
+
+        state = self._position_state[position_key]
+
+        # Update fill info for the appropriate leg
+        if symbol == state.symbol:
+            state.fill_price_x = fill_price
+            state.order_id_x = order_id
+            logger.debug(f"[{instance_id}] Main symbol {symbol} filled @ {fill_price}")
+        elif symbol == state.pair_symbol:
+            state.fill_price_y = fill_price
+            state.order_id_y = order_id
+            logger.debug(f"[{instance_id}] Pair symbol {symbol} filled @ {fill_price}")
+
+        # Check if both legs are filled
+        if state.fill_price_x is not None and state.fill_price_y is not None:
+            state.both_filled = True
+            logger.info(
+                f"[{instance_id}] Spread-based trade FULLY FILLED: "
+                f"{state.symbol} @ {state.fill_price_x} | "
+                f"{state.pair_symbol} @ {state.fill_price_y}"
+            )
+            self._log_position_action(
+                instance_id, run_id, trade_id, state.symbol,
+                "spread_both_filled",
+                f"Both legs filled: {state.symbol} @ {state.fill_price_x}, "
+                f"{state.pair_symbol} @ {state.fill_price_y}"
+            )
+
     # ==================== POLLING MODE ====================
 
     def _monitor_loop(self) -> None:
@@ -383,10 +522,17 @@ class EnhancedPositionMonitor:
         # Check if strategy says to exit BEFORE any tightening
         if strategy and current_candle and trade:
             try:
+                # For spread-based trades, fetch pair candle for exit logic
+                pair_candle = None
+                if state.is_spread_based and state.pair_symbol:
+                    pair_candle = self._fetch_current_candle_for_strategy_exit(
+                        state.pair_symbol, state.timeframe or "1h"
+                    )
+
                 exit_result = self.check_strategy_exit(
                     trade=trade,
                     current_candle=current_candle,
-                    pair_candle=None,  # Strategy will fetch if needed
+                    pair_candle=pair_candle,
                     strategy=strategy,
                     instance_id=instance_id,
                     run_id=run_id,
@@ -396,10 +542,17 @@ class EnhancedPositionMonitor:
                 if exit_result and exit_result.get("should_exit"):
                     # Strategy says to exit - close the position
                     logger.info(f"[{instance_id}] Strategy exit triggered for {position.symbol}: {exit_result.get('exit_reason')}")
-                    self._close_position_for_strategy_exit(
-                        position, state, instance_id, run_id, trade_id,
-                        exit_result
-                    )
+
+                    # For spread-based trades, close both symbols
+                    if state.is_spread_based:
+                        self._close_spread_based_position(
+                            state, instance_id, run_id, trade_id, exit_result
+                        )
+                    else:
+                        self._close_position_for_strategy_exit(
+                            position, state, instance_id, run_id, trade_id,
+                            exit_result
+                        )
                     return  # Exit early - don't apply other tightening
                 else:
                     # Strategy says to hold - sync strategy-calculated stops/TPs to exchange
@@ -570,6 +723,81 @@ class EnhancedPositionMonitor:
                 f"[{instance_id}] Error closing position for strategy exit: {e}",
                 exc_info=True
             )
+
+    def _close_spread_based_position(
+        self,
+        state: PositionTrackingState,
+        instance_id: str,
+        run_id: str,
+        trade_id: Optional[str],
+        exit_result: Dict[str, Any],
+    ) -> None:
+        """
+        Close a spread-based position by closing BOTH symbols via market orders.
+
+        Args:
+            state: Position tracking state
+            instance_id: Instance ID for audit trail
+            run_id: Run ID for audit trail
+            trade_id: Trade ID for linking
+            exit_result: Exit result from strategy.should_exit()
+        """
+        try:
+            symbol_x = state.symbol
+            symbol_y = state.pair_symbol
+            exit_reason = exit_result.get("exit_reason", "strategy_exit")
+            exit_details = exit_result.get("exit_details", {})
+
+            logger.info(
+                f"[{instance_id}] Closing spread-based position: "
+                f"{symbol_x} / {symbol_y} due to strategy exit: {exit_reason}"
+            )
+
+            # Close both symbols via market orders
+            errors = []
+
+            # Close main symbol
+            result_x = self.executor.close_position(symbol=symbol_x)
+            if "error" in result_x:
+                errors.append(f"{symbol_x}: {result_x['error']}")
+                logger.error(f"[{instance_id}] Failed to close {symbol_x}: {result_x['error']}")
+            else:
+                logger.info(f"[{instance_id}] Closed {symbol_x} position")
+
+            # Close pair symbol
+            if symbol_y:
+                result_y = self.executor.close_position(symbol=symbol_y)
+                if "error" in result_y:
+                    errors.append(f"{symbol_y}: {result_y['error']}")
+                    logger.error(f"[{instance_id}] Failed to close {symbol_y}: {result_y['error']}")
+                else:
+                    logger.info(f"[{instance_id}] Closed {symbol_y} position")
+
+            if errors:
+                error_msg = " | ".join(errors)
+                self._log_position_action(
+                    instance_id, run_id, trade_id, symbol_x,
+                    "spread_exit_close_failed",
+                    f"Failed to close spread position: {error_msg}"
+                )
+            else:
+                logger.info(
+                    f"[{instance_id}] Successfully closed spread-based position: "
+                    f"{symbol_x} / {symbol_y}"
+                )
+                self._log_position_action(
+                    instance_id, run_id, trade_id, symbol_x,
+                    "spread_exit_closed",
+                    f"Spread position closed by strategy exit: {exit_reason} - Details: {exit_details}"
+                )
+
+                # Remove from tracking
+                position_key = (instance_id, symbol_x)
+                if position_key in self._position_state:
+                    del self._position_state[position_key]
+
+        except Exception as e:
+            logger.error(f"Error closing spread-based position: {e}", exc_info=True)
 
     def _sync_strategy_stops(
         self,

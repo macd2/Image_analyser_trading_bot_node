@@ -17,6 +17,7 @@ from trading_bot.core.websocket_manager import BybitWebSocketManager
 from trading_bot.core.shared_websocket_manager import SharedWebSocketManager
 from trading_bot.engine.order_executor import OrderExecutor
 from trading_bot.engine.position_sizer import PositionSizer
+from trading_bot.engine.enhanced_position_monitor import EnhancedPositionMonitor, MonitorMode
 from trading_bot.db.client import get_connection, execute, release_connection, query
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,16 @@ class TradingEngine:
             use_kelly_criterion=self.config.trading.use_kelly_criterion,
             kelly_fraction=self.config.trading.kelly_fraction,
             kelly_window=self.config.trading.kelly_window,
+        )
+
+        # Position monitor for tracking orders and exits (including spread-based)
+        self.position_monitor = EnhancedPositionMonitor(
+            order_executor=self.order_executor,
+            mode=MonitorMode.EVENT_DRIVEN if not paper_trading else MonitorMode.POLLING,
+            poll_interval=5.0,
+            master_tightening_enabled=self.config.trading.enable_tightening,
+            tightening_enabled=self.config.trading.enable_tightening,
+            db_connection=self._db,
         )
 
         # WebSocket manager (shared singleton for multi-instance support)
@@ -621,6 +632,23 @@ class TradingEngine:
                 price_y=signal.get("pair_entry_price", signal["entry_price"]),  # Fallback to main entry price
                 order_link_id=trade_id,
             )
+
+            # Register spread-based orders with position monitor for tracking
+            if "error" not in result:
+                self.position_monitor.on_spread_based_orders_placed(
+                    instance_id=self.instance_id,
+                    run_id=self.run_id,
+                    trade_id=trade_id,
+                    symbol_x=symbol,
+                    symbol_y=pair_symbol,
+                    order_id_x=result.get("order_id_x"),
+                    order_id_y=result.get("order_id_y"),
+                    qty_x=signal.get("units_x", 0),
+                    qty_y=signal.get("units_y", 0),
+                    price_x=signal["entry_price"],
+                    price_y=signal.get("pair_entry_price", signal["entry_price"]),
+                    strategy_metadata=signal.get("strategy_metadata"),
+                )
         else:
             # For price-based trades, set leverage for main symbol only
             self.order_executor.set_leverage(symbol, leverage)
