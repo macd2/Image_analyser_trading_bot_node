@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { Activity, Clock, Maximize2, AlertTriangle, CheckCircle, RefreshCw, X, HelpCircle } from 'lucide-react'
+import { Activity, Clock, Maximize2, AlertTriangle, CheckCircle, RefreshCw, X, HelpCircle, Copy, Check, RotateCcw } from 'lucide-react'
 import { LoadingState, ErrorState } from '@/components/shared'
 import TradeChartModal from '@/components/shared/TradeChartModal'
 import StatsBar, { StatsScope } from '@/components/StatsBar'
@@ -177,6 +177,8 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
   const [loginActionLoading, setLoginActionLoading] = useState(false)
   const [vncModalOpen, setVncModalOpen] = useState(false)
   const [monitorStatus, setMonitorStatus] = useState<MonitorStatus | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [resettingTradeId, setResettingTradeId] = useState<string | null>(null)
 
   // Track if we've done initial load from API
   const initialLoadDoneRef = useRef(false)
@@ -273,6 +275,27 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleResetTrade = async (tradeId: string) => {
+    setResettingTradeId(tradeId)
+    try {
+      const res = await fetch('/api/bot/simulator/reset-trade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tradeId })
+      })
+      if (res.ok) {
+        // Refresh trades list
+        await fetchData()
+      } else {
+        console.error('Failed to reset trade')
+      }
+    } catch (err) {
+      console.error('Reset trade error:', err)
+    } finally {
+      setResettingTradeId(null)
     }
   }
 
@@ -734,30 +757,31 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
                   <th className="text-right py-1.5 font-medium">Status</th>
                   <th className="text-right py-1.5 font-medium">Timeframe</th>
                   <th className="text-right py-1.5 font-medium">Time</th>
+                  <th className="text-right py-1.5 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {trades.filter(t => t.status !== 'rejected').slice(0, 8).map((trade) => (
                   <tr
                     key={trade.id}
-                    className="border-b border-slate-700/50 hover:bg-slate-700/20 cursor-pointer"
+                    className="border-b border-slate-700/50 hover:bg-slate-700/20"
                     onClick={() => setSelectedTrade(trade)}
                   >
-                    <td className="py-1.5 font-mono font-bold text-white">{trade.symbol}</td>
+                    <td className="py-1.5 font-mono font-bold text-white cursor-pointer">{trade.symbol}</td>
                     <td className="py-1.5">
                       <span className={`text-xs ${trade.side === 'Buy' ? 'text-green-400' : 'text-red-400'}`}>
                         {trade.side === 'Buy' ? '↑ LONG' : '↓ SHORT'}
                       </span>
                     </td>
-                    <td className="py-1.5 text-right text-slate-300 font-mono">${trade.entry_price.toFixed(2)}</td>
-                    <td className="py-1.5 text-right font-mono">
+                    <td className="py-1.5 text-right text-slate-300 font-mono cursor-pointer">${trade.entry_price.toFixed(2)}</td>
+                    <td className="py-1.5 text-right font-mono cursor-pointer">
                       {trade.pnl !== null ? (
                         <span className={trade.pnl >= 0 ? 'text-green-400' : 'text-red-400'}>
                           {trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}
                         </span>
                       ) : <span className="text-slate-500">-</span>}
                     </td>
-                    <td className="py-1.5 text-right">
+                    <td className="py-1.5 text-right cursor-pointer">
                       <span className={`text-[10px] px-1.5 py-0.5 rounded ${
                         trade.status === 'filled' || trade.status === 'paper_trade' ? 'bg-green-900/50 text-green-400' :
                         trade.status === 'pending' ? 'bg-yellow-900/50 text-yellow-400' :
@@ -767,11 +791,46 @@ export function OverviewTab({ instanceId }: OverviewTabProps) {
                         {trade.status === 'paper_trade' ? 'PAPER' : trade.status.toUpperCase()}
                       </span>
                     </td>
-                    <td className="py-1.5 text-right text-xs text-slate-500">
+                    <td className="py-1.5 text-right text-xs text-slate-500 cursor-pointer">
                       {trade.timeframe || '-'}
                     </td>
-                    <td className="py-1.5 text-right text-xs text-slate-500">
+                    <td className="py-1.5 text-right text-xs text-slate-500 cursor-pointer">
                       {trade.created_at ? new Date(trade.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) + ' ' + new Date(trade.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                    </td>
+                    <td className="py-1.5 text-right flex items-center justify-end gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          navigator.clipboard.writeText(trade.id)
+                          setCopiedId(trade.id)
+                          setTimeout(() => setCopiedId(null), 2000)
+                        }}
+                        className={`p-1 rounded transition-all ${
+                          copiedId === trade.id
+                            ? 'bg-green-600/50 text-green-300'
+                            : 'hover:bg-slate-700 text-slate-500 hover:text-slate-300'
+                        }`}
+                        title="Copy Trade ID"
+                      >
+                        {copiedId === trade.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                      {trade.status === 'closed' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleResetTrade(trade.id)
+                          }}
+                          disabled={resettingTradeId === trade.id}
+                          className={`p-1 rounded transition-all ${
+                            resettingTradeId === trade.id
+                              ? 'bg-blue-600/50 text-blue-300 opacity-50'
+                              : 'hover:bg-blue-600/30 text-slate-500 hover:text-blue-300'
+                          }`}
+                          title="Reset trade to paper_trade status"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
