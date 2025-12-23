@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { RefreshCw, Clock, CheckCircle, Target, BarChart2, Copy, ChevronDown, Check } from 'lucide-react'
+import { RefreshCw, Clock, CheckCircle, Target, BarChart2, Copy, ChevronDown, Check, RotateCcw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -1819,6 +1819,30 @@ export function SimulatorPage() {
                             title="View Historical Chart"
                           >
                             <BarChart2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation()
+                              try {
+                                const res = await fetch('/api/bot/simulator/reset-trade', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ tradeId: trade.id })
+                                })
+                                if (res.ok) {
+                                  // Refresh closed trades list
+                                  await fetchClosedTrades()
+                                } else {
+                                  console.error('Failed to reset trade')
+                                }
+                              } catch (err) {
+                                console.error('Reset trade error:', err)
+                              }
+                            }}
+                            className="p-1.5 bg-slate-700 hover:bg-blue-600 rounded text-slate-400 hover:text-blue-300 transition-colors"
+                            title="Reset trade to paper_trade status"
+                          >
+                            <RotateCcw className="w-4 h-4" />
                           </button>
                           <div className={`px-4 py-2 rounded ${isWin ? 'bg-green-900/40' : 'bg-red-900/40'}`}>
                             <span className={`text-xl font-bold ${isWin ? 'text-green-400' : 'text-red-400'}`}>
