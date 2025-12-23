@@ -75,10 +75,15 @@ CREATE TABLE IF NOT EXISTS recommendations (
     raw_response TEXT,
     analyzed_at TIMESTAMPTZ NOT NULL,
     cycle_boundary TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    units_x REAL,
+    units_y REAL,
+    pair_entry_price REAL
 );
 CREATE INDEX IF NOT EXISTS idx_rec_symbol ON recommendations(symbol);
 CREATE INDEX IF NOT EXISTS idx_rec_cycle ON recommendations(cycle_id);
+CREATE INDEX IF NOT EXISTS idx_rec_units_x ON recommendations(units_x) WHERE units_x IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_rec_units_y ON recommendations(units_y) WHERE units_y IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS trades (
     id TEXT PRIMARY KEY,

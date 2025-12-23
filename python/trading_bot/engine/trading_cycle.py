@@ -594,6 +594,12 @@ class TradingCycle:
                         "from_existing": True,  # Mark as existing recommendation
                         "market_data_snapshot": market_data_snapshot,  # Include for price sanity check
                         "raw_response": analysis_data,  # Include full analysis data
+                        # Spread-based position sizing
+                        "units_x": rec_data.get("units_x"),
+                        "units_y": rec_data.get("units_y"),
+                        "pair_symbol": analysis_data.get("pair_symbol") if isinstance(analysis_data, dict) else None,
+                        "strategy_type": rec_data.get("strategy_type"),
+                        "strategy_metadata": rec_data.get("strategy_metadata"),
                     }
                     results["recommendations"].append(rec_result)
 
@@ -928,6 +934,10 @@ class TradingCycle:
                 "strategy_type": strategy_type,
                 "strategy_name": strategy_name,
                 "strategy_metadata": strategy_metadata,  # For exit logic and monitoring
+                # Spread-based position sizing (for cointegration and other spread strategies)
+                "units_x": signal_obj.get("units_x") if signal_obj else None,
+                "units_y": signal_obj.get("units_y") if signal_obj else None,
+                "pair_symbol": signal_obj.get("pair_symbol") if signal_obj else None,
             }
         except Exception as e:
             logger.error(f"Failed to build signal: {e}")
@@ -1049,9 +1059,10 @@ class TradingCycle:
                      chart_hash, model_version, model_params, market_data_snapshot,
                      strategy_config_snapshot, confidence_components, setup_quality_components,
                      market_environment_components, validation_results, strategy_metadata,
-                     strategy_uuid, strategy_type, strategy_name, setup_quality, market_environment)
+                     strategy_uuid, strategy_type, strategy_name, setup_quality, market_environment,
+                     units_x, units_y, pair_entry_price)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     rec_id,
                     result.get("cycle_id"),  # Link to parent cycle
@@ -1089,6 +1100,10 @@ class TradingCycle:
                     result.get("strategy_name"),
                     float(convert_numpy_types(result.get("setup_quality", 0.5))) if result.get("setup_quality") is not None else None,
                     float(convert_numpy_types(result.get("market_environment", 0.5))) if result.get("market_environment") is not None else None,
+                    # Spread-based position sizing
+                    float(convert_numpy_types(result.get("units_x"))) if result.get("units_x") is not None else None,
+                    float(convert_numpy_types(result.get("units_y"))) if result.get("units_y") is not None else None,
+                    float(convert_numpy_types(result.get("pair_entry_price"))) if result.get("pair_entry_price") is not None else None,
                 ))
                 logger.info(f"📝 Recorded recommendation {rec_id} with full audit trail (prompt: {prompt_name}, model: {model_name})")
                 return rec_id

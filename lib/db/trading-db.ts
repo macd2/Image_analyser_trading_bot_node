@@ -1406,6 +1406,10 @@ export interface RecommendationRow {
   analyzed_at: string;
   cycle_boundary: string | null;
   created_at: string;
+  // Spread-based position sizing
+  units_x?: number | null;
+  units_y?: number | null;
+  pair_entry_price?: number | null;
 }
 
 /**

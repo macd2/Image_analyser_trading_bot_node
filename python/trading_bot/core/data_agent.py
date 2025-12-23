@@ -851,7 +851,8 @@ class DataAgent:
                     SELECT id, symbol, timeframe, recommendation, confidence,
                            entry_price, stop_loss, take_profit, risk_reward,
                            reasoning as summary, chart_path as image_path,
-                           raw_response as analysis_data, analyzed_at as timestamp
+                           raw_response as analysis_data, analyzed_at as timestamp,
+                           units_x, units_y, pair_entry_price
                     FROM recommendations
                     WHERE chart_path = ?
                     ORDER BY analyzed_at DESC LIMIT 1

@@ -93,7 +93,8 @@ export async function GET(
       `SELECT id, symbol, recommendation, confidence, entry_price, stop_loss, take_profit,
               chart_hash, model_version, model_params, market_data_snapshot, strategy_config_snapshot,
               confidence_components, setup_quality_components, market_environment_components,
-              prompt_version, prompt_content, validation_results
+              prompt_version, prompt_content, validation_results,
+              units_x, units_y, pair_entry_price
        FROM recommendations WHERE id = ?`,
       [trade.recommendation_id]
     );
