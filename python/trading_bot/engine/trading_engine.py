@@ -90,8 +90,8 @@ class TradingEngine:
             order_executor=self.order_executor,
             mode=MonitorMode.EVENT_DRIVEN if not paper_trading else MonitorMode.POLLING,
             poll_interval=5.0,
-            master_tightening_enabled=self.config.trading.enable_tightening,
-            tightening_enabled=self.config.trading.enable_tightening,
+            master_tightening_enabled=self.config.trading.enable_position_tightening,
+            tightening_enabled=self.config.trading.enable_sl_tightening,
             db_connection=self._db,
         )
 
