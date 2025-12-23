@@ -874,13 +874,18 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         Get spread-based monitoring metadata.
 
         Returns:
-            Dict with z-score exit parameters for position monitor
+            Dict with z-score exit parameters and age-based cancellation config
         """
         z_exit = self.get_config_value("z_exit", 0.5)
 
         return {
             "type": "z_score",
             "z_exit": z_exit,
+            # Age-based cancellation: ALWAYS ON for spread-based strategies
+            # Uses time-based (5 minutes = 300 seconds) instead of bar-based
+            # to avoid long timeouts on higher timeframes (e.g., 1d)
+            "enable_age_cancellation": True,
+            "age_cancellation_seconds": 300,  # 5 minutes timeout for all timeframes
         }
 
     def _fetch_pair_candle_from_api(

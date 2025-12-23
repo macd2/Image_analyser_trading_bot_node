@@ -98,6 +98,14 @@ class TradingEngine:
         # WebSocket manager (shared singleton for multi-instance support)
         self.ws_manager: Optional[SharedWebSocketManager] = None
 
+        # Register execution callback for real-time fill notifications
+        # This enables WebSocket-based fill tracking instead of polling
+        self.state_manager.set_on_fill(
+            lambda exec_record: self.position_monitor.on_execution_update(
+                exec_record, self.instance_id or "default", self.run_id or ""
+            )
+        )
+
         # Engine state
         self._running = False
         self._stop_event = threading.Event()

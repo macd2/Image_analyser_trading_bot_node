@@ -839,6 +839,7 @@ export const CONFIG_METADATA: Record<string, ConfigMeta> = {
   // Trade Monitor - Age-based Cancellation (Independent - NOT controlled by master)
   'trading.age_cancellation_enabled': { type: 'boolean', category: 'trade monitor', group: '3. Order Cancellation', description: 'Age-based cancellation', tooltip: '⚡ INDEPENDENT: Cancel unfilled orders that have been pending too long (not affected by master switch)', order: 53 },
   'trading.age_cancellation_max_bars': { type: 'json', category: 'trade monitor', group: '3. Order Cancellation', description: 'Max age bars for cancellation', tooltip: 'Maximum bars before cancelling unfilled orders per timeframe. Example: {"1h": 48, "4h": 18}', order: 54 },
+  'trading.age_cancellation_max_seconds': { type: 'number', category: 'trade monitor', group: '3. Order Cancellation', description: 'Max age seconds for cancellation', tooltip: 'Maximum seconds before cancelling unfilled orders (e.g., 300 = 5 minutes). Spread-based strategies use this instead of bars to avoid long timeouts on higher timeframes.', order: 55 },
 
   // TradingView - Chart Capture (moved to strategy-specific for PromptStrategy)
   // Note: tradingview.enabled removed - PromptStrategy always captures charts
