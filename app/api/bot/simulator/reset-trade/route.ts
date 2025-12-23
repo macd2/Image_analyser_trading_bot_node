@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { dbQuery, execute } from '@/lib/db/trading-db'
+import { dbExecute } from '@/lib/db/trading-db'
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,8 +15,8 @@ export async function POST(request: NextRequest) {
     // Reset the trade to paper_trade status with all exit fields cleared
     // This preserves signal data (entry_price, stop_loss, take_profit, etc.)
     // but clears all execution/exit data
-    await execute(
-      `UPDATE trades 
+    await dbExecute(
+      `UPDATE trades
        SET status = 'paper_trade',
            fill_price = NULL,
            fill_time = NULL,
