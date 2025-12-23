@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
     // Reset the trade to paper_trade status with all exit fields cleared
     // This preserves signal data (entry_price, stop_loss, take_profit, etc.)
     // but clears all execution/exit data
+    // CRITICAL: Must clear pnl/pnl_percent so autotrader picks it up (checks pnl IS NULL)
     await dbExecute(
       `UPDATE trades
        SET status = 'paper_trade',
@@ -25,7 +26,11 @@ export async function POST(request: NextRequest) {
            pair_exit_price = NULL,
            closed_at = NULL,
            exit_reason = NULL,
-           pair_fill_price = NULL
+           pair_fill_price = NULL,
+           pnl = NULL,
+           pnl_percent = NULL,
+           avg_exit_price = NULL,
+           closed_size = NULL
        WHERE id = ?`,
       [tradeId]
     )
