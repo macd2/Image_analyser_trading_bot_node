@@ -1483,14 +1483,14 @@ export function SimulatorPage() {
                       {/* ID Line - Bottom of card */}
                       <div className="mt-3 pt-3 border-t border-slate-700/50 bg-slate-800/20 -mx-4 -mb-4 px-4 py-3 rounded-b-lg">
                         <div className="flex flex-wrap gap-2 font-mono text-xs">
-                          {/* Strategy Type - Color Coded */}
+                          {/* Strategy Name - Color Coded */}
                           <div className={`flex items-center gap-1 px-2 py-1 rounded border ${getStrategyTypeColor(trade.strategy_type)}`}>
                             <span className="opacity-70">Strategy:</span>
-                            <span className="font-semibold">{trade.strategy_type || 'unknown'}</span>
+                            <span className="font-semibold">{trade.strategy_name || 'unknown'}</span>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
-                                navigator.clipboard.writeText(trade.strategy_type || 'unknown')
+                                navigator.clipboard.writeText(trade.strategy_name || 'unknown')
                                 setCopiedId(`strategy-${trade.id}`)
                                 setCopiedType('id')
                                 setTimeout(() => {
@@ -1503,9 +1503,35 @@ export function SimulatorPage() {
                                   ? 'bg-slate-600/50 text-slate-300'
                                   : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
                               }`}
-                              title="Copy Strategy Type"
+                              title="Copy Strategy Name"
                             >
                               {copiedId === `strategy-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Strategy Type - Color Coded */}
+                          <div className={`flex items-center gap-1 px-2 py-1 rounded border ${getStrategyTypeColor(trade.strategy_type)}`}>
+                            <span className="opacity-70">Type:</span>
+                            <span className="font-semibold">{trade.strategy_type || 'unknown'}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.strategy_type || 'unknown')
+                                setCopiedId(`strategy-type-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `strategy-type-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Strategy Type"
+                            >
+                              {copiedId === `strategy-type-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
                             </button>
                           </div>
 
@@ -1925,14 +1951,14 @@ export function SimulatorPage() {
                       {/* ID Line - Bottom of card */}
                       <div className="mt-3 pt-3 border-t border-slate-700/50 bg-slate-800/20 -mx-4 -mb-4 px-4 py-3 rounded-b-lg">
                         <div className="flex flex-wrap gap-2 font-mono text-xs">
-                          {/* Strategy Type - Color Coded */}
+                          {/* Strategy Name - Color Coded */}
                           <div className={`flex items-center gap-1 px-2 py-1 rounded border ${getStrategyTypeColor(trade.strategy_type)}`}>
                             <span className="opacity-70">Strategy:</span>
-                            <span className="font-semibold">{trade.strategy_type || 'unknown'}</span>
+                            <span className="font-semibold">{trade.strategy_name || 'unknown'}</span>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
-                                navigator.clipboard.writeText(trade.strategy_type || 'unknown')
+                                navigator.clipboard.writeText(trade.strategy_name || 'unknown')
                                 setCopiedId(`strategy-${trade.id}`)
                                 setCopiedType('id')
                                 setTimeout(() => {
@@ -1945,9 +1971,35 @@ export function SimulatorPage() {
                                   ? 'bg-slate-600/50 text-slate-300'
                                   : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
                               }`}
-                              title="Copy Strategy Type"
+                              title="Copy Strategy Name"
                             >
                               {copiedId === `strategy-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Strategy Type - Color Coded */}
+                          <div className={`flex items-center gap-1 px-2 py-1 rounded border ${getStrategyTypeColor(trade.strategy_type)}`}>
+                            <span className="opacity-70">Type:</span>
+                            <span className="font-semibold">{trade.strategy_type || 'unknown'}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.strategy_type || 'unknown')
+                                setCopiedId(`strategy-type-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `strategy-type-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Strategy Type"
+                            >
+                              {copiedId === `strategy-type-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
                             </button>
                           </div>
 
@@ -2283,14 +2335,14 @@ export function SimulatorPage() {
                       {/* ID Line - Bottom of card */}
                       <div className="mt-3 pt-3 border-t border-orange-600/30 bg-orange-900/10 -mx-4 -mb-4 px-4 py-3 rounded-b-lg">
                         <div className="flex flex-wrap gap-2 font-mono text-xs">
-                          {/* Strategy Type - Color Coded */}
+                          {/* Strategy Name - Color Coded */}
                           <div className={`flex items-center gap-1 px-2 py-1 rounded border ${getStrategyTypeColor(trade.strategy_type)}`}>
                             <span className="opacity-70">Strategy:</span>
-                            <span className="font-semibold">{trade.strategy_type || 'unknown'}</span>
+                            <span className="font-semibold">{trade.strategy_name || 'unknown'}</span>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
-                                navigator.clipboard.writeText(trade.strategy_type || 'unknown')
+                                navigator.clipboard.writeText(trade.strategy_name || 'unknown')
                                 setCopiedId(`strategy-${trade.id}`)
                                 setCopiedType('id')
                                 setTimeout(() => {
@@ -2303,9 +2355,35 @@ export function SimulatorPage() {
                                   ? 'bg-slate-600/50 text-slate-300'
                                   : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
                               }`}
-                              title="Copy Strategy Type"
+                              title="Copy Strategy Name"
                             >
                               {copiedId === `strategy-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
+
+                          {/* Strategy Type - Color Coded */}
+                          <div className={`flex items-center gap-1 px-2 py-1 rounded border ${getStrategyTypeColor(trade.strategy_type)}`}>
+                            <span className="opacity-70">Type:</span>
+                            <span className="font-semibold">{trade.strategy_type || 'unknown'}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigator.clipboard.writeText(trade.strategy_type || 'unknown')
+                                setCopiedId(`strategy-type-${trade.id}`)
+                                setCopiedType('id')
+                                setTimeout(() => {
+                                  setCopiedId(null)
+                                  setCopiedType(null)
+                                }, 2000)
+                              }}
+                              className={`ml-1 p-0.5 rounded transition-all ${
+                                copiedId === `strategy-type-${trade.id}` && copiedType === 'id'
+                                  ? 'bg-slate-600/50 text-slate-300'
+                                  : 'hover:bg-slate-600/30 text-slate-500 hover:text-slate-300'
+                              }`}
+                              title="Copy Strategy Type"
+                            >
+                              {copiedId === `strategy-type-${trade.id}` && copiedType === 'id' ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
                             </button>
                           </div>
 
