@@ -737,8 +737,8 @@ async function checkStrategyExit(
     let pairCandlesData: any[] = [];
     const metadata = strategyMetadata;
     if (metadata && metadata.pair_symbol) {
+      const pairSymbol = metadata.pair_symbol;
       try {
-        const pairSymbol = metadata.pair_symbol;
         // Get the timeframe from the first candle or default to '1h'
         const timeframe = candles.length > 0 ? '1h' : '1h';
 
@@ -787,13 +787,13 @@ async function checkStrategyExit(
                 console.log(`[Auto-Close] Fetched ${pairCandlesData.length} pair candles for ${pairSymbol} from Bybit API`);
               }
             } catch (apiError) {
-              console.warn(`[Auto-Close] Failed to fetch pair candles from Bybit API for ${pairSymbol}: ${apiError}`);
+              console.error(`[Auto-Close] Failed to fetch pair candles from Bybit API for ${pairSymbol}: ${apiError}`);
               // Continue without pair candles - strategy will fetch from API if needed
             }
           }
         }
       } catch (error) {
-        console.warn(`[Auto-Close] Failed to fetch pair candles: ${error}`);
+        console.error(`[Auto-Close] Failed to fetch pair candles for ${pairSymbol}: ${error}`);
         // Continue without pair candles - strategy will fetch from API if needed
       }
     }
@@ -804,6 +804,7 @@ async function checkStrategyExit(
 
       let stdout = '';
       let stderr = '';
+      let resolved = false;
 
       const pythonProcess = spawn('python3', [
         pythonScript,
@@ -817,6 +818,16 @@ async function checkStrategyExit(
         env: { ...process.env }
       });
 
+      // Set timeout to prevent hanging processes (30 seconds)
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          console.error(`[Auto-Close] CRITICAL: Strategy exit check TIMEOUT for ${trade.symbol} (${strategyName}) - process took > 30 seconds`);
+          pythonProcess.kill();
+          resolve(null);
+        }
+      }, 30000);
+
       pythonProcess.stdout.on('data', (data) => {
         stdout += data.toString();
       });
@@ -826,8 +837,15 @@ async function checkStrategyExit(
       });
 
       pythonProcess.on('close', (code) => {
+        if (resolved) return; // Already timed out
+        resolved = true;
+        clearTimeout(timeout);
+
         if (code !== 0) {
-          console.warn(`[Auto-Close] Strategy exit check failed for ${trade.symbol}: ${stderr}`);
+          console.error(`[Auto-Close] CRITICAL: Strategy exit check FAILED for ${trade.symbol} (${strategyName})`);
+          console.error(`[Auto-Close] Exit code: ${code}`);
+          console.error(`[Auto-Close] stderr: ${stderr}`);
+          console.error(`[Auto-Close] stdout: ${stdout}`);
           resolve(null);
           return;
         }
@@ -851,21 +869,26 @@ async function checkStrategyExit(
 
             resolve(exitResult);
           } else {
+            console.log(`[Auto-Close] Strategy exit check returned no exit for ${trade.symbol}: should_exit=${result.should_exit}`);
             resolve(null);
           }
         } catch (error) {
-          console.warn(`[Auto-Close] Failed to parse strategy exit result: ${error}`);
+          console.error(`[Auto-Close] CRITICAL: Failed to parse strategy exit result for ${trade.symbol}: ${error}`);
+          console.error(`[Auto-Close] stdout was: ${stdout}`);
           resolve(null);
         }
       });
 
       pythonProcess.on('error', (error) => {
-        console.warn(`[Auto-Close] Error spawning strategy exit check: ${error}`);
+        if (resolved) return; // Already timed out
+        resolved = true;
+        clearTimeout(timeout);
+        console.error(`[Auto-Close] CRITICAL: Error spawning strategy exit check for ${trade.symbol}: ${error}`);
         resolve(null);
       });
     });
   } catch (error) {
-    console.warn(`[Auto-Close] Error calling strategy exit check: ${error}`);
+    console.error(`[Auto-Close] CRITICAL: Error calling strategy exit check for ${trade.symbol}: ${error}`);
     return null;
   }
 }
@@ -1295,7 +1318,8 @@ export async function POST() {
       }
 
       // STEP 2A: Validate that trade has associated strategy
-      if (!trade.strategy_name) {
+      // Use strategyName extracted from instance_settings (line 959), not trade.strategy_name
+      if (!strategyName) {
         console.error(`[Auto-Close] ${trade.symbol} ERROR - Trade has no associated strategy_name. Cannot determine exit logic.`);
         results.push({
           trade_id: trade.id,
@@ -1312,6 +1336,9 @@ export async function POST() {
         continue;
       }
 
+      // Calculate bars since fill (for max_open_bars check)
+      const barsOpen = candlesAfterCreation.length - fillCandleIndex;
+
       // STEP 2B: Determine exit logic based on strategy type
       let exitResult: ExitResult | null = null;
       const strategyType = trade.strategy_type || 'unknown';
@@ -1320,24 +1347,62 @@ export async function POST() {
         // Price-based strategies use TP/SL logic
         console.log(`[Auto-Close] ${trade.symbol} - Price-based strategy (${strategyName}), checking SL/TP`);
         exitResult = checkHistoricalSLTP(candlesAfterCreation, isLong, stopLoss, takeProfit, fillCandleIndex);
-      } else {
-        // Non-price-based strategies (spread-based, etc.) use strategy.should_exit()
-        console.log(`[Auto-Close] ${trade.symbol} - ${strategyType} strategy (${strategyName}), checking strategy exit`);
+      } else if (strategyType === 'spread_based') {
+        // Spread-based strategies use strategy.should_exit() ONLY
+        console.log(`[Auto-Close] ${trade.symbol} - Spread-based strategy (${strategyName}), checking strategy exit`);
         exitResult = await checkStrategyExit(trade, candlesAfterCreation, fillCandleIndex, strategyName);
 
         if (!exitResult || !exitResult.hit) {
-          // Fallback to price-level checks if strategy exit returns nothing
-          console.log(`[Auto-Close] ${trade.symbol} - No strategy exit, falling back to SL/TP`);
-          exitResult = checkHistoricalSLTP(candlesAfterCreation, isLong, stopLoss, takeProfit, fillCandleIndex);
+          // CRITICAL: For spread-based trades, NEVER fall back to SL/TP
+          // Spread-based trades require strategy-specific exit logic (z-score, mean reversion, etc.)
+          // If strategy exit check fails, skip the trade instead of using incorrect SL/TP logic
+          console.error(`[Auto-Close] ${trade.symbol} - CRITICAL: Strategy exit check failed for spread-based trade. Skipping trade to prevent incorrect SL/TP closure.`);
+          results.push({
+            trade_id: trade.id,
+            symbol: trade.symbol,
+            action: 'checked',
+            current_price: await getCurrentPrice(trade.symbol),
+            instance_name: trade.instance_name,
+            strategy_name: strategyName || undefined,
+            timeframe: timeframe,
+            candles_checked: candlesAfterCreation.length,
+            bars_open: barsOpen,
+            checked_at: new Date().toISOString()
+          });
+          continue;
         }
+      } else {
+        // Unknown strategy type - log error and skip
+        // This is a safety net for future strategy types that haven't been implemented yet
+        console.error(`[Auto-Close] ${trade.symbol} - CRITICAL: Unknown strategy type '${strategyType}'. Cannot determine exit logic. Skipping trade to prevent incorrect closure.`);
+        await logSimulatorError(
+          trade.id,
+          'UNKNOWN_STRATEGY_TYPE',
+          `Unknown strategy type: ${strategyType}. Only 'price_based' and 'spread_based' are supported.`,
+          {
+            symbol: trade.symbol,
+            strategy_type: strategyType,
+            strategy_name: strategyName
+          }
+        );
+        results.push({
+          trade_id: trade.id,
+          symbol: trade.symbol,
+          action: 'checked',
+          current_price: await getCurrentPrice(trade.symbol),
+          instance_name: trade.instance_name,
+          strategy_name: strategyName || undefined,
+          timeframe: timeframe,
+          candles_checked: candlesAfterCreation.length,
+          bars_open: barsOpen,
+          checked_at: new Date().toISOString()
+        });
+        continue;
       }
 
       if (exitResult && exitResult.hit) {
         console.log(`[Auto-Close] ${trade.symbol} - Exit triggered: ${exitResult.reason}`);
       }
-
-      // Calculate bars since fill (for max_open_bars check)
-      const barsOpen = candlesAfterCreation.length - fillCandleIndex;
 
       if (exitResult.hit && exitResult.exitPrice && exitResult.reason) {
         // Calculate P&L - handle both price-based and spread-based trades
