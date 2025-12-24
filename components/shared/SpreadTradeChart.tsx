@@ -40,6 +40,8 @@ export default function SpreadTradeChart({
   const [error, setError] = useState<string | null>(null)
   const [zoomLevel, setZoomLevel] = useState(1)
   const [dataRange, setDataRange] = useState({ start: 0, end: 1 })
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragStart, setDragStart] = useState(0)
 
   // Parse metadata - it might come as a JSON string or object
   const parseMetadata = (meta: any): StrategyMetadata | undefined => {
@@ -153,6 +155,40 @@ export default function SpreadTradeChart({
     setDataRange({ start: 0, end: 1 })
   }
 
+  const handleChartMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true)
+    setDragStart(e.clientX)
+  }
+
+  const handleChartMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return
+
+    const dragDistance = e.clientX - dragStart
+    const dragPercent = dragDistance / 500 // Normalize to chart width estimate
+    const rangeSize = dataRange.end - dataRange.start
+
+    // Calculate new range
+    let newStart = dataRange.start - dragPercent * rangeSize
+    let newEnd = dataRange.end - dragPercent * rangeSize
+
+    // Clamp to valid range
+    if (newStart < 0) {
+      newStart = 0
+      newEnd = Math.min(rangeSize, 1)
+    }
+    if (newEnd > 1) {
+      newEnd = 1
+      newStart = Math.max(0, 1 - rangeSize)
+    }
+
+    setDataRange({ start: newStart, end: newEnd })
+    setDragStart(e.clientX)
+  }
+
+  const handleChartMouseUp = () => {
+    setIsDragging(false)
+  }
+
   return (
     <div className="space-y-4">
       {/* Zoom Controls */}
@@ -181,6 +217,11 @@ export default function SpreadTradeChart({
         <span className="px-3 py-2 text-xs text-slate-400 bg-slate-800 rounded">
           Zoom: {zoomLevel.toFixed(1)}x
         </span>
+        {zoomLevel > 1 && (
+          <span className="px-3 py-2 text-xs text-slate-400 bg-slate-800 rounded">
+            Drag to pan
+          </span>
+        )}
       </div>
 
       {/* Trade Timeline Info Boxes */}
@@ -222,16 +263,25 @@ export default function SpreadTradeChart({
         </div>
       </div>
 
-      {/* Z-Score Pane */}
-      <ZScorePane data={chartData} metadata={metadata!} height={height / 3} dataRange={dataRange} />
+      {/* Charts Container with Pan Support */}
+      <div
+        onMouseDown={handleChartMouseDown}
+        onMouseMove={handleChartMouseMove}
+        onMouseUp={handleChartMouseUp}
+        onMouseLeave={handleChartMouseUp}
+        className={`space-y-4 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+      >
+        {/* Z-Score Pane */}
+        <ZScorePane data={chartData} metadata={metadata!} height={height / 3} dataRange={dataRange} />
 
-      {/* Spread Price Pane */}
-      <SpreadPricePane data={chartData} metadata={metadata!} height={height / 3} dataRange={dataRange} />
+        {/* Spread Price Pane */}
+        <SpreadPricePane data={chartData} metadata={metadata!} height={height / 3} dataRange={dataRange} />
 
-      {/* Asset Prices Pane */}
-      {showAssetPrices && (
-        <AssetPricePane data={chartData} metadata={metadata!} primarySymbol={trade.symbol} height={height / 3} dataRange={dataRange} />
-      )}
+        {/* Asset Prices Pane */}
+        {showAssetPrices && (
+          <AssetPricePane data={chartData} metadata={metadata!} primarySymbol={trade.symbol} height={height / 3} dataRange={dataRange} />
+        )}
+      </div>
     </div>
   )
 }
