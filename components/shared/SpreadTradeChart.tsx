@@ -97,16 +97,26 @@ export default function SpreadTradeChart({
 
         const timeframe = TIMEFRAME_MAP[trade.timeframe || '1h'] || '60'
 
+        // For closed trades, fetch candles up to the close time
+        // For open trades, use default after=20
+        let afterCandles = 20
+        if (trade.status === 'closed' && trade.closed_at) {
+          const entryTime = new Date(timestamp).getTime()
+          const closeTime = new Date(trade.closed_at).getTime()
+          const timeframeMs = parseInt(timeframe) * 60 * 1000 // Convert minutes to ms
+          afterCandles = Math.ceil((closeTime - entryTime) / timeframeMs) + 5 // Add 5 extra candles for buffer
+        }
+
         // Fetch primary asset candles
         const primaryRes = await fetch(
-          `/api/bot/trade-candles?symbol=${trade.symbol}&timeframe=${timeframe}&timestamp=${new Date(timestamp).getTime()}&before=50&after=20`
+          `/api/bot/trade-candles?symbol=${trade.symbol}&timeframe=${timeframe}&timestamp=${new Date(timestamp).getTime()}&before=50&after=${afterCandles}`
         )
         if (!primaryRes.ok) throw new Error('Failed to fetch primary candles')
         const primaryData = await primaryRes.json()
 
         // Fetch pair asset candles
         const pairRes = await fetch(
-          `/api/bot/spread-pair-candles?pair_symbol=${metadata.pair_symbol}&timeframe=${timeframe}&timestamp=${new Date(timestamp).getTime()}&before=50&after=20`
+          `/api/bot/spread-pair-candles?pair_symbol=${metadata.pair_symbol}&timeframe=${timeframe}&timestamp=${new Date(timestamp).getTime()}&before=50&after=${afterCandles}`
         )
         if (!pairRes.ok) throw new Error('Failed to fetch pair candles')
         const pairData = await pairRes.json()
@@ -128,7 +138,7 @@ export default function SpreadTradeChart({
     }
 
     fetchData()
-  }, [trade.id, trade.symbol, trade.timeframe, trade.submitted_at, trade.filled_at, trade.created_at, metadata?.pair_symbol, metadata?.z_exit_threshold])
+  }, [trade.id, trade.symbol, trade.timeframe, trade.submitted_at, trade.filled_at, trade.created_at, trade.status, trade.closed_at, metadata?.pair_symbol, metadata?.z_exit_threshold])
 
   if (loading) return <LoadingState />
   if (error) return <ErrorState message={error} />
