@@ -572,6 +572,39 @@ export function SimulatorPage() {
     return { pnl, pnlPercent, currentPrice }
   }
 
+  // Calculate z-score distance to exit threshold for spread-based trades
+  const calculateZScoreDistance = (trade: OpenPaperTrade, pairPrice: number | null): { zScore: number; distance: number; threshold: number } | null => {
+    if (!pairPrice) return null
+
+    // Parse strategy_metadata
+    let metadata = trade.strategy_metadata
+    if (typeof metadata === 'string') {
+      try {
+        metadata = JSON.parse(metadata)
+      } catch {
+        return null
+      }
+    }
+
+    if (!metadata || typeof metadata !== 'object') return null
+
+    const beta = metadata.beta
+    const spread_mean = metadata.spread_mean
+    const spread_std = metadata.spread_std
+    const z_exit_threshold = metadata.z_exit_threshold
+
+    if (beta === undefined || spread_mean === undefined || spread_std === undefined || z_exit_threshold === undefined) {
+      return null
+    }
+
+    // Calculate current z-score
+    const spread = pairPrice - beta * trade.entry_price
+    const zScore = (spread - spread_mean) / spread_std
+    const distance = Math.abs(z_exit_threshold) - Math.abs(zScore)
+
+    return { zScore, distance, threshold: z_exit_threshold }
+  }
+
   // Check if trade should be closed based on current price
   // IMPORTANT: Only applies to FILLED trades - pending fill trades cannot hit TP/SL yet
   const shouldCloseTrade = (trade: OpenPaperTrade, currentPrice: number): { shouldClose: boolean; reason: string | null } => {
@@ -1370,6 +1403,30 @@ export function SimulatorPage() {
                           </span>
                           {rrRatio && <span className="text-xs bg-blue-900/30 text-blue-300 px-2 py-1 rounded">RR: {rrRatio.toFixed(1)}</span>}
                           {trade.timeframe && <span className="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded">{trade.timeframe}</span>}
+                          {isSpreadBased && (() => {
+                            const pairPrice = currentPrices[pairSymbol || '']
+                            const zScoreData = calculateZScoreDistance(trade, pairPrice)
+                            if (zScoreData) {
+                              const { zScore, distance, threshold } = zScoreData
+                              const isClose = distance < 0.2
+                              const isCritical = distance < 0
+                              return (
+                                <span
+                                  className={`text-xs px-2 py-1 rounded font-semibold ${
+                                    isCritical
+                                      ? 'bg-red-900/50 text-red-300 animate-pulse'
+                                      : isClose
+                                      ? 'bg-yellow-900/50 text-yellow-300'
+                                      : 'bg-purple-900/30 text-purple-300'
+                                  }`}
+                                  title={`Z-Score: ${zScore.toFixed(3)}, Exit Threshold: ±${threshold.toFixed(3)}`}
+                                >
+                                  σ: {distance.toFixed(3)}
+                                </span>
+                              )
+                            }
+                            return null
+                          })()}
                         </div>
                         <div className="flex items-center gap-2">
                           <button
