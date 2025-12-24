@@ -7,6 +7,7 @@ import { initSocketServer } from './lib/ws/socket-server';
 
 const STATUS_FILE = path.join(process.cwd(), 'data', 'simulator_status.json');
 const AUTO_CLOSE_INTERVAL_MS = 60000; // Check every 60 seconds
+let isAutoCloseCheckRunning = false; // Prevent overlapping checks
 
 // Read simulator status
 function getSimulatorStatus(): { running: boolean; last_check?: string | null } {
@@ -43,12 +44,20 @@ function updateSimulatorStatus(tradesChecked: number, tradesClosed: number, resu
 // Background auto-close check - respects status.running from UI toggle
 // When auto mode is ON in UI, this runs regardless of which page user is on
 async function runAutoCloseCheck(baseUrl: string) {
+  // Prevent overlapping checks if previous one is still running
+  if (isAutoCloseCheckRunning) {
+    console.log(`  ➜  Simulator: Previous check still running, skipping this interval - ${new Date().toISOString()}`);
+    return;
+  }
+
   const status = getSimulatorStatus();
   if (!status.running) {
     console.log(`  ➜  Simulator: Auto mode is OFF (skipping check) - ${new Date().toISOString()}`);
     return; // Auto mode is OFF in UI
   }
 
+  isAutoCloseCheckRunning = true;
+  const checkStartTime = Date.now();
   console.log(`  ➜  Simulator: Running background check... - ${new Date().toISOString()}`);
 
   try {
@@ -59,13 +68,16 @@ async function runAutoCloseCheck(baseUrl: string) {
 
     if (res.ok) {
       const data = await res.json();
+      const checkDuration = ((Date.now() - checkStartTime) / 1000).toFixed(2);
       updateSimulatorStatus(data.checked || 0, data.closed || 0, data.results || [], data.filled || 0);
-      console.log(`  ➜  Simulator: Checked ${data.checked || 0} trades, Filled ${data.filled || 0}, Closed ${data.closed || 0} - ${new Date().toISOString()}`);
+      console.log(`  ➜  Simulator: Checked ${data.checked || 0} trades, Filled ${data.filled || 0}, Closed ${data.closed || 0} (took ${checkDuration}s) - ${new Date().toISOString()}`);
     } else {
       console.error(`  ➜  Simulator: Auto-close API returned ${res.status} - ${new Date().toISOString()}`);
     }
   } catch (err) {
     console.error(`  ➜  Simulator: Background check failed: ${err instanceof Error ? err.message : String(err)} - ${new Date().toISOString()}`);
+  } finally {
+    isAutoCloseCheckRunning = false;
   }
 }
 
