@@ -15,6 +15,7 @@ import {
 } from 'recharts'
 import { SpreadTradeData, ChartDataSet, Candle, StrategyMetadata, TradeMarker } from './SpreadTradeChart.types'
 import { LoadingState, ErrorState } from './index'
+import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
 
 interface SpreadTradeChartProps {
   trade: SpreadTradeData
@@ -37,6 +38,8 @@ export default function SpreadTradeChart({
   const [chartData, setChartData] = useState<ChartDataSet | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [zoomLevel, setZoomLevel] = useState(1)
+  const [dataRange, setDataRange] = useState({ start: 0, end: 1 })
 
   // Parse metadata - it might come as a JSON string or object
   const parseMetadata = (meta: any): StrategyMetadata | undefined => {
@@ -129,17 +132,105 @@ export default function SpreadTradeChart({
   if (error) return <ErrorState message={error} />
   if (!chartData) return <ErrorState message="No chart data available" />
 
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(prev + 0.5, 3))
+    const newRange = Math.min(1 / (zoomLevel + 0.5), 1)
+    setDataRange({ start: 0, end: newRange })
+  }
+
+  const handleZoomOut = () => {
+    setZoomLevel(prev => Math.max(prev - 0.5, 1))
+    if (zoomLevel <= 1) {
+      setDataRange({ start: 0, end: 1 })
+    } else {
+      const newRange = Math.min(1 / (zoomLevel - 0.5), 1)
+      setDataRange({ start: 0, end: newRange })
+    }
+  }
+
+  const handleResetZoom = () => {
+    setZoomLevel(1)
+    setDataRange({ start: 0, end: 1 })
+  }
+
   return (
     <div className="space-y-4">
+      {/* Zoom Controls */}
+      <div className="flex gap-2 justify-end">
+        <button
+          onClick={handleZoomIn}
+          className="p-2 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition-colors"
+          title="Zoom In"
+        >
+          <ZoomIn className="w-4 h-4" />
+        </button>
+        <button
+          onClick={handleZoomOut}
+          className="p-2 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition-colors"
+          title="Zoom Out"
+        >
+          <ZoomOut className="w-4 h-4" />
+        </button>
+        <button
+          onClick={handleResetZoom}
+          className="p-2 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition-colors"
+          title="Reset Zoom"
+        >
+          <RotateCcw className="w-4 h-4" />
+        </button>
+        <span className="px-3 py-2 text-xs text-slate-400 bg-slate-800 rounded">
+          Zoom: {zoomLevel.toFixed(1)}x
+        </span>
+      </div>
+
+      {/* Trade Timeline Info Boxes */}
+      <div className="grid grid-cols-4 gap-3">
+        {/* Entry Date/Time */}
+        <div className="bg-slate-800 border border-slate-600 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Entry Date/Time</div>
+          <div className="text-sm font-bold text-white font-mono">
+            {trade.created_at ? new Date(trade.created_at).toLocaleString() : '—'}
+          </div>
+        </div>
+
+        {/* Entry to Fill */}
+        <div className="bg-slate-800 border border-slate-600 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Entry to Fill</div>
+          <div className="text-sm font-bold text-white font-mono">
+            {trade.created_at && trade.filled_at
+              ? `${Math.round((new Date(trade.filled_at).getTime() - new Date(trade.created_at).getTime()) / 1000)} secs`
+              : '—'}
+          </div>
+        </div>
+
+        {/* Filled Date/Time */}
+        <div className="bg-slate-800 border border-slate-600 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Filled Date/Time</div>
+          <div className="text-sm font-bold text-white font-mono">
+            {trade.filled_at ? new Date(trade.filled_at).toLocaleString() : '—'}
+          </div>
+        </div>
+
+        {/* Fill to Close */}
+        <div className="bg-slate-800 border border-slate-600 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Fill to Close</div>
+          <div className="text-sm font-bold text-white font-mono">
+            {trade.filled_at && trade.closed_at
+              ? `${Math.round((new Date(trade.closed_at).getTime() - new Date(trade.filled_at).getTime()) / 1000)} secs`
+              : '—'}
+          </div>
+        </div>
+      </div>
+
       {/* Z-Score Pane */}
-      <ZScorePane data={chartData} metadata={metadata!} height={height / 3} />
+      <ZScorePane data={chartData} metadata={metadata!} height={height / 3} dataRange={dataRange} />
 
       {/* Spread Price Pane */}
-      <SpreadPricePane data={chartData} metadata={metadata!} height={height / 3} />
+      <SpreadPricePane data={chartData} metadata={metadata!} height={height / 3} dataRange={dataRange} />
 
       {/* Asset Prices Pane */}
       {showAssetPrices && (
-        <AssetPricePane data={chartData} metadata={metadata!} primarySymbol={trade.symbol} height={height / 3} />
+        <AssetPricePane data={chartData} metadata={metadata!} primarySymbol={trade.symbol} height={height / 3} dataRange={dataRange} />
       )}
     </div>
   )
@@ -153,17 +244,24 @@ function ZScorePane({
   data,
   metadata,
   height,
+  dataRange = { start: 0, end: 1 },
 }: {
   data: ChartDataSet
   metadata: StrategyMetadata
   height: number
+  dataRange?: { start: number; end: number }
 }) {
-  const chartData = data.zScores.map((point) => ({
+  const allChartData = data.zScores.map((point) => ({
     time: point.time,
     timeLabel: formatTimestamp(point.time),
     z_score: point.z_score,
     is_mean_reverting: point.is_mean_reverting,
   }))
+
+  // Apply zoom range filtering
+  const startIdx = Math.floor(allChartData.length * dataRange.start)
+  const endIdx = Math.ceil(allChartData.length * dataRange.end)
+  const chartData = allChartData.slice(startIdx, endIdx)
 
   // Debug: Log marker data
   console.log('[ZScorePane] Markers:', {
@@ -319,12 +417,14 @@ function SpreadPricePane({
   data,
   metadata,
   height,
+  dataRange = { start: 0, end: 1 },
 }: {
   data: ChartDataSet
   metadata: StrategyMetadata
   height: number
+  dataRange?: { start: number; end: number }
 }) {
-  const chartData = data.spreads.map((point) => ({
+  const allChartData = data.spreads.map((point) => ({
     time: point.time,
     timeLabel: formatTimestamp(point.time),
     spread: point.spread,
@@ -334,6 +434,11 @@ function SpreadPricePane({
     upper_stop: point.spread_mean + 3.5 * point.spread_std,
     lower_stop: point.spread_mean - 3.5 * point.spread_std,
   }))
+
+  // Apply zoom range filtering
+  const startIdx = Math.floor(allChartData.length * dataRange.start)
+  const endIdx = Math.ceil(allChartData.length * dataRange.end)
+  const chartData = allChartData.slice(startIdx, endIdx)
 
   // Find marker positions in chart data
   const findMarkerIndex = (marker: TradeMarker | undefined): number => {
@@ -523,19 +628,26 @@ function AssetPricePane({
   metadata,
   primarySymbol,
   height,
+  dataRange = { start: 0, end: 1 },
 }: {
   data: ChartDataSet
   metadata: StrategyMetadata
   primarySymbol: string
   height: number
+  dataRange?: { start: number; end: number }
 }) {
 
-  const chartData = data.prices.map((point) => ({
+  const allChartData = data.prices.map((point) => ({
     time: point.time,
     timeLabel: formatTimestamp(point.time),
     price_x: point.price_x,
     price_y: point.price_y,
   }))
+
+  // Apply zoom range filtering
+  const startIdx = Math.floor(allChartData.length * dataRange.start)
+  const endIdx = Math.ceil(allChartData.length * dataRange.end)
+  const chartData = allChartData.slice(startIdx, endIdx)
 
   // Find marker positions in chart data
   const findMarkerIndex = (marker: TradeMarker | undefined): number => {
