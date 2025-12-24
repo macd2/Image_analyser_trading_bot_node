@@ -3,12 +3,23 @@
  */
 
 export interface StrategyMetadata {
+  // Current values (for realtime calculations)
   beta: number;
   spread_mean: number;
   spread_std: number;
-  z_score_at_entry: number;
-  pair_symbol: string;
   z_exit_threshold: number;
+  pair_symbol: string;
+
+  // Historical values at entry time (FROZEN - for chart and exit logic)
+  z_score_at_entry: number;
+  spread_mean_at_entry?: number;
+  spread_std_at_entry?: number;
+
+  // Prices at entry time (FROZEN - for fill)
+  price_x_at_entry?: number;
+  price_y_at_entry?: number;
+
+  // Adaptive stop loss
   max_spread_deviation?: number;
 }
 

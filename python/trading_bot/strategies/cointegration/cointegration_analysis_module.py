@@ -674,16 +674,24 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     adaptive_sl_z = 3.0
 
             strategy_metadata = {
+                # Current values (for realtime calculations)
                 "beta": float(beta),
                 "spread_mean": float(spread_mean),
                 "spread_std": float(spread_std),
-                "z_score_at_entry": float(z_score),
-                "pair_symbol": pair_symbol,
                 "z_exit_threshold": float(z_exit),
-                "max_spread_deviation": float(adaptive_sl_z),  # Adaptive SL from z_history
-                # Store actual prices at entry for recalculation capability
+                "pair_symbol": pair_symbol,
+
+                # Historical values at entry time (FROZEN - for chart and exit logic)
+                "z_score_at_entry": float(z_score),
+                "spread_mean_at_entry": float(spread_mean),  # Capture at signal time
+                "spread_std_at_entry": float(spread_std),    # Capture at signal time
+
+                # Prices at entry time (FROZEN - for fill)
                 "price_x_at_entry": float(current_price),
                 "price_y_at_entry": float(pair_candles[-1]['close']) if pair_candles else None,
+
+                # Adaptive stop loss
+                "max_spread_deviation": float(adaptive_sl_z),
             }
 
         # Normalize position size multiplier to 0.5-1.5 range
