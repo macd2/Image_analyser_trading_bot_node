@@ -42,6 +42,9 @@ export default function SpreadTradeChart({
   const [dataRange, setDataRange] = useState({ start: 0, end: 1 })
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState(0)
+  const [yZoomLevel, setYZoomLevel] = useState(1)
+  const [isYAxisDragging, setIsYAxisDragging] = useState(false)
+  const [yDragStart, setYDragStart] = useState(0)
 
   // Parse metadata - it might come as a JSON string or object
   const parseMetadata = (meta: any): StrategyMetadata | undefined => {
@@ -199,6 +202,31 @@ export default function SpreadTradeChart({
     setIsDragging(false)
   }
 
+  const handleYAxisMouseDown = (e: React.MouseEvent) => {
+    setIsYAxisDragging(true)
+    setYDragStart(e.clientY)
+  }
+
+  const handleYAxisMouseMove = (e: React.MouseEvent) => {
+    if (!isYAxisDragging) return
+
+    const dragDistance = e.clientY - yDragStart
+    const dragPercent = dragDistance / 200 // Normalize to approximate Y-axis height
+
+    // Dragging up (negative) = zoom in, dragging down (positive) = zoom out
+    const newZoom = Math.max(1, yZoomLevel - dragPercent * 0.5)
+    setYZoomLevel(newZoom)
+    setYDragStart(e.clientY)
+  }
+
+  const handleYAxisMouseUp = () => {
+    setIsYAxisDragging(false)
+  }
+
+  const handleResetYZoom = () => {
+    setYZoomLevel(1)
+  }
+
   return (
     <div className="space-y-4">
       {/* Zoom Controls */}
@@ -282,7 +310,17 @@ export default function SpreadTradeChart({
         className={`space-y-4 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
       >
         {/* Z-Score Pane */}
-        <ZScorePane data={chartData} metadata={metadata!} height={height / 3} dataRange={dataRange} />
+        <ZScorePane
+          data={chartData}
+          metadata={metadata!}
+          height={height / 3}
+          dataRange={dataRange}
+          yZoomLevel={yZoomLevel}
+          onYAxisMouseDown={handleYAxisMouseDown}
+          onYAxisMouseMove={handleYAxisMouseMove}
+          onYAxisMouseUp={handleYAxisMouseUp}
+          onResetYZoom={handleResetYZoom}
+        />
 
         {/* Spread Price Pane */}
         <SpreadPricePane data={chartData} metadata={metadata!} height={height / 3} dataRange={dataRange} />
@@ -305,11 +343,21 @@ function ZScorePane({
   metadata,
   height,
   dataRange = { start: 0, end: 1 },
+  yZoomLevel = 1,
+  onYAxisMouseDown,
+  onYAxisMouseMove,
+  onYAxisMouseUp,
+  onResetYZoom,
 }: {
   data: ChartDataSet
   metadata: StrategyMetadata
   height: number
   dataRange?: { start: number; end: number }
+  yZoomLevel?: number
+  onYAxisMouseDown?: (e: React.MouseEvent) => void
+  onYAxisMouseMove?: (e: React.MouseEvent) => void
+  onYAxisMouseUp?: (e: React.MouseEvent) => void
+  onResetYZoom?: () => void
 }) {
   const allChartData = data.zScores.map((point) => ({
     time: point.time,
@@ -362,7 +410,16 @@ function ZScorePane({
   const minZ = Math.min(...zScores)
   const maxZ = Math.max(...zScores)
   const padding = (maxZ - minZ) * 0.15 // 15% padding
-  const yDomain = [minZ - padding, maxZ + padding]
+  let baseDomain = [minZ - padding, maxZ + padding]
+
+  // Apply vertical zoom
+  let yDomain = baseDomain
+  if (yZoomLevel > 1) {
+    const domainRange = baseDomain[1] - baseDomain[0]
+    const zoomedRange = domainRange / yZoomLevel
+    const center = (baseDomain[0] + baseDomain[1]) / 2
+    yDomain = [center - zoomedRange / 2, center + zoomedRange / 2]
+  }
 
   // Generate nice tick values
   const tickCount = 5
@@ -373,8 +430,26 @@ function ZScorePane({
 
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
-      <h3 className="text-sm font-semibold text-white mb-3">Z-Score (Entry/Exit Signals)</h3>
-      <ResponsiveContainer width="100%" height={height}>
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="text-sm font-semibold text-white">Z-Score (Entry/Exit Signals)</h3>
+        {yZoomLevel > 1 && (
+          <button
+            onClick={onResetYZoom}
+            className="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors"
+            title="Reset Y-axis zoom"
+          >
+            Reset Y-Zoom ({yZoomLevel.toFixed(1)}x)
+          </button>
+        )}
+      </div>
+      <div
+        onMouseDown={onYAxisMouseDown}
+        onMouseMove={onYAxisMouseMove}
+        onMouseUp={onYAxisMouseUp}
+        onMouseLeave={onYAxisMouseUp}
+        className={yZoomLevel > 1 ? 'cursor-ns-resize' : 'cursor-default'}
+      >
+        <ResponsiveContainer width="100%" height={height}>
         <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis
@@ -408,20 +483,24 @@ function ZScorePane({
             }}
           />
 
-          {/* Background shading for mean-reverting zones */}
+          {/* Z-Score reference lines */}
           <ReferenceLine y={0} stroke="#64748b" strokeDasharray="5 5" label="Mean (μ)" />
+
+          {/* Entry z-score thresholds (FROZEN at signal time) */}
           <ReferenceLine
-            y={2.0}
+            y={metadata.z_score_at_entry}
             stroke="#ef4444"
             strokeDasharray="3 3"
-            label="Entry (±2.0σ)"
+            label={`Entry Signal (z=${metadata.z_score_at_entry.toFixed(2)})`}
           />
           <ReferenceLine
-            y={-2.0}
+            y={-metadata.z_score_at_entry}
             stroke="#10b981"
             strokeDasharray="3 3"
-            label="Entry (±2.0σ)"
+            label={`Entry Signal (z=${(-metadata.z_score_at_entry).toFixed(2)})`}
           />
+
+          {/* Exit z-score thresholds (REALTIME) */}
           <ReferenceLine
             y={metadata.z_exit_threshold}
             stroke="#94a3b8"
@@ -465,6 +544,7 @@ function ZScorePane({
           )}
         </ComposedChart>
       </ResponsiveContainer>
+      </div>
     </div>
   )
 }
@@ -523,17 +603,27 @@ function SpreadPricePane({
     console.log('[SpreadPricePane] Spread values:', data.spreads.slice(0, 3).map(p => p.spread))
   }
 
+  // Use historical entry stats (frozen at signal time) for entry lines
+  const spreadMeanAtEntry = metadata.spread_mean_at_entry ?? metadata.spread_mean
+  const spreadStdAtEntry = metadata.spread_std_at_entry ?? metadata.spread_std
+
+  // Calculate entry levels (FROZEN at signal time)
+  const entryUpperLevel = spreadMeanAtEntry + 2 * spreadStdAtEntry
+  const entryLowerLevel = spreadMeanAtEntry - 2 * spreadStdAtEntry
+
+  // Calculate exit levels (REALTIME based on current stats)
+  const exitUpperLevel = metadata.spread_mean + metadata.z_exit_threshold * metadata.spread_std
+  const exitLowerLevel = metadata.spread_mean - metadata.z_exit_threshold * metadata.spread_std
+
   // Calculate dynamic Y-axis domain based on data AND reference lines
   const spreads = data.spreads.map(p => p.spread)
   const minSpread = Math.min(...spreads)
   const maxSpread = Math.max(...spreads)
 
-  // Include reference lines in domain calculation
-  const upperStop = metadata.spread_mean + 3.5 * metadata.spread_std
-  const lowerStop = metadata.spread_mean - 3.5 * metadata.spread_std
-
-  const minValue = Math.min(minSpread, lowerStop)
-  const maxValue = Math.max(maxSpread, upperStop)
+  // Include all reference lines in domain calculation
+  const allLevels = [minSpread, maxSpread, entryUpperLevel, entryLowerLevel, exitUpperLevel, exitLowerLevel]
+  const minValue = Math.min(...allLevels)
+  const maxValue = Math.max(...allLevels)
   const padding = (maxValue - minValue) * 0.15 // 15% padding
   const yDomain = [minValue - padding, maxValue + padding]
 
@@ -582,30 +672,35 @@ function SpreadPricePane({
           />
 
           {/* Statistical boundaries */}
-          <ReferenceLine y={metadata.spread_mean} stroke="#64748b" label="μ (Mean)" />
+          {/* Current mean (realtime) */}
+          <ReferenceLine y={metadata.spread_mean} stroke="#64748b" label="μ (Current Mean)" />
+
+          {/* Entry levels (FROZEN at signal time) */}
           <ReferenceLine
-            y={metadata.spread_mean + 2 * metadata.spread_std}
+            y={entryUpperLevel}
             stroke="#ef4444"
             strokeDasharray="3 3"
-            label="Short Entry (μ+2σ)"
+            label={`Short Entry (μ₀+2σ₀)`}
           />
           <ReferenceLine
-            y={metadata.spread_mean - 2 * metadata.spread_std}
+            y={entryLowerLevel}
             stroke="#10b981"
             strokeDasharray="3 3"
-            label="Long Entry (μ-2σ)"
+            label={`Long Entry (μ₀-2σ₀)`}
+          />
+
+          {/* Exit levels (REALTIME based on current stats) */}
+          <ReferenceLine
+            y={exitUpperLevel}
+            stroke="#94a3b8"
+            strokeDasharray="2 2"
+            label={`Exit Upper (μ+${metadata.z_exit_threshold}σ)`}
           />
           <ReferenceLine
-            y={metadata.spread_mean + 3.5 * metadata.spread_std}
-            stroke="#8b5cf6"
+            y={exitLowerLevel}
+            stroke="#94a3b8"
             strokeDasharray="2 2"
-            label="Short Stop (μ+3.5σ)"
-          />
-          <ReferenceLine
-            y={metadata.spread_mean - 3.5 * metadata.spread_std}
-            stroke="#8b5cf6"
-            strokeDasharray="2 2"
-            label="Long Stop (μ-3.5σ)"
+            label={`Exit Lower (μ-${metadata.z_exit_threshold}σ)`}
           />
 
           <Line
@@ -957,11 +1052,20 @@ function buildChartData(
   // Align candles by timestamp
   const minLength = Math.min(primaryCandles.length, pairCandles.length)
 
+  // Use historical entry stats (frozen at signal time) for z-score calculation
+  // This ensures the chart shows how the trade would play out in realtime
+  const spreadMeanAtEntry = metadata.spread_mean_at_entry ?? metadata.spread_mean
+  const spreadStdAtEntry = metadata.spread_std_at_entry ?? metadata.spread_std
+
   // Debug: log first timestamp to understand format
   if (minLength > 0) {
     const firstTime = primaryCandles[0].time
     console.log('[buildChartData] First candle timestamp:', firstTime, 'Type:', typeof firstTime)
     console.log('[buildChartData] Formatted:', formatTimestamp(firstTime))
+    console.log('[buildChartData] Using historical entry stats for z-score:', {
+      spread_mean_at_entry: spreadMeanAtEntry,
+      spread_std_at_entry: spreadStdAtEntry,
+    })
   }
 
   for (let i = 0; i < minLength; i++) {
@@ -969,9 +1073,12 @@ function buildChartData(
     const pair = pairCandles[i]
     const time = primary.time
 
-    // Calculate spread
+    // Calculate current spread
     const spread = pair.close - metadata.beta * primary.close
-    const z_score = (spread - metadata.spread_mean) / metadata.spread_std
+
+    // Calculate z-score using HISTORICAL entry stats (frozen at signal time)
+    // This shows how the trade would exit in realtime based on mean reversion
+    const z_score = (spread - spreadMeanAtEntry) / spreadStdAtEntry
 
     zScores.push({
       time,
