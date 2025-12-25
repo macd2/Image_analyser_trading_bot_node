@@ -224,6 +224,8 @@ export async function GET(_request: NextRequest) {
         rr_ratio: trade.rr_ratio,
         cycle_id: cycleId,
         run_id: runId,
+        position_size_usd: trade.position_size_usd || undefined,
+        risk_amount_usd: trade.risk_amount_usd || undefined,
         strategy_type: trade.strategy_type || null,
         strategy_name: trade.strategy_name || null,
         strategy_metadata: trade.strategy_metadata || null
