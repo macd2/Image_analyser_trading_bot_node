@@ -33,6 +33,10 @@ export interface OpenPaperTrade {
   risk_per_unit?: number;
   sizing_method?: string;
   risk_pct_used?: number;
+  // Spread-based trade fields
+  pair_quantity?: number;
+  pair_position_size_usd?: number;
+  pair_entry_price?: number;
   // Strategy information
   strategy_type?: string | null;
   strategy_name?: string | null;
@@ -206,19 +210,24 @@ export async function GET(_request: NextRequest) {
 
       // Calculate position_size_usd based on strategy type
       let calculatedPositionSize = trade.position_size_usd;
+      let calculatedPairPositionSize: number | undefined;
+      let pairEntryPrice: number | undefined;
 
       if (!calculatedPositionSize) {
-        if (trade.strategy_type === 'spread_based') {
-          // For spread-based trades: position_size_usd = primary symbol position value
-          // The pair position is tracked separately via pair_quantity
-          if (trade.entry_price && trade.quantity) {
-            calculatedPositionSize = trade.entry_price * trade.quantity;
-          }
-        } else {
-          // For price-based strategies: simple calculation
-          if (trade.entry_price && trade.quantity) {
-            calculatedPositionSize = trade.entry_price * trade.quantity;
-          }
+        if (trade.entry_price && trade.quantity) {
+          calculatedPositionSize = trade.entry_price * trade.quantity;
+        }
+      }
+
+      // For spread-based trades, also calculate pair position size
+      if (trade.strategy_type === 'spread_based' && trade.pair_quantity) {
+        const metadata = typeof trade.strategy_metadata === 'string'
+          ? JSON.parse(trade.strategy_metadata)
+          : trade.strategy_metadata;
+
+        if (metadata?.price_y_at_entry) {
+          pairEntryPrice = metadata.price_y_at_entry;
+          calculatedPairPositionSize = pairEntryPrice * trade.pair_quantity;
         }
       }
 
@@ -247,7 +256,9 @@ export async function GET(_request: NextRequest) {
         strategy_type: trade.strategy_type || null,
         strategy_name: trade.strategy_name || null,
         strategy_metadata: trade.strategy_metadata || null,
-        pair_quantity: trade.pair_quantity || undefined
+        pair_quantity: trade.pair_quantity || undefined,
+        pair_position_size_usd: calculatedPairPositionSize || undefined,
+        pair_entry_price: pairEntryPrice || undefined
       });
     }
 

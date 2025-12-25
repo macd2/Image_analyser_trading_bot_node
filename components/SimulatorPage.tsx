@@ -50,6 +50,10 @@ interface OpenPaperTrade {
   rejection_reason?: string | null
   position_size_usd?: number
   risk_amount_usd?: number
+  // Spread-based trade fields
+  pair_quantity?: number
+  pair_position_size_usd?: number
+  pair_entry_price?: number
   // Strategy information
   strategy_type?: string | null
   strategy_name?: string | null
@@ -1501,9 +1505,12 @@ export function SimulatorPage() {
                             <>
                               <div className="border-l border-slate-600 pl-4">
                                 <div><span className="text-slate-400">Pair Qty:</span> <span className="text-white font-mono">{trade.pair_quantity}</span></div>
+                                {trade.pair_position_size_usd && (
+                                  <div><span className="text-slate-400">Pair Position:</span> <span className="text-blue-300 font-mono">${trade.pair_position_size_usd.toFixed(2)}</span></div>
+                                )}
                               </div>
                               {trade.strategy_metadata?.pair_symbol && (
-                                <div><span className="text-slate-400">({trade.strategy_metadata.pair_symbol}):</span> <span className="text-white font-mono">{trade.pair_quantity}</span></div>
+                                <div className="text-xs text-slate-500">({trade.strategy_metadata.pair_symbol})</div>
                               )}
                             </>
                           )}
