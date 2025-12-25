@@ -204,6 +204,17 @@ export async function GET(_request: NextRequest) {
         run.cycles.push(cycle);
       }
 
+      // Calculate position_size_usd if not in database
+      // For spread-based trades, use pair_quantity if available
+      let calculatedPositionSize = trade.position_size_usd;
+      if (!calculatedPositionSize && trade.entry_price && trade.quantity) {
+        calculatedPositionSize = trade.entry_price * trade.quantity;
+      }
+      // For spread-based trades, also include pair position
+      if (!calculatedPositionSize && trade.entry_price && trade.pair_quantity) {
+        calculatedPositionSize = trade.entry_price * trade.pair_quantity;
+      }
+
       // Add trade to cycle
       cycle.trades.push({
         id: trade.id,
@@ -224,7 +235,7 @@ export async function GET(_request: NextRequest) {
         rr_ratio: trade.rr_ratio,
         cycle_id: cycleId,
         run_id: runId,
-        position_size_usd: trade.position_size_usd || undefined,
+        position_size_usd: calculatedPositionSize || undefined,
         risk_amount_usd: trade.risk_amount_usd || undefined,
         strategy_type: trade.strategy_type || null,
         strategy_name: trade.strategy_name || null,

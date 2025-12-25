@@ -1494,6 +1494,7 @@ export function SimulatorPage() {
                           {trade.position_size_usd && (
                             <div><span className="text-slate-400">Position:</span> <span className="text-blue-300 font-mono">${trade.position_size_usd.toFixed(2)}</span></div>
                           )}
+                          <div><span className="text-slate-400">Qty:</span> <span className="text-white font-mono">{trade.quantity}</span></div>
                         </div>
 
                         {/* Risk Amount */}
