@@ -99,6 +99,10 @@ interface OpenTradeRow {
   risk_per_unit?: number;
   sizing_method?: string;
   risk_pct_used?: number;
+  // Spread-based trade fields
+  pair_quantity?: number;
+  pair_fill_price?: number;
+  pair_exit_price?: number;
   // Strategy information
   strategy_type?: string | null;
   strategy_name?: string | null;
