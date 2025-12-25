@@ -172,7 +172,8 @@ export async function GET(_request: NextRequest) {
         instanceMap.set(instanceId, {
           instance_id: instanceId,
           instance_name: trade.instance_name || instanceId,
-          strategy_name: getStrategyNameFromSettings(trade.instance_settings),
+          // Use trade.strategy_name directly (stored in database), fall back to instance settings for backwards compatibility
+          strategy_name: trade.strategy_name || getStrategyNameFromSettings(trade.instance_settings),
           runs: []
         });
       }

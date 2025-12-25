@@ -957,7 +957,8 @@ export async function POST() {
 
     for (const trade of openTrades) {
       const timeframe = trade.timeframe || '1h';
-      const strategyName = getStrategyNameFromSettings((trade as any).instance_settings);
+      // Use trade.strategy_name directly (stored in database), fall back to instance settings for backwards compatibility
+      const strategyName = trade.strategy_name || getStrategyNameFromSettings((trade as any).instance_settings);
       try {
         const isLong = trade.side === 'Buy';
         const entryPrice = trade.entry_price || 0;

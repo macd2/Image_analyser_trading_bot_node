@@ -120,7 +120,8 @@ export async function GET() {
           barsOpen = Math.ceil(timeDiff / (minutesPerBar * 60 * 1000))
         }
       }
-      const strategyName = getStrategyNameFromSettings((t as any).instance_settings)
+      // Use trade.strategy_name directly (stored in database), fall back to instance settings for backwards compatibility
+      const strategyName = (t as any).strategy_name || getStrategyNameFromSettings((t as any).instance_settings)
       const { instance_settings, ...tradeWithoutSettings } = t as any
       return { ...tradeWithoutSettings, bars_open: barsOpen, strategy_name: strategyName }
     })
