@@ -87,6 +87,7 @@ export async function GET() {
         t.sizing_method,
         t.risk_pct_used,
         t.strategy_type,
+        t.strategy_name,
         t.order_id_pair,
         COALESCE(t.strategy_metadata, rec.strategy_metadata) as strategy_metadata
       FROM trades t
