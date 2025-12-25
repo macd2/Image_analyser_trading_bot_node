@@ -229,9 +229,10 @@ export async function GET(_request: NextRequest) {
           ? JSON.parse(trade.strategy_metadata)
           : trade.strategy_metadata;
 
-        if (metadata?.price_y_at_entry) {
-          pairEntryPrice = metadata.price_y_at_entry;
-          calculatedPairPositionSize = pairEntryPrice * trade.pair_quantity;
+        const priceYAtEntry = metadata?.price_y_at_entry;
+        if (priceYAtEntry !== undefined && typeof priceYAtEntry === 'number') {
+          pairEntryPrice = priceYAtEntry;
+          calculatedPairPositionSize = priceYAtEntry * trade.pair_quantity;
         }
       }
 
