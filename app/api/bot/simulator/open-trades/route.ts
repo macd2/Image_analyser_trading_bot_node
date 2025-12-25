@@ -204,15 +204,22 @@ export async function GET(_request: NextRequest) {
         run.cycles.push(cycle);
       }
 
-      // Calculate position_size_usd if not in database
-      // For spread-based trades, use pair_quantity if available
+      // Calculate position_size_usd based on strategy type
       let calculatedPositionSize = trade.position_size_usd;
-      if (!calculatedPositionSize && trade.entry_price && trade.quantity) {
-        calculatedPositionSize = trade.entry_price * trade.quantity;
-      }
-      // For spread-based trades, also include pair position
-      if (!calculatedPositionSize && trade.entry_price && trade.pair_quantity) {
-        calculatedPositionSize = trade.entry_price * trade.pair_quantity;
+
+      if (!calculatedPositionSize) {
+        if (trade.strategy_type === 'spread_based') {
+          // For spread-based trades: position_size_usd = primary symbol position value
+          // The pair position is tracked separately via pair_quantity
+          if (trade.entry_price && trade.quantity) {
+            calculatedPositionSize = trade.entry_price * trade.quantity;
+          }
+        } else {
+          // For price-based strategies: simple calculation
+          if (trade.entry_price && trade.quantity) {
+            calculatedPositionSize = trade.entry_price * trade.quantity;
+          }
+        }
       }
 
       // Add trade to cycle
@@ -239,7 +246,8 @@ export async function GET(_request: NextRequest) {
         risk_amount_usd: trade.risk_amount_usd || undefined,
         strategy_type: trade.strategy_type || null,
         strategy_name: trade.strategy_name || null,
-        strategy_metadata: trade.strategy_metadata || null
+        strategy_metadata: trade.strategy_metadata || null,
+        pair_quantity: trade.pair_quantity || undefined
       });
     }
 

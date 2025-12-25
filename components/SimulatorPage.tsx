@@ -1495,6 +1495,18 @@ export function SimulatorPage() {
                             <div><span className="text-slate-400">Position:</span> <span className="text-blue-300 font-mono">${trade.position_size_usd.toFixed(2)}</span></div>
                           )}
                           <div><span className="text-slate-400">Qty:</span> <span className="text-white font-mono">{trade.quantity}</span></div>
+
+                          {/* For spread-based trades, show pair quantity and position */}
+                          {trade.strategy_type === 'spread_based' && trade.pair_quantity && (
+                            <>
+                              <div className="border-l border-slate-600 pl-4">
+                                <div><span className="text-slate-400">Pair Qty:</span> <span className="text-white font-mono">{trade.pair_quantity}</span></div>
+                              </div>
+                              {trade.strategy_metadata?.pair_symbol && (
+                                <div><span className="text-slate-400">({trade.strategy_metadata.pair_symbol}):</span> <span className="text-white font-mono">{trade.pair_quantity}</span></div>
+                              )}
+                            </>
+                          )}
                         </div>
 
                         {/* Risk Amount */}
