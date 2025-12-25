@@ -1490,11 +1490,9 @@ export function SimulatorPage() {
                           <div><span className="text-slate-400">Entry:</span> <span className="text-white font-mono">${trade.entry_price?.toFixed(4)}</span></div>
                           <div><span className="text-green-400">TP:</span> <span className="text-green-400 font-mono">${trade.take_profit?.toFixed(4)}</span></div>
                           <div><span className="text-red-400">SL:</span> <span className="text-red-400 font-mono">${trade.stop_loss?.toFixed(4)}</span></div>
-                          {/* Show position value in $ instead of qty */}
-                          {trade.position_size_usd ? (
+                          {/* Show position value in $ */}
+                          {trade.position_size_usd && (
                             <div><span className="text-slate-400">Position:</span> <span className="text-blue-300 font-mono">${trade.position_size_usd.toFixed(2)}</span></div>
-                          ) : (
-                            <div><span className="text-slate-400">Qty:</span> <span className="text-white font-mono">{trade.quantity}</span></div>
                           )}
                         </div>
 
