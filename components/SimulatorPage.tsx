@@ -417,6 +417,22 @@ export function SimulatorPage() {
               if (!tickers || !tickers[trade.symbol]) {
                 symbolsNeedingPrices.add(trade.symbol)
               }
+
+              // For spread-based trades, also fetch pair symbol price
+              if (trade.strategy_type === 'spread_based' && trade.strategy_metadata) {
+                let metadata = trade.strategy_metadata
+                if (typeof metadata === 'string') {
+                  try {
+                    metadata = JSON.parse(metadata)
+                  } catch {
+                    metadata = null
+                  }
+                }
+                const pairSymbol = metadata?.pair_symbol
+                if (pairSymbol && (!tickers || !tickers[pairSymbol])) {
+                  symbolsNeedingPrices.add(pairSymbol)
+                }
+              }
             })
           })
         })
@@ -569,6 +585,46 @@ export function SimulatorPage() {
     // Normalize side to handle both 'Buy'/'Sell' and 'LONG'/'SHORT' formats
     const sideUpper = trade.side?.toUpperCase() || ''
     const isLong = sideUpper === 'BUY' || sideUpper === 'LONG'
+
+    // For spread-based trades, calculate PnL for both symbols
+    if (trade.strategy_type === 'spread_based' && trade.pair_quantity && trade.pair_entry_price) {
+      const pairSymbol = (() => {
+        let metadata = trade.strategy_metadata
+        if (typeof metadata === 'string') {
+          try {
+            metadata = JSON.parse(metadata)
+          } catch {
+            return null
+          }
+        }
+        return metadata?.pair_symbol || null
+      })()
+
+      const pairCurrentPrice = pairSymbol ? currentPrices[pairSymbol] : null
+
+      // Primary symbol PnL
+      const primaryPriceDiff = isLong ? (currentPrice - trade.entry_price) : (trade.entry_price - currentPrice)
+      const primaryPnl = primaryPriceDiff * trade.quantity
+
+      // Pair symbol PnL (opposite direction for spread trades)
+      const pairIsLong = !isLong // Opposite of primary
+      let pairPnl = 0
+      if (pairCurrentPrice) {
+        const pairPriceDiff = pairIsLong ? (pairCurrentPrice - trade.pair_entry_price) : (trade.pair_entry_price - pairCurrentPrice)
+        pairPnl = pairPriceDiff * trade.pair_quantity
+      }
+
+      // Total PnL from both positions
+      const totalPnl = primaryPnl + pairPnl
+
+      // Calculate PnL percent based on total position value
+      const totalPositionValue = (trade.position_size_usd || 0) + (trade.pair_position_size_usd || 0)
+      const pnlPercent = totalPositionValue > 0 ? (totalPnl / totalPositionValue) * 100 : 0
+
+      return { pnl: totalPnl, pnlPercent, currentPrice }
+    }
+
+    // Price-based strategy: simple calculation
     const priceDiff = isLong ? (currentPrice - trade.entry_price) : (trade.entry_price - currentPrice)
     const pnl = priceDiff * trade.quantity
     const pnlPercent = (priceDiff / trade.entry_price) * 100
