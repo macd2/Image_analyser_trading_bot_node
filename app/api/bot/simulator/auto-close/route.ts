@@ -730,7 +730,8 @@ async function checkStrategyExit(
       entry_price: trade.entry_price,
       stop_loss: trade.stop_loss,
       take_profit: trade.take_profit,
-      strategy_metadata: strategyMetadata
+      strategy_metadata: strategyMetadata,
+      strategy_type: trade.strategy_type  // CRITICAL: Pass strategy_type to Python script for exit logic
     };
 
     // Fetch pair candles if this is a spread-based trade
@@ -1402,6 +1403,32 @@ export async function POST() {
 
       if (exitResult && exitResult.hit) {
         console.log(`[Auto-Close] ${trade.symbol} - Exit triggered: ${exitResult.reason}`);
+
+        // PRIORITY 4: SANITY CHECK - Detect suspicious spread-based trade exits
+        // Warn if spread-based trade exits on fill candle (fillCandleIndex === 0)
+        if (trade.strategy_type === 'spread_based' && fillCandleIndex === 0) {
+          console.warn(`[Auto-Close] SUSPICIOUS: Spread-based trade ${trade.symbol} exiting on fill candle. Reason: ${exitResult.reason}`);
+
+          // If exit reason is tp_hit or sl_hit, this is a CRITICAL BUG
+          // Spread-based trades should ONLY exit via z_score_exit or max_spread_deviation_exceeded
+          if (exitResult.reason === 'tp_hit' || exitResult.reason === 'sl_hit') {
+            console.error(`[Auto-Close] CRITICAL BUG: Spread-based trade ${trade.symbol} should NOT exit via price-level SL/TP!`);
+            console.error(`[Auto-Close] This indicates the Python script is still checking price-level SL/TP for spread-based trades.`);
+
+            // Log to database for investigation
+            await logSimulatorError(
+              trade.id,
+              'SPREAD_TRADE_PRICE_LEVEL_EXIT',
+              `Spread-based trade exited via ${exitResult.reason} instead of z-score exit. This should not happen after the fix.`,
+              {
+                exit_result: exitResult,
+                fill_candle_index: fillCandleIndex,
+                strategy_type: trade.strategy_type,
+                strategy_name: strategyName
+              }
+            );
+          }
+        }
       }
 
       if (exitResult.hit && exitResult.exitPrice && exitResult.reason) {
