@@ -1490,27 +1490,21 @@ export function SimulatorPage() {
                           <div><span className="text-slate-400">Entry:</span> <span className="text-white font-mono">${trade.entry_price?.toFixed(4)}</span></div>
                           <div><span className="text-green-400">TP:</span> <span className="text-green-400 font-mono">${trade.take_profit?.toFixed(4)}</span></div>
                           <div><span className="text-red-400">SL:</span> <span className="text-red-400 font-mono">${trade.stop_loss?.toFixed(4)}</span></div>
-                          <div><span className="text-slate-400">Qty:</span> <span className="text-white font-mono">{trade.quantity}</span></div>
+                          {/* Show position value in $ instead of qty */}
+                          {trade.position_size_usd ? (
+                            <div><span className="text-slate-400">Position:</span> <span className="text-blue-300 font-mono">${trade.position_size_usd.toFixed(2)}</span></div>
+                          ) : (
+                            <div><span className="text-slate-400">Qty:</span> <span className="text-white font-mono">{trade.quantity}</span></div>
+                          )}
                         </div>
 
-                        {/* Position Size and Risk Amount */}
-                        {(trade.position_size_usd || trade.risk_amount_usd) && (
+                        {/* Risk Amount */}
+                        {trade.risk_amount_usd && (
                           <div className="flex items-center gap-3 bg-slate-700/50 rounded px-3 py-1.5 text-xs">
-                            {trade.position_size_usd && (
-                              <div className="flex items-center gap-1">
-                                <span className="text-slate-400">Position:</span>
-                                <span className="text-blue-300 font-mono">${trade.position_size_usd.toFixed(2)}</span>
-                              </div>
-                            )}
-                            {trade.position_size_usd && trade.risk_amount_usd && (
-                              <span className="text-slate-600">•</span>
-                            )}
-                            {trade.risk_amount_usd && (
-                              <div className="flex items-center gap-1">
-                                <span className="text-slate-400">Risk:</span>
-                                <span className="text-orange-300 font-mono">${trade.risk_amount_usd.toFixed(2)}</span>
-                              </div>
-                            )}
+                            <div className="flex items-center gap-1">
+                              <span className="text-slate-400">Risk:</span>
+                              <span className="text-orange-300 font-mono">${trade.risk_amount_usd.toFixed(2)}</span>
+                            </div>
                           </div>
                         )}
 
@@ -1955,6 +1949,11 @@ export function SimulatorPage() {
                             {trade.exit_reason === 'tp_hit' ? '🎯' : '🛑'} Exit:
                           </span>
                           <span className="text-slate-300">{new Date(trade.closed_at).toLocaleString()}</span>
+                          {trade.exit_reason && (
+                            <span className="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded ml-2">
+                              {trade.exit_reason === 'tp_hit' ? 'TP Hit' : trade.exit_reason === 'sl_hit' ? 'SL Hit' : trade.exit_reason}
+                            </span>
+                          )}
                         </div>
                       </div>
 
