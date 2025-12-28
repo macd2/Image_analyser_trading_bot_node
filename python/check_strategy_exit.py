@@ -12,11 +12,65 @@ Output: JSON with {"should_exit": bool, "exit_price": float, "exit_reason": str,
 import sys
 import json
 import logging
+import uuid
 from typing import Dict, Any, List, Optional
+from datetime import datetime, timezone
 
 # Setup logging to stderr
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s', stream=sys.stderr)
 logger = logging.getLogger(__name__)
+
+
+def log_error_to_db(trade_id: str, symbol: str, event: str, message: str, context: Optional[Dict[str, Any]] = None) -> None:
+    """
+    Log error to centralized error_logs table using the centralized database layer.
+
+    Args:
+        trade_id: Trade ID for correlation
+        symbol: Symbol being traded
+        event: Event type (e.g., 'strategy_exit_failed', 'strategy_not_found')
+        message: Error message
+        context: Optional context dict with additional debugging info
+    """
+    try:
+        from trading_bot.db.client import get_connection, execute, release_connection
+
+        conn = None
+        try:
+            conn = get_connection(timeout_seconds=5.0)
+
+            log_id = str(uuid.uuid4())[:12]
+            timestamp = datetime.now(timezone.utc).isoformat()
+            context_json = json.dumps(context) if context else None
+
+            execute(conn, """
+                INSERT INTO error_logs (
+                    id, timestamp, level, trade_id, symbol,
+                    component, event, message, context
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                log_id,
+                timestamp,
+                'ERROR',
+                trade_id,
+                symbol,
+                'check_strategy_exit',
+                event,
+                message,
+                context_json,
+            ), auto_commit=True)
+
+            # Log to stderr for visibility
+            print(f"[check_strategy_exit] ✅ Logged error to DB: {event} for trade {trade_id}", file=sys.stderr)
+
+        finally:
+            if conn:
+                release_connection(conn)
+
+    except Exception as e:
+        # Fallback: log to stderr if database logging fails
+        print(f"[check_strategy_exit] ⚠️  Failed to log error to DB: {e}", file=sys.stderr)
+        print(f"[check_strategy_exit] Original error: {event} - {message}", file=sys.stderr)
 
 def check_strategy_exit(
     trade_id: str,
@@ -41,25 +95,29 @@ def check_strategy_exit(
     try:
         # Validate inputs
         if not trade_id:
-            logger.error("ERROR: trade_id is required")
+            error_msg = "trade_id is required"
+            logger.error(f"ERROR: {error_msg}")
+            log_error_to_db("unknown", "unknown", "missing_trade_id", error_msg)
             return {
                 "should_exit": False,
                 "exit_price": None,
                 "exit_reason": None,
                 "exit_timestamp": None,
                 "current_price": None,
-                "error": "trade_id is required"
+                "error": error_msg
             }
 
         if not strategy_name:
-            logger.error(f"ERROR: strategy_name is required for trade {trade_id}")
+            error_msg = "strategy_name is required"
+            logger.error(f"ERROR: {error_msg} for trade {trade_id}")
+            log_error_to_db(trade_id, "unknown", "missing_strategy_name", error_msg)
             return {
                 "should_exit": False,
                 "exit_price": None,
                 "exit_reason": None,
                 "exit_timestamp": None,
                 "current_price": None,
-                "error": "strategy_name is required"
+                "error": error_msg
             }
 
         if not candles:
@@ -80,14 +138,19 @@ def check_strategy_exit(
         strategies = StrategyFactory.get_available_strategies()
 
         if strategy_name not in strategies:
-            logger.error(f"ERROR: Strategy not found: {strategy_name}. Available: {list(strategies.keys())}")
+            error_msg = f"Strategy not found: {strategy_name}"
+            logger.error(f"ERROR: {error_msg}. Available: {list(strategies.keys())}")
+            log_error_to_db(trade_id, "unknown", "strategy_not_found", error_msg, {
+                "strategy_name": strategy_name,
+                "available_strategies": list(strategies.keys())
+            })
             return {
                 "should_exit": False,
                 "exit_price": None,
                 "exit_reason": None,
                 "exit_timestamp": None,
                 "current_price": None,
-                "error": f"Strategy not found: {strategy_name}"
+                "error": error_msg
             }
 
         # Instantiate strategy
@@ -133,14 +196,19 @@ def check_strategy_exit(
                 strategy_config={}
             )
         except Exception as e:
-            logger.error(f"ERROR: Failed to instantiate strategy {strategy_name} for trade {trade_id}: {e}", exc_info=True)
+            error_msg = f"Failed to instantiate strategy: {e}"
+            logger.error(f"ERROR: {error_msg} for trade {trade_id}", exc_info=True)
+            log_error_to_db(trade_id, trade_data.get("symbol", "unknown"), "strategy_instantiation_failed", error_msg, {
+                "strategy_name": strategy_name,
+                "exception_type": type(e).__name__
+            })
             return {
                 "should_exit": False,
                 "exit_price": None,
                 "exit_reason": None,
                 "exit_timestamp": None,
                 "current_price": None,
-                "error": f"Failed to instantiate strategy: {e}"
+                "error": error_msg
             }
 
         # Iterate through candles and check for exit
@@ -367,7 +435,12 @@ def check_strategy_exit(
 
                     return response
             except Exception as e:
-                logger.error(f"ERROR: Exception in candle {i} for trade {trade_id}: {e}", exc_info=True)
+                error_msg = f"Exception in candle {i}: {e}"
+                logger.error(f"ERROR: {error_msg} for trade {trade_id}", exc_info=True)
+                log_error_to_db(trade_id, trade_data.get("symbol", "unknown"), "candle_processing_error", error_msg, {
+                    "candle_index": i,
+                    "exception_type": type(e).__name__
+                })
                 continue
 
         # No exit condition met
@@ -397,7 +470,12 @@ def check_strategy_exit(
         return response
 
     except Exception as e:
-        logger.error(f"ERROR: Unexpected error checking strategy exit for trade {trade_id}: {e}", exc_info=True)
+        error_msg = f"Unexpected error checking strategy exit: {e}"
+        logger.error(f"ERROR: {error_msg} for trade {trade_id}", exc_info=True)
+        log_error_to_db(trade_id, trade_data.get("symbol", "unknown") if 'trade_data' in locals() else "unknown",
+                       "strategy_exit_check_failed", error_msg, {
+                           "exception_type": type(e).__name__
+                       })
         return {
             "should_exit": False,
             "exit_price": None,
