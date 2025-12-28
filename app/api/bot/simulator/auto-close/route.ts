@@ -747,8 +747,30 @@ async function checkStrategyExit(
         if (candles.length > 0) {
           const startTime = candles[0].timestamp;
           const endTime = candles[candles.length - 1].timestamp;
+          const now = Date.now();
+          const tfMs = TIMEFRAME_MS[timeframe] || 3600000;
 
-          // STEP 1: Query pair candles from klines table
+          // STEP 1: Check if pair candles in database are stale
+          // Get the latest pair candle timestamp in the database
+          const latestPairCandleResult = await dbQuery<{ max_ts: number | null }>(
+            `SELECT MAX(start_time) as max_ts FROM klines WHERE symbol = ? AND timeframe = ?`,
+            [pairSymbol, timeframe]
+          );
+
+          const rawLatestPairCandleTs = latestPairCandleResult[0]?.max_ts;
+          const latestPairCandleTs = normalizeTimestamp(rawLatestPairCandleTs) || 0;
+          const latestCompleteCandle = Math.max(0, now - (now % tfMs) - tfMs); // Timestamp of the latest COMPLETE candle
+
+          // Validate timestamps before converting to Date
+          const isValidTimestamp = (ts: number) => ts > 0 && ts < 8640000000000000;
+          const latestPairCandleStr = isValidTimestamp(latestPairCandleTs) ? new Date(latestPairCandleTs).toISOString() : 'no candles';
+          const latestCompleteStr = isValidTimestamp(latestCompleteCandle) ? new Date(latestCompleteCandle).toISOString() : 'no complete candles yet';
+          console.log(`[Auto-Close] ${pairSymbol} ${timeframe}: latest candle in DB=${latestPairCandleStr}, latest complete=${latestCompleteStr}`);
+
+          // Check if pair candles are stale (latest DB candle is older than latest complete candle)
+          const pairCandlesStale = latestPairCandleTs < latestCompleteCandle;
+
+          // STEP 2: Query pair candles from klines table
           const pairCandles = await dbQuery<any>(`
             SELECT
               start_time as timestamp,
@@ -762,11 +784,14 @@ async function checkStrategyExit(
           `, [pairSymbol, timeframe, startTime, endTime]);
 
           pairCandlesData = pairCandles || [];
-          if (pairCandlesData.length > 0) {
-            console.log(`[Auto-Close] Fetched ${pairCandlesData.length} pair candles for ${pairSymbol} from database`);
-          } else {
-            // STEP 2: If not in database, fetch from Bybit API
-            console.log(`[Auto-Close] No pair candles in database for ${pairSymbol}, fetching from Bybit API...`);
+
+          // STEP 3: If no candles or stale, fetch from Bybit API
+          if (pairCandlesData.length === 0 || pairCandlesStale) {
+            if (pairCandlesData.length === 0) {
+              console.log(`[Auto-Close] No pair candles in database for ${pairSymbol}, fetching from Bybit API...`);
+            } else {
+              console.log(`[Auto-Close] Pair candles are stale for ${pairSymbol} (latest=${latestPairCandleStr}), fetching from Bybit API...`);
+            }
             try {
               await fetchAndStoreCandles(pairSymbol, timeframe);
 
@@ -791,6 +816,8 @@ async function checkStrategyExit(
               console.error(`[Auto-Close] Failed to fetch pair candles from Bybit API for ${pairSymbol}: ${apiError}`);
               // Continue without pair candles - strategy will fetch from API if needed
             }
+          } else {
+            console.log(`[Auto-Close] Fetched ${pairCandlesData.length} pair candles for ${pairSymbol} from database (up-to-date)`);
           }
         }
       } catch (error) {
