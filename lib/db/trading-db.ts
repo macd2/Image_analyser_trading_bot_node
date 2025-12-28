@@ -865,6 +865,7 @@ export const CONFIG_METADATA: Record<string, ConfigMeta> = {
   'strategy_specific.cointegration.min_sl_buffer': { type: 'number', category: 'strategy', group: '3. Cointegration Trade Settings', description: 'Minimum z-distance to stop loss', tooltip: 'Minimum z-score distance from entry to stop loss (adaptive SL buffer). Default: 1.5. Range: 0.5-3.0', order: 36 },
   'strategy_specific.cointegration.enable_dynamic_sizing': { type: 'boolean', category: 'strategy', group: '3. Cointegration Trade Settings', description: 'Enable dynamic position sizing', tooltip: 'Default: true | Enable dynamic position sizing based on edge (z-score distance) and volatility (spread std/mean)', order: 37 },
   'strategy_specific.cointegration.use_soft_vol': { type: 'boolean', category: 'strategy', group: '3. Cointegration Trade Settings', description: 'Use soft volatility adjustment', tooltip: 'Default: false | Soft vol: 0.5x-2.5x sizing (choppy markets) | Aggressive: 0.3x-3.0x (stable pairs)', order: 35 },
+  'strategy_specific.cointegration.max_spread_deviation': { type: 'number', category: 'strategy', group: '3. Cointegration Trade Settings', description: 'Maximum z-score deviation', tooltip: 'Maximum z-score deviation before force-closing position. Set to 0 to disable. Default: 3.0. Range: 0 (disabled) or 2.0-5.0', order: 38 },
 
 
   // Strategy-Specific Settings - Cointegration Strategy

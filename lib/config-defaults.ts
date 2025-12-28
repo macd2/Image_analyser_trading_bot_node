@@ -234,42 +234,7 @@ export const DEFAULT_CONFIG: ConfigDefault[] = [
     description: "Enable spread monitoring for price-based strategies"
   },
 
-  // Strategy-Specific Settings - Spread-Based Strategies (8 settings)
-  {
-    key: "strategy_specific.spread_based.z_score_entry_threshold",
-    value: 2.0,
-    type: "number",
-    category: "strategy",
-    description: "Z-score entry threshold for spread-based strategies"
-  },
-  {
-    key: "strategy_specific.spread_based.z_score_exit_threshold",
-    value: 0.5,
-    type: "number",
-    category: "strategy",
-    description: "Z-score exit threshold for spread-based strategies"
-  },
-  {
-    key: "strategy_specific.spread_based.lookback_period",
-    value: 120,
-    type: "number",
-    category: "strategy",
-    description: "Lookback period (bars) for cointegration analysis"
-  },
-  {
-    key: "strategy_specific.spread_based.max_spread_deviation",
-    value: 3.0,
-    type: "number",
-    category: "strategy",
-    description: "Maximum z-score deviation before force-closing position"
-  },
-  {
-    key: "strategy_specific.spread_based.min_z_distance",
-    value: 0.5,
-    type: "number",
-    category: "strategy",
-    description: "Minimum z-score distance to stop loss for signal validation"
-  },
+  // Strategy-Specific Settings - Cointegration (moved to CONFIG_METADATA in trading-db.ts)
   {
     key: "strategy_specific.cointegration.min_sl_buffer",
     value: 1.5,

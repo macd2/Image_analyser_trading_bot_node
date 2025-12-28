@@ -1195,7 +1195,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             "max_spread_deviation": {
                 "type": "float",
                 "default": 3.0,
-                "description": "Maximum z-score deviation before closing position",
+                "description": "Maximum z-score deviation before closing position. Set to 0 to disable.",
             },
             "min_z_distance": {
                 "type": "float",
