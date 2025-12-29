@@ -897,12 +897,14 @@ async function checkStrategyExit(
 
             resolve(exitResult);
           } else {
-            console.log(`[Auto-Close] Strategy exit check returned no exit for ${trade.symbol}: should_exit=${result.should_exit}`);
+            const errorMsg = result.error ? ` Error: ${result.error}` : '';
+            console.log(`[Auto-Close] Strategy exit check returned no exit for ${trade.symbol}: should_exit=${result.should_exit}${errorMsg}`);
             resolve(null);
           }
         } catch (error) {
           console.error(`[Auto-Close] CRITICAL: Failed to parse strategy exit result for ${trade.symbol}: ${error}`);
           console.error(`[Auto-Close] stdout was: ${stdout}`);
+          console.error(`[Auto-Close] stderr was: ${stderr}`);
           resolve(null);
         }
       });
@@ -1385,7 +1387,8 @@ export async function POST() {
           // CRITICAL: For spread-based trades, NEVER fall back to SL/TP
           // Spread-based trades require strategy-specific exit logic (z-score, mean reversion, etc.)
           // If strategy exit check fails, skip the trade instead of using incorrect SL/TP logic
-          console.error(`[Auto-Close] ${trade.symbol} - CRITICAL: Strategy exit check failed for spread-based trade. Skipping trade to prevent incorrect SL/TP closure.`);
+          const exitResultStr = exitResult ? JSON.stringify(exitResult) : 'null';
+          console.error(`[Auto-Close] ${trade.symbol} - CRITICAL: Strategy exit check failed for spread-based trade. exitResult=${exitResultStr}. Skipping trade to prevent incorrect SL/TP closure.`);
           results.push({
             trade_id: trade.id,
             symbol: trade.symbol,
