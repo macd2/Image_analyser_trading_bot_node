@@ -186,9 +186,10 @@ async function fetchCandlesFromExchange(
     const bybitTimeframe = timeframeToBybit(timeframe);
 
     // Fetch from Bybit API
-    // Note: Bybit API returns most recent candles first, we'll fetch and filter
+    // Use 'end' parameter to fetch candles up to endTimeMs
+    // Bybit returns newest candles first, we'll fetch and filter
     const response = await fetch(
-      `https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=${bybitTimeframe}&limit=1000`
+      `https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=${bybitTimeframe}&limit=1000&end=${endTimeMs}`
     );
 
     if (!response.ok) {

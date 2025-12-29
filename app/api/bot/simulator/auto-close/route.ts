@@ -80,7 +80,16 @@ async function getMaxOpenBarsForTimeframe(
   }
 
   // Try exact match first, then normalized (1D -> 1d)
-  return config[timeframe] ?? config[timeframe.toLowerCase()] ?? 0;
+  const value = config[timeframe] ?? config[timeframe.toLowerCase()];
+
+  // CRITICAL: max_open_bars is strategy-aware config - must be explicitly set, no fallback to 0
+  if (value === undefined) {
+    // If not configured, return 0 (disabled) - but log warning
+    console.warn(`[Auto-Close] WARNING: max_open_bars not configured for ${timeframe}/${tradeStatus}/${strategyType || 'unknown'} - disabling max_bars check`);
+    return 0;
+  }
+
+  return value;
 }
 
 /**
@@ -273,7 +282,7 @@ const TIMEFRAME_MS: Record<string, number> = {
 };
 
 /**
- * Store candles to klines table (upsert - ON CONFLICT DO NOTHING)
+ * Store candles to klines table (batch insert - ON CONFLICT DO NOTHING)
  */
 async function storeCandles(
   symbol: string,
@@ -284,19 +293,51 @@ async function storeCandles(
 
   const normSymbol = symbol.endsWith('.P') ? symbol.slice(0, -2) : symbol;
 
-  // Insert each candle (ON CONFLICT DO NOTHING for duplicates)
-  for (const c of candles) {
-    try {
-      await dbExecute(
-        `INSERT INTO klines (symbol, timeframe, category, start_time, open_price, high_price, low_price, close_price, volume, turnover)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (symbol, timeframe, start_time) DO NOTHING`,
-        [normSymbol, timeframe, 'linear', c.timestamp, c.open, c.high, c.low, c.close, c.volume || 0, c.turnover || 0]
-      );
-    } catch {
-      // Ignore duplicate key errors
+  // Batch insert all candles at once (much faster than individual inserts)
+  try {
+    const placeholders = candles.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(',');
+    const values: any[] = [];
+
+    for (const c of candles) {
+      values.push(normSymbol, timeframe, 'linear', c.timestamp, c.open, c.high, c.low, c.close, c.volume || 0, c.turnover || 0);
     }
+
+    const result = await dbExecute(
+      `INSERT INTO klines (symbol, timeframe, category, start_time, open_price, high_price, low_price, close_price, volume, turnover)
+       VALUES ${placeholders}
+       ON CONFLICT (symbol, timeframe, start_time) DO NOTHING`,
+      values
+    );
+
+    // CRITICAL: Log actual result to verify insert happened
+    console.log(`[Auto-Close] Batch insert result: ${result.changes} rows affected (attempted ${candles.length} candles)`);
+
+    if (result.changes === 0 && candles.length > 0) {
+      console.warn(`[Auto-Close] WARNING: Batch insert returned 0 rows affected for ${candles.length} candles - all may be duplicates`);
+    }
+  } catch (e) {
+    // Log error but don't fail - duplicate candles are expected
+    console.error(`[Auto-Close] ERROR storing candles for ${symbol}: ${e}`);
   }
+}
+
+/**
+ * Determine minimum candles required based on strategy type
+ * Different strategies need different amounts of historical data
+ */
+function getMinimumCandlesRequired(strategyType?: string): number {
+  // Spread-based strategies (cointegration) need lookback period (typically 120 candles)
+  if (strategyType === 'spread_based') {
+    return 120; // Cointegration lookback period
+  }
+
+  // Price-based strategies only need current price
+  if (strategyType === 'price_based') {
+    return 1;
+  }
+
+  // Default: assume spread-based (safer to fetch more)
+  return 120;
 }
 
 /**
@@ -315,8 +356,9 @@ async function fetchAndStoreCandles(
     const apiSymbol = normSymbol;
     const interval = TIMEFRAME_MAP[timeframe] || '60';
     const limit = 200; // Max allowed by Bybit
+    const endTime = now; // Bybit expects milliseconds
 
-    const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${apiSymbol}&interval=${interval}&limit=${limit}`;
+    const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${apiSymbol}&interval=${interval}&limit=${limit}&end=${endTime}`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -371,15 +413,32 @@ async function fetchAndStoreCandles(
  * Fetch candles from database first, then API if missing
  * Always stores fetched candles to database for future use
  * CRITICAL: Ensures klines table is up-to-date by checking if latest candle is complete
+ *
+ * @param symbol - Trading symbol (e.g., 'BTCUSDT')
+ * @param timeframe - Candle timeframe (e.g., '1h')
+ * @param signalTime - Signal/entry time in milliseconds (Unix timestamp)
+ * @param strategyType - Optional strategy type to determine minimum candles needed
+ *
+ * IMPORTANT: This function automatically extends the start time backwards to include
+ * the lookback period needed by the strategy. For example, if strategy needs 120 candles
+ * of lookback and signal is at time T, we fetch from (T - 120*timeframe) to now.
  */
 async function getHistoricalCandles(
   symbol: string,
   timeframe: string,
-  startTime: number // Unix timestamp in ms
+  signalTime: number, // Unix timestamp in ms (when signal was generated)
+  strategyType?: string
 ): Promise<Candle[]> {
   const normSymbol = symbol.endsWith('.P') ? symbol.slice(0, -2) : symbol;
   const now = Date.now();
+
+  // Calculate the lookback period needed by the strategy
+  const lookbackCandles = getMinimumCandlesRequired(strategyType);
   const tfMs = TIMEFRAME_MS[timeframe] || 3600000;
+
+  // CRITICAL: Extend start time backwards to include lookback period
+  // Example: if signal at T and need 120 candles lookback, fetch from (T - 120*tfMs) to now
+  const startTime = signalTime - (lookbackCandles * tfMs);
 
   // STEP 1: Check if the klines table has up-to-date data for this symbol/timeframe
   // Get the latest candle timestamp in the database
@@ -424,37 +483,66 @@ async function getHistoricalCandles(
     [normSymbol, timeframe, startTime, now]
   );
 
-  // Calculate how many candles we should have
-  const expectedCandles = Math.ceil((now - startTime) / tfMs);
+  // Calculate how many candles we need
+  // CRITICAL: Need lookback period BEFORE entry + all candles from entry to now
+  // Example for spread-based (lookback=120):
+  //   - If trade is 10 candles old: need 120 (lookback) + 10 (since entry) = 130 total
+  //   - If trade is 200 candles old: need 120 (lookback) + 200 (since entry) = 320 total
+  const candlesSinceEntry = Math.ceil((now - startTime) / tfMs);
+  const totalNeeded = lookbackCandles + candlesSinceEntry;
 
-  // If we have enough candles from DB, use them
-  if (dbCandles.length >= expectedCandles * 0.8) { // 80% threshold
-    console.log(`[Auto-Close] Using ${dbCandles.length} cached candles for ${symbol} ${timeframe}`);
-    return dbCandles.map(c => ({
-      timestamp: normalizeTimestamp(c.start_time) || 0,
-      open: c.open_price,
-      high: c.high_price,
-      low: c.low_price,
-      close: c.close_price
-    }));
+  console.log(`[Auto-Close] ${symbol} ${timeframe}: lookback=${lookbackCandles}, since_entry=${candlesSinceEntry}, total_needed=${totalNeeded}`);
+
+  // CRITICAL: Check if we have candles covering the REQUIRED TIME RANGE with NO GAPS
+  // We need: [startTime (now - lookback - since_entry)] to [now]
+  let hasGaps = false;
+  if (dbCandles.length > 0) {
+    const oldestDbCandle = Math.min(...dbCandles.map(c => normalizeTimestamp(c.start_time) || Infinity));
+    const newestDbCandle = Math.max(...dbCandles.map(c => normalizeTimestamp(c.start_time) || 0));
+
+    // Check if DB covers the required range: startTime (lookback before signal) to now
+    if (oldestDbCandle <= startTime && newestDbCandle >= now - tfMs) {
+      // Check for gaps in the candle sequence
+      const sortedCandles = dbCandles
+        .map(c => normalizeTimestamp(c.start_time) || 0)
+        .sort((a, b) => a - b);
+
+      for (let i = 1; i < sortedCandles.length; i++) {
+        const gap = sortedCandles[i] - sortedCandles[i - 1];
+        if (gap > tfMs * 1.5) { // Allow 50% tolerance for market hours gaps
+          console.log(`[Auto-Close] Gap detected in ${symbol} ${timeframe}: ${gap / tfMs} candles missing`);
+          hasGaps = true;
+          break;
+        }
+      }
+
+      if (!hasGaps) {
+        console.log(`[Auto-Close] ✅ Using ${dbCandles.length} cached candles for ${symbol} ${timeframe} (covers ${new Date(oldestDbCandle).toISOString()} to ${new Date(newestDbCandle).toISOString()}, no gaps)`);
+        return dbCandles.map(c => ({
+          timestamp: normalizeTimestamp(c.start_time) || 0,
+          open: c.open_price,
+          high: c.high_price,
+          low: c.low_price,
+          close: c.close_price
+        }));
+      }
+    }
   }
 
-  // If we don't have candles >= startTime, we need to fetch from Bybit
-  // This can happen if the trade was created after the latest candle in the DB
-  if (dbCandles.length === 0) {
-    const startTimeStr = (startTime > 0 && startTime < 8640000000000000) ? new Date(startTime).toISOString() : startTime.toString();
-    console.log(`[Auto-Close] No candles found for ${symbol} ${timeframe} >= ${startTimeStr}, fetching from Bybit...`);
-  }
-
-  // Otherwise fetch from Bybit API as fallback
-  console.log(`[Auto-Close] Still missing candles for ${symbol} ${timeframe} (had ${dbCandles.length}, need ~${expectedCandles}), fetching from Bybit...`);
+  // If we don't have candles covering the required time range or have gaps, fetch from Bybit
+  console.log(`[Auto-Close] ${hasGaps ? 'Gaps detected' : 'Missing candles for required time range'} for ${symbol} ${timeframe}, fetching from Bybit...`);
 
   try {
     const apiSymbol = normSymbol;
     const interval = TIMEFRAME_MAP[timeframe] || '60';
-    const limit = Math.min(expectedCandles + 5, 200);
 
-    const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${apiSymbol}&interval=${interval}&limit=${limit}`;
+    // CRITICAL: Fetch candles ENDING at 'now' to get the most recent data
+    // Use 'end' parameter to fetch candles up to current time
+    // Bybit returns newest candles first, so we get the latest 1000 candles
+    const limit = 1000;
+    const endTime = now; // Bybit expects milliseconds
+
+    const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${apiSymbol}&interval=${interval}&limit=${limit}&end=${endTime}`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -498,6 +586,15 @@ async function getHistoricalCandles(
 
     console.log(`[Auto-Close] Bybit returned ${candles.length} candles for ${symbol} ${timeframe}`);
 
+    // CRITICAL: Check if we have enough candles
+    // We need: lookback period + all candles since entry
+    if (candles.length < totalNeeded) {
+      const errorMsg = `Insufficient candles from Bybit: got ${candles.length}, need ${totalNeeded} (${lookbackCandles} lookback + ${candlesSinceEntry} since entry)`;
+      console.error(`[Auto-Close] TRADE SKIPPED: ${errorMsg}`);
+      // Return empty array to signal error - trade will be skipped in main loop
+      return [];
+    }
+
     // Store complete candles to database
     const candlesToStore = candles.filter(c => {
       const candleAge = now - c.timestamp;
@@ -511,14 +608,13 @@ async function getHistoricalCandles(
     await storeCandles(symbol, timeframe, candlesToStore);
     console.log(`[Auto-Close] Stored ${candlesToStore.length} candles to database for ${symbol} ${timeframe}`);
 
-    // CRITICAL FIX: Filter candles to only include those >= startTime
-    // The Bybit API returns the latest N candles, not candles from a specific start time
-    // So we must filter to ensure we only return candles after the trade was created
-    const filteredCandles = candles.filter(c => c.timestamp >= startTime);
+    // CRITICAL: Return ALL candles including lookback period
+    // startTime was already extended backwards to include lookback, so all returned candles are needed
+    // The Bybit API returns the latest N candles, so we return them as-is
     const startTimeStr = (startTime > 0 && startTime < 8640000000000000) ? new Date(startTime).toISOString() : startTime.toString();
-    console.log(`[Auto-Close] Filtered ${candles.length} candles to ${filteredCandles.length} candles >= ${startTimeStr}`);
+    console.log(`[Auto-Close] Returning ${candles.length} candles (from ${startTimeStr} to now)`);
 
-    return filteredCandles;
+    return candles;
   } catch (e) {
     if (e instanceof Error && e.name === 'AbortError') {
       console.error(`[Auto-Close] Bybit API timeout for ${symbol}`);
@@ -642,6 +738,9 @@ function checkHistoricalSLTP(
   startFromIndex: number = 0
 ): ExitResult {
   const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : 0;
+  const direction = isLong ? 'LONG' : 'SHORT';
+
+  console.log(`[Exit-Check] SL/TP: Starting check from candle ${startFromIndex}/${candles.length}, ${direction} SL=${stopLoss.toFixed(2)} TP=${takeProfit.toFixed(2)}`);
 
   // Start checking from the candle AFTER fill
   for (let i = startFromIndex; i < candles.length; i++) {
@@ -658,13 +757,17 @@ function checkHistoricalSLTP(
         // Both hit in same candle - determine which first by checking open price
         // If open is closer to SL, assume SL hit first (conservative)
         if (Math.abs(candle.open - stopLoss) < Math.abs(candle.open - takeProfit)) {
+          console.log(`[Exit-Check] SL/TP: LONG SL HIT at candle ${i}, low=${candle.low.toFixed(2)} <= SL=${stopLoss.toFixed(2)}`);
           return { hit: true, reason: 'sl_hit', exitPrice: stopLoss, exitTimestamp: candle.timestamp, currentPrice };
         } else {
+          console.log(`[Exit-Check] SL/TP: LONG TP HIT at candle ${i}, high=${candle.high.toFixed(2)} >= TP=${takeProfit.toFixed(2)}`);
           return { hit: true, reason: 'tp_hit', exitPrice: takeProfit, exitTimestamp: candle.timestamp, currentPrice };
         }
       } else if (slHit) {
+        console.log(`[Exit-Check] SL/TP: LONG SL HIT at candle ${i}, low=${candle.low.toFixed(2)} <= SL=${stopLoss.toFixed(2)}`);
         return { hit: true, reason: 'sl_hit', exitPrice: stopLoss, exitTimestamp: candle.timestamp, currentPrice };
       } else if (tpHit) {
+        console.log(`[Exit-Check] SL/TP: LONG TP HIT at candle ${i}, high=${candle.high.toFixed(2)} >= TP=${takeProfit.toFixed(2)}`);
         return { hit: true, reason: 'tp_hit', exitPrice: takeProfit, exitTimestamp: candle.timestamp, currentPrice };
       }
     } else {
@@ -675,18 +778,23 @@ function checkHistoricalSLTP(
       if (slHit && tpHit) {
         // Both hit in same candle - determine which first
         if (Math.abs(candle.open - stopLoss) < Math.abs(candle.open - takeProfit)) {
+          console.log(`[Exit-Check] SL/TP: SHORT SL HIT at candle ${i}, high=${candle.high.toFixed(2)} >= SL=${stopLoss.toFixed(2)}`);
           return { hit: true, reason: 'sl_hit', exitPrice: stopLoss, exitTimestamp: candle.timestamp, currentPrice };
         } else {
+          console.log(`[Exit-Check] SL/TP: SHORT TP HIT at candle ${i}, low=${candle.low.toFixed(2)} <= TP=${takeProfit.toFixed(2)}`);
           return { hit: true, reason: 'tp_hit', exitPrice: takeProfit, exitTimestamp: candle.timestamp, currentPrice };
         }
       } else if (slHit) {
+        console.log(`[Exit-Check] SL/TP: SHORT SL HIT at candle ${i}, high=${candle.high.toFixed(2)} >= SL=${stopLoss.toFixed(2)}`);
         return { hit: true, reason: 'sl_hit', exitPrice: stopLoss, exitTimestamp: candle.timestamp, currentPrice };
       } else if (tpHit) {
+        console.log(`[Exit-Check] SL/TP: SHORT TP HIT at candle ${i}, low=${candle.low.toFixed(2)} <= TP=${takeProfit.toFixed(2)}`);
         return { hit: true, reason: 'tp_hit', exitPrice: takeProfit, exitTimestamp: candle.timestamp, currentPrice };
       }
     }
   }
 
+  console.log(`[Exit-Check] SL/TP: No exit signal found in ${candles.length - startFromIndex} candles`);
   return { hit: false, reason: null, exitPrice: null, exitTimestamp: null, currentPrice };
 }
 
@@ -701,7 +809,9 @@ async function checkStrategyExit(
   trade: TradeRow,
   candles: Candle[],
   startFromIndex: number = 0,
-  strategyName?: string | null
+  strategyName?: string | null,
+  pairCandles: Candle[] = [],
+  pairSymbol?: string | null
 ): Promise<StrategyExitCheckResult> {
   // If no strategy name, cannot use strategy-specific logic
   if (!strategyName) {
@@ -712,8 +822,13 @@ async function checkStrategyExit(
     const { spawn } = await import('child_process');
     const path = await import('path');
 
+    // Determine if spread-based strategy early
+    const isSpreadBased = trade.strategy_type === 'spread_based';
+
     // Prepare data for Python script
-    const candlesData = candles.slice(startFromIndex).map(c => ({
+    // CRITICAL: For spread-based strategies, pass ALL candles (lookback + walk-forward)
+    // For price-based strategies, can slice from startFromIndex
+    const candlesData = (isSpreadBased ? candles : candles.slice(startFromIndex)).map(c => ({
       timestamp: c.timestamp,
       open: c.open,
       high: c.high,
@@ -747,14 +862,36 @@ async function checkStrategyExit(
       take_profit: trade.take_profit,
       strategy_metadata: strategyMetadata,
       strategy_type: trade.strategy_type,  // CRITICAL: Pass strategy_type to Python script for exit logic
-      pair_symbol: strategyMetadata?.pair_symbol  // CRITICAL: Pass pair_symbol for spread-based trades to avoid API calls
+      pair_symbol: strategyMetadata?.pair_symbol,  // CRITICAL: Pass pair_symbol for spread-based trades to avoid API calls
+      fill_candle_index: startFromIndex  // CRITICAL: Pass fill candle index to Python script to skip lookback candles
     };
 
-    // Fetch pair candles if this is a spread-based trade
+    // Use pair candles passed from Step 7, or fetch if not provided
     let pairCandlesData: any[] = [];
     const metadata = strategyMetadata;
-    if (metadata && metadata.pair_symbol) {
+
+    if (isSpreadBased) {
+      console.log(`[Exit-Check] Spread-based trade detected: ${trade.symbol}`);
+    }
+
+    // If pair candles were already fetched in Step 7, use them
+    if (pairCandles && pairCandles.length > 0) {
+      console.log(`[Exit-Check] ✅ Using pair candles from Step 7: ${pairCandles.length} candles for ${pairSymbol}`);
+      pairCandlesData = pairCandles.map(c => ({
+        timestamp: c.timestamp,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close
+      }));
+      console.log(`[Exit-Check] Converted to pairCandlesData: ${pairCandlesData.length} candles`);
+    } else if (metadata && metadata.pair_symbol) {
+      console.log(`[Exit-Check] ⚠️ No pair candles from Step 7, will fetch from DB/API for ${metadata.pair_symbol}`);
       const pairSymbol = metadata.pair_symbol;
+      if (isSpreadBased) {
+        console.log(`[Exit-Check] Pair symbol: ${pairSymbol}`);
+      }
+
       try {
         // Get the timeframe from the first candle or default to '1h'
         const timeframe = candles.length > 0 ? '1h' : '1h';
@@ -781,7 +918,10 @@ async function checkStrategyExit(
           const isValidTimestamp = (ts: number) => ts > 0 && ts < 8640000000000000;
           const latestPairCandleStr = isValidTimestamp(latestPairCandleTs) ? new Date(latestPairCandleTs).toISOString() : 'no candles';
           const latestCompleteStr = isValidTimestamp(latestCompleteCandle) ? new Date(latestCompleteCandle).toISOString() : 'no complete candles yet';
-          console.log(`[Auto-Close] ${pairSymbol} ${timeframe}: latest candle in DB=${latestPairCandleStr}, latest complete=${latestCompleteStr}`);
+
+          if (isSpreadBased) {
+            console.log(`[Exit-Check] Pair DB status: latest=${latestPairCandleStr}, complete=${latestCompleteStr}`);
+          }
 
           // Check if pair candles are stale (latest DB candle is older than latest complete candle)
           const pairCandlesStale = latestPairCandleTs < latestCompleteCandle;
@@ -804,9 +944,9 @@ async function checkStrategyExit(
           // STEP 3: If no candles or stale, fetch from Bybit API
           if (pairCandlesData.length === 0 || pairCandlesStale) {
             if (pairCandlesData.length === 0) {
-              console.log(`[Auto-Close] No pair candles in database for ${pairSymbol}, fetching from Bybit API...`);
+              if (isSpreadBased) console.log(`[Exit-Check] No pair candles in DB, fetching from Bybit...`);
             } else {
-              console.log(`[Auto-Close] Pair candles are stale for ${pairSymbol} (latest=${latestPairCandleStr}), fetching from Bybit API...`);
+              if (isSpreadBased) console.log(`[Exit-Check] Pair candles stale, fetching from Bybit...`);
             }
             try {
               await fetchAndStoreCandles(pairSymbol, timeframe);
@@ -825,15 +965,15 @@ async function checkStrategyExit(
               `, [pairSymbol, timeframe, startTime, endTime]);
 
               pairCandlesData = pairCandlesFromApi || [];
-              if (pairCandlesData.length > 0) {
-                console.log(`[Auto-Close] Fetched ${pairCandlesData.length} pair candles for ${pairSymbol} from Bybit API`);
+              if (pairCandlesData.length > 0 && isSpreadBased) {
+                console.log(`[Exit-Check] Fetched ${pairCandlesData.length} pair candles from Bybit`);
               }
             } catch (apiError) {
               console.error(`[Auto-Close] Failed to fetch pair candles from Bybit API for ${pairSymbol}: ${apiError}`);
               // Continue without pair candles - strategy will fetch from API if needed
             }
           } else {
-            console.log(`[Auto-Close] Fetched ${pairCandlesData.length} pair candles for ${pairSymbol} from database (up-to-date)`);
+            if (isSpreadBased) console.log(`[Exit-Check] Using ${pairCandlesData.length} pair candles from DB (up-to-date)`);
           }
         }
       } catch (error) {
@@ -850,12 +990,14 @@ async function checkStrategyExit(
       let stderr = '';
       let resolved = false;
 
-      console.log(`[Auto-Close] Calling Python script for ${trade.symbol} (${strategyName})`);
-      console.log(`[Auto-Close] Candles: ${candlesData.length}, Pair candles: ${pairCandlesData.length}`);
-
-      // DEBUG: Log exact arguments being passed to Python
-      if (trade.symbol === 'OGUSDT') {
-        console.log(`[Auto-Close] DEBUG OGUSDT - Python args: [${pythonScript}, ${trade.id}, "${strategyName}", ...]`);
+      if (isSpreadBased) {
+        console.log(`[Exit-Check] Calling strategy exit check: ${trade.symbol} (${strategyName}), candles=${candlesData.length}, pair_candles=${pairCandlesData.length}, pair_symbol=${pairSymbol}`);
+        if (pairCandlesData.length === 0) {
+          console.warn(`[Exit-Check] ⚠️ WARNING: No pair candles being passed to Python script! pairSymbol=${pairSymbol}`);
+        }
+      } else {
+        console.log(`[Auto-Close] Calling Python script for ${trade.symbol} (${strategyName})`);
+        console.log(`[Auto-Close] Candles: ${candlesData.length}, Pair candles: ${pairCandlesData.length}`);
       }
 
       const pythonProcess = spawn('python3', [
@@ -898,10 +1040,14 @@ async function checkStrategyExit(
         resolved = true;
         clearTimeout(timeout);
 
+        // ALWAYS log Python stderr output (contains debug logs)
+        if (stderr) {
+          console.log(`[Exit-Check] Python script output:\n${stderr}`);
+        }
+
         if (code !== 0) {
           const errorMsg = `Strategy exit check failed with exit code ${code}`;
           console.error(`[Auto-Close] CRITICAL: ${errorMsg} for ${trade.symbol} (${strategyName})`);
-          console.error(`[Auto-Close] stderr: ${stderr}`);
           console.error(`[Auto-Close] stdout: ${stdout}`);
           resolve({ success: false, error: errorMsg });
           return;
@@ -924,10 +1070,20 @@ async function checkStrategyExit(
               exitResult.pair_exit_price = result.pair_exit_price;
             }
 
+            if (isSpreadBased) {
+              const pairPriceStr = exitResult.pair_exit_price ? `, pair_exit=${exitResult.pair_exit_price.toFixed(2)}` : '';
+              const exitPriceStr = exitResult.exitPrice ? exitResult.exitPrice.toFixed(2) : 'N/A';
+              console.log(`[Exit-Check] EXIT SIGNAL: reason=${result.exit_reason}, exit_price=${exitPriceStr}${pairPriceStr}`);
+            }
+
             resolve({ success: true, exit: exitResult });
           } else {
             // Strategy check succeeded, but no exit signal - this is normal
-            console.log(`[Auto-Close] ${trade.symbol} - Strategy exit check completed: no exit signal (should_exit=${result.should_exit})`);
+            if (isSpreadBased) {
+              console.log(`[Exit-Check] No exit signal (should_exit=${result.should_exit})`);
+            } else {
+              console.log(`[Auto-Close] ${trade.symbol} - Strategy exit check completed: no exit signal (should_exit=${result.should_exit})`);
+            }
             resolve({ success: true, exit: null });
           }
         } catch (error) {
@@ -962,16 +1118,21 @@ async function checkStrategyExit(
 export async function POST() {
   const checkStartTime = Date.now();
   // TASK 10: Log when auto-close route starts
-  console.log(`[Auto-Close] Starting auto-close check at ${new Date().toISOString()}`);
+  console.log(`\n${'='.repeat(80)}`);
+  console.log(`[Auto-Close] ========== AUTO-CLOSE CHECK STARTED ==========`);
+  console.log(`[Auto-Close] Time: ${new Date().toISOString()}`);
+  console.log(`${'='.repeat(80)}\n`);
 
   try {
     if (!await isTradingDbAvailable()) {
+      console.error(`[Auto-Close] CRITICAL: Trading database not available`);
       return NextResponse.json(
         { error: 'Trading database not available' },
         { status: 503 }
       );
     }
 
+    console.log(`[Auto-Close] Step 1: Fetching all open trades from database...`);
     // Get all open paper trades with instance information
     const openTrades = await dbQuery<TradeRow & { instance_name: string; strategy_name?: string }>(`
       SELECT
@@ -991,7 +1152,14 @@ export async function POST() {
       ORDER BY t.created_at DESC
     `);
 
-    console.log(`[Auto-Close] Found ${openTrades.length} trades to check`);
+    console.log(`[Auto-Close] Step 1 COMPLETE: Found ${openTrades.length} open trades to check`);
+    if (openTrades.length === 0) {
+      console.log(`[Auto-Close] No trades to process. Exiting.`);
+    } else {
+      openTrades.forEach((t, idx) => {
+        console.log(`  [${idx + 1}] ${t.symbol} (${t.status}) - entry=${t.entry_price}, SL=${t.stop_loss}, TP=${t.take_profit}`);
+      });
+    }
 
     const results: Array<{
       trade_id: string;
@@ -1017,40 +1185,60 @@ export async function POST() {
     let cancelledCount = 0;
 
     for (const trade of openTrades) {
+      console.log(`\n${'─'.repeat(80)}`);
+      console.log(`[Auto-Close] PROCESSING TRADE: ${trade.symbol} (ID: ${trade.id})`);
+      console.log(`[Auto-Close] Status: ${trade.status} | Side: ${trade.side} | Strategy Type: ${trade.strategy_type}`);
+      console.log(`${'─'.repeat(80)}`);
+
       const timeframe = trade.timeframe || '1h';
       // Use trade.strategy_name directly (stored in database), fall back to instance settings for backwards compatibility
       const strategyName = trade.strategy_name || getStrategyNameFromSettings((trade as any).instance_settings);
 
-      // DEBUG: Log the exact source of strategy name
-      if (trade.symbol === 'OGUSDT') {
-        console.log(`[Auto-Close] DEBUG OGUSDT - trade.strategy_name="${trade.strategy_name}"`);
-        console.log(`[Auto-Close] DEBUG OGUSDT - instance_settings=${JSON.stringify((trade as any).instance_settings)}`);
-        console.log(`[Auto-Close] DEBUG OGUSDT - final strategyName="${strategyName}"`);
-      }
+      console.log(`[Auto-Close] Strategy: ${strategyName || 'UNKNOWN'} | Timeframe: ${timeframe}`);
+      console.log(`[Auto-Close] Entry: ${trade.entry_price} | SL: ${trade.stop_loss} | TP: ${trade.take_profit}`);
 
       try {
         const isLong = trade.side === 'Buy';
-        const entryPrice = trade.entry_price || 0;
-        const stopLoss = trade.stop_loss || 0;
-        const takeProfit = trade.take_profit || 0;
 
+        // CRITICAL: These are required trading values - NO FALLBACKS ALLOWED
+        if (!trade.entry_price) {
+          console.error(`[Auto-Close] TRADE SKIPPED: Missing entry_price for trade ${trade.id}`);
+          continue;
+        }
+        if (!trade.stop_loss) {
+          console.error(`[Auto-Close] TRADE SKIPPED: Missing stop_loss for trade ${trade.id}`);
+          continue;
+        }
+        if (!trade.take_profit) {
+          console.error(`[Auto-Close] TRADE SKIPPED: Missing take_profit for trade ${trade.id}`);
+          continue;
+        }
+
+        const entryPrice = trade.entry_price;
+        const stopLoss = trade.stop_loss;
+        const takeProfit = trade.take_profit;
+
+        console.log(`[Auto-Close] Step 2: Getting max_open_bars config for ${timeframe}/${trade.status}/${trade.strategy_type}...`);
         // Get max open bars for this trade's timeframe, status, and strategy type (0 = disabled)
         const maxOpenBars = await getMaxOpenBarsForTimeframe(
           timeframe,
           trade.status as 'pending_fill' | 'paper_trade' | 'filled',
           trade.strategy_type
         );
+        console.log(`[Auto-Close] Step 2 COMPLETE: max_open_bars=${maxOpenBars}`);
 
+        console.log(`[Auto-Close] Step 3: Parsing trade timestamps...`);
         // Parse trade creation time - validate it's a valid date
         const createdAt = normalizeTimestamp(trade.created_at);
         if (createdAt === null) {
-          console.error(`[Auto-Close] Invalid created_at date for trade ${trade.id}: ${trade.created_at}`);
+          console.error(`[Auto-Close] SKIP: Invalid created_at date for trade ${trade.id}: ${trade.created_at}`);
           continue; // Skip this trade
         }
+        console.log(`[Auto-Close] Step 3 COMPLETE: created_at=${new Date(createdAt).toISOString()}`);
 
+        console.log(`[Auto-Close] Step 4: Determining signal time (from recommendation or created_at)...`);
         // CRITICAL: Use recommendation's analyzed_at (signal time) as the starting point
-        // This ensures we check cand
-        // les from when the signal was generated, not when trade was created
+        // This ensures we check candles from when the signal was generated, not when trade was created
         // This is especially important for reset trades where created_at != signal time
         let signalTime = createdAt;
 
@@ -1064,25 +1252,61 @@ export async function POST() {
               const recAnalyzedAt = normalizeTimestamp(rec[0].analyzed_at);
               if (recAnalyzedAt !== null) {
                 signalTime = recAnalyzedAt;
-                console.log(`[Auto-Close] Using recommendation signal time: ${new Date(signalTime).toISOString()}`);
+                console.log(`[Auto-Close] Step 4 COMPLETE: Using recommendation signal time: ${new Date(signalTime).toISOString()}`);
               }
             }
           } catch (error) {
-            console.warn(`[Auto-Close] Failed to fetch recommendation time for trade ${trade.id}: ${error}`);
-            // Fall back to created_at
+            console.warn(`[Auto-Close] Step 4 WARNING: Failed to fetch recommendation time for trade ${trade.id}: ${error}`);
+            console.log(`[Auto-Close] Step 4 COMPLETE: Falling back to created_at: ${new Date(signalTime).toISOString()}`);
           }
+        } else {
+          console.log(`[Auto-Close] Step 4 COMPLETE: No recommendation_id, using created_at: ${new Date(signalTime).toISOString()}`);
         }
 
-      // Fetch all candles from signal time (not creation time) to now
-      const candles = await getHistoricalCandles(trade.symbol, timeframe, signalTime);
-
-      console.log(`[Auto-Close] Trade ${trade.id} (${trade.symbol}): entry=${entryPrice}, SL=${stopLoss}, TP=${takeProfit}, timeframe=${timeframe}, created=${new Date(createdAt).toISOString()}, candles_fetched=${candles.length}`);
+        console.log(`[Auto-Close] Step 5: Fetching historical candles from ${new Date(signalTime).toISOString()} to now...`);
+        // Fetch all candles from signal time (not creation time) to now
+        const candles = await getHistoricalCandles(trade.symbol, timeframe, signalTime, trade.strategy_type || undefined);
+        console.log(`[Auto-Close] Step 5 COMPLETE: Fetched ${candles.length} candles`);
 
       if (candles.length === 0) {
         // Fallback: get current price from ticker API
+        console.log(`[Auto-Close] Step 5 RESULT: No candles available, fetching current price from ticker...`);
         const currentPrice = await getCurrentPrice(trade.symbol);
-        console.log(`[Auto-Close] No candles for ${trade.symbol}, using ticker price: ${currentPrice}`);
+        console.log(`[Auto-Close] Current price: ${currentPrice}`);
 
+        results.push({
+          trade_id: trade.id,
+          symbol: trade.symbol,
+          action: 'checked',
+          current_price: currentPrice,
+          instance_name: trade.instance_name,
+          strategy_name: strategyName || undefined,
+          timeframe: timeframe,
+          candles_checked: 0,
+          checked_at: new Date().toISOString()
+        });
+        console.log(`[Auto-Close] TRADE SKIPPED: No candles available\n`);
+        continue;
+      }
+
+      console.log(`[Auto-Close] Step 6: Validating candle data structure...`);
+      // CRITICAL: Validate that we have candles BEFORE signal time (for lookback) AND after (for walk-forward)
+      const candlesBeforeSignal = candles.filter(c => {
+        const candleTs = normalizeTimestamp(c.timestamp);
+        return candleTs !== null && candleTs < signalTime;
+      });
+      const candlesAfterSignal = candles.filter(c => {
+        const candleTs = normalizeTimestamp(c.timestamp);
+        return candleTs !== null && candleTs >= signalTime;
+      });
+
+      const lookbackRequired = getMinimumCandlesRequired(trade.strategy_type || undefined);
+      console.log(`[Auto-Close] Step 6 COMPLETE: ${candlesBeforeSignal.length} lookback candles (need ${lookbackRequired}), ${candlesAfterSignal.length} walk-forward candles`);
+
+      // STRICT VALIDATION: Must have enough lookback candles
+      if (candlesBeforeSignal.length < lookbackRequired) {
+        console.error(`[Auto-Close] TRADE SKIPPED: Insufficient lookback candles: have ${candlesBeforeSignal.length}, need ${lookbackRequired}`);
+        const currentPrice = await getCurrentPrice(trade.symbol);
         results.push({
           trade_id: trade.id,
           symbol: trade.symbol,
@@ -1097,28 +1321,8 @@ export async function POST() {
         continue;
       }
 
-      // CRITICAL FIX: Filter candles to only include those at or after signal time
-      // A trade cannot be filled before the signal was generated!
-      const candlesAfterCreation = candles.filter(c => {
-        const candleTs = normalizeTimestamp(c.timestamp);
-        return candleTs !== null && candleTs >= signalTime;
-      });
-
-      if (candlesAfterCreation.length === 0) {
-        console.log(`[Auto-Close] No candles after signal time (${new Date(signalTime).toISOString()}), skipping`);
-        results.push({
-          trade_id: trade.id,
-          symbol: trade.symbol,
-          action: 'checked',
-          current_price: 0,
-          instance_name: trade.instance_name,
-          strategy_name: strategyName || undefined,
-          timeframe: timeframe,
-          candles_checked: 0,
-          checked_at: new Date().toISOString()
-        });
-        continue;
-      }
+      // Use all candles (lookback + walk-forward) for processing
+      const candlesAfterCreation = candles;
 
       // Log candle time range for debugging
       let firstCandleTime = 'unknown';
@@ -1138,14 +1342,21 @@ export async function POST() {
       const signalTime_str = new Date(signalTime).toISOString();
       console.log(`[Auto-Close] Candle range: ${firstCandleTime} to ${lastCandleTime} (signal time: ${signalTime_str})`);
 
+      console.log(`[Auto-Close] Step 7: Checking fill status...`);
       // STEP 1: Check if trade is already filled or find fill candle
       let fillCandleIndex = 0;
       let fillTime: string | null = null; // Track fill time for sanity checks
       const alreadyFilled = trade.status === 'filled' && trade.filled_at;
 
+      console.log(`[Auto-Close] Step 7 DETAIL: alreadyFilled=${alreadyFilled}, trade.status=${trade.status}`);
+
       // Fetch strategy metadata for spread-based fill detection
       let strategyMetadata: any = {};
+      let pairSymbolForExit: string | null = null;
+      let pairCandlesForExit: Candle[] = [];
+
       if (trade.recommendation_id) {
+        console.log(`[Auto-Close] Step 7 DETAIL: Fetching strategy metadata...`);
         try {
           const rec = await dbQuery<any>(`
             SELECT strategy_metadata FROM recommendations WHERE id = ?
@@ -1155,15 +1366,18 @@ export async function POST() {
             strategyMetadata = typeof rec[0].strategy_metadata === 'string'
               ? JSON.parse(rec[0].strategy_metadata)
               : rec[0].strategy_metadata;
+            console.log(`[Auto-Close] Step 7 DETAIL: Strategy metadata fetched, pair_symbol=${strategyMetadata.pair_symbol}`);
           }
         } catch (error) {
-          console.warn(`[Auto-Close] Failed to fetch strategy metadata for fill detection: ${error}`);
+          console.warn(`[Auto-Close] Step 7 WARNING: Failed to fetch strategy metadata: ${error}`);
         }
       }
 
       if (alreadyFilled) {
+        console.log(`[Auto-Close] Step 7 RESULT: Trade already filled at ${new Date(trade.filled_at as any).toISOString()}`);
         // Trade already filled - find the fill candle index to start SL/TP check from
         const filledAtMs = normalizeTimestamp(trade.filled_at);
+        console.log(`[Auto-Close] Step 7 DETAIL: Finding fill candle index...`);
         if (filledAtMs !== null) {
           fillCandleIndex = candlesAfterCreation.findIndex(c => {
             const candleTs = normalizeTimestamp(c.timestamp);
@@ -1173,7 +1387,7 @@ export async function POST() {
           // CRITICAL: If no candles exist after fill time, we cannot check for exits
           // Skip this trade - it cannot have exited if there are no candles after it filled
           if (fillCandleIndex === -1) {
-            console.log(`[Auto-Close] ${trade.symbol} SKIPPED - no candles after fill time (${new Date(filledAtMs).toISOString()})`);
+            console.log(`[Auto-Close] TRADE SKIPPED: No candles after fill time (${new Date(filledAtMs).toISOString()})\n`);
             results.push({
               trade_id: trade.id,
               symbol: trade.symbol,
@@ -1188,60 +1402,108 @@ export async function POST() {
             });
             continue;
           }
+          console.log(`[Auto-Close] Step 7 DETAIL: Fill candle index = ${fillCandleIndex}`);
+        }
+
+        // For spread-based strategies, also fetch pair candles for exit checking
+        if (strategyMetadata && strategyMetadata.pair_symbol) {
+          const pairSymbol = strategyMetadata.pair_symbol;
+          pairSymbolForExit = pairSymbol;
+          console.log(`[Auto-Close] Step 7 DETAIL: Spread-based strategy (already filled) - fetching pair candles for ${pairSymbol}...`);
+          try {
+            pairCandlesForExit = await getHistoricalCandles(
+              pairSymbol,
+              timeframe,
+              signalTime,
+              trade.strategy_type || undefined
+            );
+            console.log(`[Auto-Close] Step 7 DETAIL: Fetched ${pairCandlesForExit.length} pair candles for ${pairSymbol} (includes lookback + walk-forward)`);
+          } catch (error) {
+            console.warn(`[Auto-Close] Step 7 WARNING: Failed to fetch pair candles for ${pairSymbol}: ${error}`);
+          }
         }
       } else {
+        console.log(`[Auto-Close] Step 7 DETAIL: Trade not yet filled, will search for fill candle...`);
+        console.log(`[Auto-Close] Step 7 RESULT: Trade not yet filled, searching for fill candle...`);
         // Find fill candle - use spread-based logic if this is a spread-based strategy
         let fillResult: FillResult;
 
         if (strategyMetadata && strategyMetadata.pair_symbol) {
           // TASK 8: Spread-based strategy - SIGNAL-BASED FILL
           // For signal-based trades, fill immediately at signal time without waiting for pair candles
-          console.log(`[Auto-Close] ${trade.symbol} - Spread-based strategy detected (signal-based fill)`);
+          console.log(`[Auto-Close] Step 7 DETAIL: Spread-based strategy detected (signal-based fill)`);
 
           // TASK 8: Fetch FULL pair candles for exit signal detection
           const pairSymbol = strategyMetadata.pair_symbol;
-          const pairEntryPrice = strategyMetadata.price_y_at_entry || 0;
 
-          let pairCandles: Candle[] = [];
+          // CRITICAL: Pair entry price is REQUIRED for spread-based trades - NO FALLBACK
+          if (strategyMetadata.price_y_at_entry === undefined || strategyMetadata.price_y_at_entry === null) {
+            console.error(`[Auto-Close] TRADE SKIPPED: Missing price_y_at_entry in strategy_metadata for spread-based trade ${trade.id}`);
+            continue;
+          }
+
+          const pairEntryPrice = strategyMetadata.price_y_at_entry;
+          pairSymbolForExit = pairSymbol; // Store for Step 8
+
+          console.log(`[Auto-Close] Step 7 DETAIL: Fetching pair candles for ${pairSymbol}...`);
+          const pairFetchStart = Date.now();
           try {
-            pairCandles = await getHistoricalCandles(
+            console.log(`[Auto-Close] Step 7 DETAIL: Calling getHistoricalCandles for ${pairSymbol}...`);
+            pairCandlesForExit = await getHistoricalCandles(
               pairSymbol,
               timeframe,
-              signalTime
+              signalTime,
+              trade.strategy_type || undefined
             );
+            const pairFetchDuration = Date.now() - pairFetchStart;
+            console.log(`[Auto-Close] Step 7 DETAIL: getHistoricalCandles returned ${pairCandlesForExit.length} candles in ${pairFetchDuration}ms (includes lookback + walk-forward)`);
 
-            if (!pairCandles || pairCandles.length === 0) {
+            if (!pairCandlesForExit || pairCandlesForExit.length === 0) {
               console.error(
-                `[Auto-Close] CRITICAL: Failed to fetch pair candles for ${pairSymbol}. ` +
+                `[Auto-Close] Step 7 WARNING: Failed to fetch pair candles for ${pairSymbol}. ` +
                 `Cannot check exit signals for spread-based trade ${trade.symbol}`
               );
             } else {
+              const minRequired = getMinimumCandlesRequired(trade.strategy_type || undefined);
+              const signalTimeStr = new Date(signalTime).toISOString();
+              const nowStr = new Date().toISOString();
               console.log(
-                `[Auto-Close] Fetched ${pairCandles.length} pair candles for ${pairSymbol} ` +
-                `(${candlesAfterCreation.length} main candles)`
+                `[Auto-Close] Step 7 COMPLETE: Fetched ${pairCandlesForExit.length} pair candles for ${pairSymbol} ` +
+                `(${candles.length} main candles). ` +
+                `Min required: ${minRequired}, Time range: ${signalTimeStr} to ${nowStr}`
               );
             }
           } catch (e) {
+            const pairFetchDuration = Date.now() - pairFetchStart;
             console.error(
-              `[Auto-Close] CRITICAL: Error fetching pair candles for ${pairSymbol}: ${e}. ` +
+              `[Auto-Close] Step 7 ERROR: Failed to fetch pair candles for ${pairSymbol} after ${pairFetchDuration}ms: ${e}. ` +
               `Cannot check exit signals for spread-based trade ${trade.symbol}`
             );
           }
 
           // Signal-based fill: Trade fills at the first candle after signal generation
+          console.log(`[Auto-Close] Step 7 DETAIL: Checking spread-based fill...`);
           fillResult = findSpreadBasedFillCandle(
             candlesAfterCreation,
-            pairCandles.length > 0 ? pairCandles : [],  // Pass full pair candles array
+            pairCandlesForExit.length > 0 ? pairCandlesForExit : [],  // Pass full pair candles array
             entryPrice,
             pairEntryPrice
           );
 
           if (fillResult.filled) {
-            console.log(`[Auto-Close] ${trade.symbol} - SPREAD-BASED FILL: Trade filled at signal time (signal-based approach)`);
+            console.log(`[Auto-Close] Step 7 RESULT: SPREAD-BASED FILL - Trade filled at signal time`);
+          } else {
+            console.log(`[Auto-Close] Step 7 RESULT: SPREAD-BASED NOT FILLED - No fill signal detected`);
           }
         } else {
           // Price-based strategy - use simple entry price check
+          console.log(`[Auto-Close] Step 7 DETAIL: Checking price-based fill...`);
           fillResult = findFillCandle(candlesAfterCreation, entryPrice);
+          if (fillResult.filled) {
+            console.log(`[Auto-Close] Step 7 RESULT: PRICE-BASED FILL - Trade filled`);
+          } else {
+            console.log(`[Auto-Close] Step 7 RESULT: PRICE-BASED NOT FILLED - Entry price not reached`);
+          }
         }
 
         if (!fillResult.filled) {
@@ -1385,6 +1647,7 @@ export async function POST() {
         console.log(`[Auto-Close] ${trade.symbol} FILLED at ${fillResult.fillPrice} on ${fillTime}`);
       }
 
+      console.log(`[Auto-Close] ✅ REACHED STEP 8: Checking exit conditions...`);
       // STEP 2: Check for SL/TP hit starting from candle AFTER fill
       // IMPORTANT: Only proceed if trade is actually filled
       // A trade can only be closed if it was filled first
@@ -1393,7 +1656,7 @@ export async function POST() {
       if (!isFilled) {
         // Trade was never filled - cannot close it
         // This should not happen as unfilled trades are handled above, but safety check
-        console.log(`[Auto-Close] ${trade.symbol} SKIPPED - trade not filled, cannot close`);
+        console.log(`[Auto-Close] TRADE SKIPPED: Trade not filled, cannot check exit\n`);
         results.push({
           trade_id: trade.id,
           symbol: trade.symbol,
@@ -1412,7 +1675,7 @@ export async function POST() {
       // STEP 2A: Validate that trade has associated strategy
       // Use strategyName extracted from instance_settings (line 959), not trade.strategy_name
       if (!strategyName) {
-        console.error(`[Auto-Close] ${trade.symbol} ERROR - Trade has no associated strategy_name. Cannot determine exit logic.`);
+        console.error(`[Auto-Close] TRADE SKIPPED: No strategy_name found. Cannot determine exit logic.\n`);
         results.push({
           trade_id: trade.id,
           symbol: trade.symbol,
@@ -1430,6 +1693,7 @@ export async function POST() {
 
       // Calculate bars since fill (for max_open_bars check)
       const barsOpen = candlesAfterCreation.length - fillCandleIndex;
+      console.log(`[Auto-Close] Step 8 DETAIL: Bars open since fill = ${barsOpen}`);
 
       // STEP 2B: Determine exit logic based on strategy type
       let exitResult: ExitResult | null = null;
@@ -1437,17 +1701,22 @@ export async function POST() {
 
       if (strategyType === 'price_based') {
         // Price-based strategies use TP/SL logic
-        console.log(`[Auto-Close] ${trade.symbol} - Price-based strategy (${strategyName}), checking SL/TP`);
+        console.log(`[Auto-Close] Step 8 DETAIL: Price-based strategy - checking SL/TP`);
         exitResult = checkHistoricalSLTP(candlesAfterCreation, isLong, stopLoss, takeProfit, fillCandleIndex);
       } else if (strategyType === 'spread_based') {
         // Spread-based strategies use strategy.should_exit() ONLY
-        console.log(`[Auto-Close] ${trade.symbol} - Spread-based strategy (${strategyName}), checking strategy exit`);
-        const strategyCheckResult = await checkStrategyExit(trade, candlesAfterCreation, fillCandleIndex, strategyName);
+        console.log(`[Auto-Close] Step 8 DETAIL: Spread-based strategy - calling Python exit check`);
+        console.log(`[Auto-Close] Step 8 DETAIL: About to call checkStrategyExit for ${trade.symbol} with pair_symbol=${pairSymbolForExit}...`);
+        const checkStartTime = Date.now();
+        const strategyCheckResult = await checkStrategyExit(trade, candlesAfterCreation, fillCandleIndex, strategyName, pairCandlesForExit, pairSymbolForExit || undefined);
+        const checkDuration = Date.now() - checkStartTime;
+        console.log(`[Auto-Close] Step 8 DETAIL: checkStrategyExit returned after ${checkDuration}ms`);
 
         // Handle strategy check result
         if (!strategyCheckResult.success) {
           // Strategy check failed - log error and skip trade
-          console.error(`[Auto-Close] CRITICAL: ${strategyCheckResult.error} for ${trade.symbol}`);
+          console.error(`[Auto-Close] Step 8 RESULT: FAILED - ${strategyCheckResult.error}`);
+          console.log(`[Auto-Close] TRADE SKIPPED: Strategy exit check failed\n`);
           results.push({
             trade_id: trade.id,
             symbol: trade.symbol,
@@ -1468,7 +1737,8 @@ export async function POST() {
 
         if (!exitResult || !exitResult.hit) {
           // No exit signal - trade remains open (this is normal)
-          console.log(`[Auto-Close] ${trade.symbol} - No exit signal from strategy. Trade remains open.`);
+          console.log(`[Auto-Close] Step 8 RESULT: No exit signal - trade remains open`);
+          console.log(`[Auto-Close] TRADE CHECKED: No action taken\n`);
           results.push({
             trade_id: trade.id,
             symbol: trade.symbol,
@@ -1486,7 +1756,7 @@ export async function POST() {
       } else {
         // Unknown strategy type - log error and skip
         // This is a safety net for future strategy types that haven't been implemented yet
-        console.error(`[Auto-Close] ${trade.symbol} - CRITICAL: Unknown strategy type '${strategyType}'. Cannot determine exit logic. Skipping trade to prevent incorrect closure.`);
+        console.error(`[Auto-Close] Step 8 RESULT: FAILED - Unknown strategy type '${strategyType}'`);
         await logSimulatorError(
           trade.id,
           'UNKNOWN_STRATEGY_TYPE',
@@ -1513,17 +1783,17 @@ export async function POST() {
       }
 
       if (exitResult && exitResult.hit) {
-        console.log(`[Auto-Close] ${trade.symbol} - Exit triggered: ${exitResult.reason}`);
+        console.log(`[Auto-Close] Step 8 RESULT: EXIT SIGNAL DETECTED - reason=${exitResult.reason}`);
 
         // PRIORITY 4: SANITY CHECK - Detect suspicious spread-based trade exits
         // Warn if spread-based trade exits on fill candle (fillCandleIndex === 0)
         if (trade.strategy_type === 'spread_based' && fillCandleIndex === 0) {
-          console.warn(`[Auto-Close] SUSPICIOUS: Spread-based trade ${trade.symbol} exiting on fill candle. Reason: ${exitResult.reason}`);
+          console.warn(`[Auto-Close] SANITY CHECK WARNING: Spread-based trade exiting on fill candle. Reason: ${exitResult.reason}`);
 
           // If exit reason is tp_hit or sl_hit, this is a CRITICAL BUG
           // Spread-based trades should ONLY exit via z_score_exit or max_spread_deviation_exceeded
           if (exitResult.reason === 'tp_hit' || exitResult.reason === 'sl_hit') {
-            console.error(`[Auto-Close] CRITICAL BUG: Spread-based trade ${trade.symbol} should NOT exit via price-level SL/TP!`);
+            console.error(`[Auto-Close] CRITICAL BUG: Spread-based trade should NOT exit via price-level SL/TP!`);
             console.error(`[Auto-Close] This indicates the Python script is still checking price-level SL/TP for spread-based trades.`);
 
             // Log to database for investigation
@@ -1542,15 +1812,28 @@ export async function POST() {
         }
       }
 
-      if (exitResult.hit && exitResult.exitPrice && exitResult.reason) {
+      if (exitResult && exitResult.hit && exitResult.exitPrice && exitResult.reason) {
+        console.log(`[Auto-Close] Step 9: Processing trade closure...`);
         // Calculate P&L - handle both price-based and spread-based trades
         let pnl: number;
         let pnlPercent: number;
 
         if (trade.strategy_type === 'spread_based' && trade.pair_quantity && trade.pair_fill_price && exitResult.pair_exit_price) {
           // Spread-based trade: calculate P&L for both symbols
-          const mainFillPrice = trade.fill_price || entryPrice;
-          const mainQty = trade.quantity || 1;
+          console.log(`[Auto-Close] Step 9 DETAIL: Calculating P&L for spread-based trade...`);
+
+          // CRITICAL: All values required for spread-based P&L - NO FALLBACKS
+          if (!trade.fill_price) {
+            console.error(`[Auto-Close] TRADE SKIPPED: Missing fill_price for spread-based trade ${trade.id}`);
+            continue;
+          }
+          if (!trade.quantity) {
+            console.error(`[Auto-Close] TRADE SKIPPED: Missing quantity for spread-based trade ${trade.id}`);
+            continue;
+          }
+
+          const mainFillPrice = trade.fill_price;
+          const mainQty = trade.quantity;
           const pairFillPrice = trade.pair_fill_price;
           const pairQty = trade.pair_quantity;
 
@@ -1569,16 +1852,33 @@ export async function POST() {
           // P&L percent based on total notional value
           const totalNotional = (mainFillPrice * mainQty) + (pairFillPrice * pairQty);
           pnlPercent = totalNotional > 0 ? (pnl / totalNotional) * 100 : 0;
+
+          console.log(`[Auto-Close] Step 9 DETAIL: Main P&L=${mainPnl.toFixed(2)}, Pair P&L=${pairPnl.toFixed(2)}, Total P&L=${pnl.toFixed(2)} (${pnlPercent.toFixed(2)}%)`);
         } else {
           // Price-based trade: calculate P&L for main symbol only
-          const fillPrice = trade.fill_price || entryPrice;
-          const qty = trade.quantity || 1;
+          console.log(`[Auto-Close] Step 9 DETAIL: Calculating P&L for price-based trade...`);
+
+          // CRITICAL: All values required for price-based P&L - NO FALLBACKS
+          if (!trade.fill_price) {
+            console.error(`[Auto-Close] TRADE SKIPPED: Missing fill_price for price-based trade ${trade.id}`);
+            continue;
+          }
+          if (!trade.quantity) {
+            console.error(`[Auto-Close] TRADE SKIPPED: Missing quantity for price-based trade ${trade.id}`);
+            continue;
+          }
+
+          const fillPrice = trade.fill_price;
+          const qty = trade.quantity;
           pnl = isLong
             ? (exitResult.exitPrice - fillPrice) * qty
             : (fillPrice - exitResult.exitPrice) * qty;
           pnlPercent = fillPrice > 0 ? (pnl / (fillPrice * qty)) * 100 : 0;
+
+          console.log(`[Auto-Close] Step 9 DETAIL: P&L=${pnl.toFixed(2)} (${pnlPercent.toFixed(2)}%)`);
         }
 
+        console.log(`[Auto-Close] Step 9 DETAIL: Converting exit timestamp...`);
         // Get exit timestamp as ISO string
         // exitTimestamp is a number (Unix ms), convert to Date
         let exitTime: string;
@@ -1588,13 +1888,14 @@ export async function POST() {
             : exitResult.exitTimestamp;
 
           if (!exitTimeMs || isNaN(exitTimeMs)) {
-            console.error(`[Auto-Close] Invalid exitTimestamp for trade ${trade.id}: ${exitResult.exitTimestamp}`);
+            console.error(`[Auto-Close] Step 9 FAILED: Invalid exitTimestamp for trade ${trade.id}: ${exitResult.exitTimestamp}`);
             continue; // Skip this trade
           }
           exitTime = new Date(exitTimeMs).toISOString();
         } else {
           exitTime = new Date().toISOString();
         }
+        console.log(`[Auto-Close] Step 9 DETAIL: Exit time=${exitTime}`);
 
         // SANITY CHECK: Validate complete timestamp chain (created_at <= filled_at <= closed_at)
         // Use fillTime if we just filled in this iteration, otherwise use trade.filled_at
@@ -1671,6 +1972,7 @@ export async function POST() {
           continue;
         }
 
+        console.log(`[Auto-Close] Step 10: Updating database with trade closure...`);
         // Update trade in database with actual exit time
         let exitUpdateQuery = `
           UPDATE trades SET
@@ -1699,7 +2001,9 @@ export async function POST() {
         exitUpdateParams.push(trade.id);
 
         await dbExecute(exitUpdateQuery, exitUpdateParams);
+        console.log(`[Auto-Close] Step 10 DETAIL: Trade record updated`);
 
+        console.log(`[Auto-Close] Step 10 DETAIL: Updating run aggregates...`);
         // CRITICAL: Update run aggregates when trade closes
         const isWin = pnl > 0;
         const isLoss = pnl < 0;
@@ -1717,8 +2021,11 @@ export async function POST() {
           isLoss ? 1 : 0,
           trade.id
         ]);
+        console.log(`[Auto-Close] Step 10 COMPLETE: Run aggregates updated`);
 
         closedCount++;
+        console.log(`[Auto-Close] TRADE CLOSED: ${trade.symbol} | Exit: ${exitResult.reason} @ ${exitResult.exitPrice.toFixed(2)} | P&L: ${pnl.toFixed(2)} (${pnlPercent.toFixed(2)}%)\n`);
+
         results.push({
           trade_id: trade.id,
           symbol: trade.symbol,
@@ -1874,13 +2181,20 @@ export async function POST() {
     }
 
     const checkDuration = Date.now() - checkStartTime;
+    const stillOpen = openTrades.length - filledCount - closedCount - cancelledCount;
+
     // TASK 10: Log completion statistics
-    console.log(
-      `[Auto-Close] Completed auto-close check: ` +
-      `${filledCount} filled, ${closedCount} closed, ${cancelledCount} cancelled, ` +
-      `${openTrades.length - filledCount - closedCount - cancelledCount} still open ` +
-      `(took ${checkDuration}ms)`
-    );
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`[Auto-Close] ========== AUTO-CLOSE CHECK COMPLETED ==========`);
+    console.log(`[Auto-Close] Summary:`);
+    console.log(`[Auto-Close]   Total trades checked: ${openTrades.length}`);
+    console.log(`[Auto-Close]   Filled: ${filledCount}`);
+    console.log(`[Auto-Close]   Closed: ${closedCount}`);
+    console.log(`[Auto-Close]   Cancelled: ${cancelledCount}`);
+    console.log(`[Auto-Close]   Still open: ${stillOpen}`);
+    console.log(`[Auto-Close]   Duration: ${checkDuration}ms`);
+    console.log(`[Auto-Close] Time: ${new Date().toISOString()}`);
+    console.log(`${'='.repeat(80)}\n`);
 
     return NextResponse.json({
       success: true,
@@ -1892,6 +2206,7 @@ export async function POST() {
       results
     });
   } catch (error) {
+    console.error(`\n[Auto-Close] CRITICAL ERROR: Auto-close check failed`);
     console.error('Auto-close error:', error);
     if (error instanceof Error) {
       console.error('Error stack:', error.stack);

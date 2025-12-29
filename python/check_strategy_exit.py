@@ -17,7 +17,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 
 # Setup logging to stderr
-logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s', stream=sys.stderr)
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s', stream=sys.stderr)
 logger = logging.getLogger(__name__)
 
 
@@ -93,6 +93,61 @@ def check_strategy_exit(
         pair_candles: Optional list of pair symbol candles for spread-based strategies
     """
     try:
+        # Log entry
+        # CRITICAL: symbol and strategy_type are REQUIRED - NO FALLBACKS
+        if not trade_data:
+            error_msg = "trade_data is required"
+            logger.error(f"ERROR: {error_msg} for trade {trade_id}")
+            log_error_to_db(trade_id, "unknown", "missing_trade_data", error_msg)
+            return {
+                "success": False,
+                "error": error_msg,
+                "should_exit": False,
+                "exit_price": None,
+                "exit_reason": None,
+                "exit_timestamp": None,
+                "current_price": None
+            }
+
+        symbol = trade_data.get("symbol")
+        if not symbol:
+            error_msg = "symbol is required in trade_data"
+            logger.error(f"ERROR: {error_msg} for trade {trade_id}")
+            log_error_to_db(trade_id, "unknown", "missing_symbol", error_msg)
+            return {
+                "success": False,
+                "error": error_msg,
+                "should_exit": False,
+                "exit_price": None,
+                "exit_reason": None,
+                "exit_timestamp": None,
+                "current_price": None
+            }
+
+        strategy_type = trade_data.get("strategy_type")
+        if not strategy_type:
+            error_msg = "strategy_type is required in trade_data"
+            logger.error(f"ERROR: {error_msg} for trade {trade_id}")
+            log_error_to_db(trade_id, symbol, "missing_strategy_type", error_msg)
+            return {
+                "success": False,
+                "error": error_msg,
+                "should_exit": False,
+                "exit_price": None,
+                "exit_reason": None,
+                "exit_timestamp": None,
+                "current_price": None
+            }
+
+        print(f"\n{'='*80}", file=sys.stderr)
+        print(f"[Exit-Check] ========== STRATEGY EXIT CHECK STARTED ==========", file=sys.stderr)
+        print(f"[Exit-Check] Trade ID: {trade_id}", file=sys.stderr)
+        print(f"[Exit-Check] Symbol: {symbol}", file=sys.stderr)
+        print(f"[Exit-Check] Strategy: {strategy_name} ({strategy_type})", file=sys.stderr)
+        print(f"[Exit-Check] Candles: {len(candles)}", file=sys.stderr)
+        print(f"[Exit-Check] Pair candles: {len(pair_candles) if pair_candles else 'None'}", file=sys.stderr)
+        print(f"{'='*80}", file=sys.stderr)
+
         # Validate inputs
         if not trade_id:
             error_msg = "trade_id is required"
@@ -130,17 +185,21 @@ def check_strategy_exit(
                 "current_price": None
             }
 
+        print(f"[Exit-Check] Step 1: Loading strategy factory...", file=sys.stderr)
         # Import strategy factory
         from trading_bot.strategies import StrategyFactory
         from trading_bot.config.settings_v2 import ConfigV2
 
         # Get strategy class from factory registry
         strategies = StrategyFactory.get_available_strategies()
+        print(f"[Exit-Check] Step 1 COMPLETE: Found {len(strategies)} available strategies", file=sys.stderr)
 
         if strategy_name not in strategies:
             error_msg = f"Strategy not found: {strategy_name}"
+            print(f"[Exit-Check] Step 1 FAILED: {error_msg}", file=sys.stderr)
+            print(f"[Exit-Check] Available strategies: {list(strategies.keys())}", file=sys.stderr)
             logger.error(f"ERROR: {error_msg}. Available: {list(strategies.keys())}")
-            log_error_to_db(trade_id, "unknown", "strategy_not_found", error_msg, {
+            log_error_to_db(trade_id, symbol, "strategy_not_found", error_msg, {
                 "strategy_name": strategy_name,
                 "available_strategies": list(strategies.keys())
             })
@@ -153,6 +212,7 @@ def check_strategy_exit(
                 "error": error_msg
             }
 
+        print(f"[Exit-Check] Step 2: Instantiating strategy {strategy_name}...", file=sys.stderr)
         # Instantiate strategy
         strategy_class = strategies[strategy_name]
 
@@ -195,10 +255,12 @@ def check_strategy_exit(
                 run_id=None,
                 strategy_config={}
             )
+            print(f"[Exit-Check] Step 2 COMPLETE: Strategy instantiated successfully", file=sys.stderr)
         except Exception as e:
             error_msg = f"Failed to instantiate strategy: {e}"
+            print(f"[Exit-Check] Step 2 FAILED: {error_msg}", file=sys.stderr)
             logger.error(f"ERROR: {error_msg} for trade {trade_id}", exc_info=True)
-            log_error_to_db(trade_id, trade_data.get("symbol", "unknown"), "strategy_instantiation_failed", error_msg, {
+            log_error_to_db(trade_id, symbol, "strategy_instantiation_failed", error_msg, {
                 "strategy_name": strategy_name,
                 "exception_type": type(e).__name__
             })
@@ -215,6 +277,8 @@ def check_strategy_exit(
         strategy_type = trade_data.get("strategy_type")
         is_spread_based = strategy_type == "spread_based"
 
+        print(f"[Exit-Check] Step 3: Validating inputs for {strategy_type} strategy...", file=sys.stderr)
+
         if is_spread_based:
             # For spread-based strategies, pair_candles are CRITICAL
             if pair_candles is None or len(pair_candles) == 0:
@@ -223,8 +287,9 @@ def check_strategy_exit(
                     f"Trade ID: {trade_id}, Strategy: {strategy_name}. "
                     f"Cannot calculate z-score without pair price data."
                 )
+                print(f"[Exit-Check] Step 3 FAILED: {error_msg}", file=sys.stderr)
                 logger.critical(error_msg)
-                log_error_to_db(trade_id, trade_data.get("symbol", "unknown"), "missing_pair_candles", error_msg)
+                log_error_to_db(trade_id, symbol, "missing_pair_candles", error_msg)
                 return {
                     "should_exit": False,
                     "exit_price": None,
@@ -233,6 +298,9 @@ def check_strategy_exit(
                     "current_price": None,
                     "error": error_msg
                 }
+            print(f"[Exit-Check] Step 3 COMPLETE: Pair candles validated ({len(pair_candles)} candles)", file=sys.stderr)
+        else:
+            print(f"[Exit-Check] Step 3 COMPLETE: Price-based strategy (no pair candles needed)", file=sys.stderr)
 
             # TASK 9: Validate pair candles length matches main candles
             if len(pair_candles) != len(candles):
@@ -277,21 +345,79 @@ def check_strategy_exit(
                         "error": error_msg
                     }
 
+        print(f"[Exit-Check] Step 4: Starting candle iteration...", file=sys.stderr)
         # Iterate through candles and check for exit
         # NOTE: For spread-based strategies, pair_candles are provided from the database cache
         # If not available, the strategy's should_exit() method can fetch from live API as fallback
         last_exit_result = None  # Track last exit_result for stop/TP syncing when holding
 
         # Determine position side (LONG or SHORT)
-        # trade_data["side"] can be 'Buy' (LONG) or 'Sell' (SHORT)
-        is_long = trade_data.get("side", "Buy").lower() in ["buy", "long"]
+        # CRITICAL: side is REQUIRED - NO FALLBACK
+        side = trade_data.get("side")
+        if not side:
+            error_msg = "side is required in trade_data (must be 'Buy' or 'Sell')"
+            logger.error(f"ERROR: {error_msg} for trade {trade_id}")
+            log_error_to_db(trade_id, symbol, "missing_side", error_msg)
+            return {
+                "success": False,
+                "error": error_msg,
+                "should_exit": False,
+                "exit_price": None,
+                "exit_reason": None,
+                "exit_timestamp": None,
+                "current_price": None
+            }
+
+        is_long = side.lower() in ["buy", "long"]
+        side_str = "LONG" if is_long else "SHORT"
 
         # Track simulated stops/TPs as they change each candle
+        # CRITICAL: For price-based strategies, SL/TP are REQUIRED
+        stop_loss = trade_data.get("stop_loss")
+        take_profit = trade_data.get("take_profit")
+
+        if strategy_type == "price_based":
+            if not stop_loss:
+                error_msg = f"stop_loss is required for price_based strategy (trade {trade_id})"
+                logger.error(f"ERROR: {error_msg}")
+                log_error_to_db(trade_id, symbol, "missing_stop_loss", error_msg)
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "should_exit": False,
+                    "exit_price": None,
+                    "exit_reason": None,
+                    "exit_timestamp": None,
+                    "current_price": None
+                }
+            if not take_profit:
+                error_msg = f"take_profit is required for price_based strategy (trade {trade_id})"
+                logger.error(f"ERROR: {error_msg}")
+                log_error_to_db(trade_id, symbol, "missing_take_profit", error_msg)
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "should_exit": False,
+                    "exit_price": None,
+                    "exit_reason": None,
+                    "exit_timestamp": None,
+                    "current_price": None
+                }
+
         simulated_stops = {
-            "stop_loss": trade_data.get("stop_loss"),
-            "take_profit": trade_data.get("take_profit")
+            "stop_loss": stop_loss,
+            "take_profit": take_profit
         }
         stop_updates = []  # Audit trail of all stop/TP changes
+
+        print(f"[Exit-Check] Step 4 DETAIL: Position side={side_str}, SL={simulated_stops['stop_loss']}, TP={simulated_stops['take_profit']}", file=sys.stderr)
+
+        # CRITICAL: Get fill_candle_index to skip lookback candles
+        # For spread-based strategies, candles array includes lookback + walk-forward
+        # We must only check exit conditions on candles AFTER the trade was filled
+        fill_candle_index = trade_data.get("fill_candle_index", 0)
+        if fill_candle_index > 0:
+            print(f"[Exit-Check] Step 4 DETAIL: Starting exit check from candle {fill_candle_index} (skipping {fill_candle_index} lookback candles)", file=sys.stderr)
 
         # PERFORMANCE FIX: Create lookup dict for pair candles by timestamp (O(1) lookup instead of O(n) search)
         pair_candles_by_ts = {}
@@ -301,7 +427,9 @@ def check_strategy_exit(
                 if ts is not None:
                     pair_candles_by_ts[ts] = pair_candle
 
-        for i, candle in enumerate(candles):
+        # Start iteration from fill_candle_index to skip lookback candles
+        for i in range(fill_candle_index, len(candles)):
+            candle = candles[i]
             try:
                 current_candle_dict = {
                     "timestamp": candle.get("timestamp"),
@@ -379,8 +507,14 @@ def check_strategy_exit(
                 else:
                     # For price-based trades, check if SL/TP was hit using CURRENT simulated stops
                     # This respects the dynamic stop/TP changes from the strategy
-                    candle_high = current_candle_dict.get("high", 0)
-                    candle_low = current_candle_dict.get("low", 0)
+                    # CRITICAL: Candle prices are REQUIRED - NO FALLBACKS
+                    candle_high = current_candle_dict.get("high")
+                    candle_low = current_candle_dict.get("low")
+
+                    if candle_high is None or candle_low is None:
+                        error_msg = f"Candle {i} missing high/low prices - cannot check SL/TP"
+                        logger.error(f"ERROR: {error_msg} for trade {trade_id}")
+                        continue
 
                     if is_long:
                         # Long position: SL hit if low <= stopLoss, TP hit if high >= takeProfit
@@ -389,7 +523,13 @@ def check_strategy_exit(
 
                         if sl_hit and tp_hit:
                             # Both hit in same candle - determine which first by checking open price
-                            if abs(current_candle_dict.get("open", 0) - simulated_stops["stop_loss"]) < abs(current_candle_dict.get("open", 0) - simulated_stops["take_profit"]):
+                            candle_open = current_candle_dict.get("open")
+                            if candle_open is None:
+                                error_msg = f"Candle {i} missing open price - cannot determine SL/TP priority"
+                                logger.error(f"ERROR: {error_msg} for trade {trade_id}")
+                                continue
+
+                            if abs(candle_open - simulated_stops["stop_loss"]) < abs(candle_open - simulated_stops["take_profit"]):
                                 return {
                                     "should_exit": True,
                                     "exit_price": simulated_stops["stop_loss"],
@@ -436,7 +576,13 @@ def check_strategy_exit(
 
                         if sl_hit and tp_hit:
                             # Both hit in same candle - determine which first
-                            if abs(current_candle_dict.get("open", 0) - simulated_stops["stop_loss"]) < abs(current_candle_dict.get("open", 0) - simulated_stops["take_profit"]):
+                            candle_open = current_candle_dict.get("open")
+                            if candle_open is None:
+                                error_msg = f"Candle {i} missing open price - cannot determine SL/TP priority"
+                                logger.error(f"ERROR: {error_msg} for trade {trade_id}")
+                                continue
+
+                            if abs(candle_open - simulated_stops["stop_loss"]) < abs(candle_open - simulated_stops["take_profit"]):
                                 return {
                                     "should_exit": True,
                                     "exit_price": simulated_stops["stop_loss"],
@@ -480,16 +626,19 @@ def check_strategy_exit(
                 # Check if should exit
                 if exit_result.get("should_exit"):
                     reason = exit_details.get("reason", "strategy_exit")
+                    exit_price = current_candle_dict.get("close")
 
+                    print(f"[Exit-Check] Step 4 RESULT: EXIT SIGNAL DETECTED at candle {i}/{len(candles)}", file=sys.stderr)
+                    print(f"[Exit-Check] Step 4 DETAIL: reason={reason}, exit_price={exit_price}", file=sys.stderr)
                     logger.info(f"Strategy exit triggered for trade {trade_id} at candle {i}: {reason}")
 
                     # Build response with optional strategy-calculated stops
                     response = {
                         "should_exit": True,
-                        "exit_price": current_candle_dict.get("close"),
+                        "exit_price": exit_price,
                         "exit_reason": reason,
                         "exit_timestamp": current_candle_dict.get("timestamp"),
-                        "current_price": current_candle_dict.get("close"),
+                        "current_price": exit_price,
                         "stop_updates": stop_updates,
                         "final_stops": simulated_stops
                     }
@@ -503,27 +652,63 @@ def check_strategy_exit(
                     return response
             except Exception as e:
                 error_msg = f"Exception in candle {i}: {e}"
+                print(f"[Exit-Check] Step 4 ERROR: Candle {i} processing failed: {error_msg}", file=sys.stderr)
                 logger.error(f"ERROR: {error_msg} for trade {trade_id}", exc_info=True)
-                log_error_to_db(trade_id, trade_data.get("symbol", "unknown"), "candle_processing_error", error_msg, {
+                log_error_to_db(trade_id, symbol, "candle_processing_error", error_msg, {
                     "candle_index": i,
                     "exception_type": type(e).__name__
                 })
                 continue
 
         # No exit condition met
-        logger.info(f"No exit condition met for trade {trade_id} after checking {len(candles)} candles")
+        candles_checked = len(candles) - fill_candle_index
+        print(f"[Exit-Check] Step 4 COMPLETE: No exit signal found after checking {candles_checked} candles (from index {fill_candle_index} to {len(candles)-1})", file=sys.stderr)
+        logger.info(f"No exit condition met for trade {trade_id} after checking {candles_checked} candles")
 
         # Return response with optional strategy-calculated stops from last candle check
         # This allows strategies to provide dynamic stop/TP levels even when holding
+        # CRITICAL: current_price is REQUIRED - must come from last candle
+        if not candles:
+            error_msg = f"No candles available to determine current_price for trade {trade_id}"
+            logger.error(f"ERROR: {error_msg}")
+            log_error_to_db(trade_id, symbol, "no_candles_for_current_price", error_msg)
+            return {
+                "success": False,
+                "error": error_msg,
+                "should_exit": False,
+                "exit_price": None,
+                "exit_reason": None,
+                "exit_timestamp": None,
+                "current_price": None
+            }
+
+        current_price = candles[-1].get("close")
+        if current_price is None:
+            error_msg = f"Last candle missing close price for trade {trade_id}"
+            logger.error(f"ERROR: {error_msg}")
+            log_error_to_db(trade_id, symbol, "last_candle_missing_close", error_msg)
+            return {
+                "success": False,
+                "error": error_msg,
+                "should_exit": False,
+                "exit_price": None,
+                "exit_reason": None,
+                "exit_timestamp": None,
+                "current_price": None
+            }
+
         response = {
             "should_exit": False,
             "exit_price": None,
             "exit_reason": None,
             "exit_timestamp": None,
-            "current_price": candles[-1].get("close") if candles else None,
+            "current_price": current_price,
             "stop_updates": stop_updates,  # Include audit trail of all stop/TP changes
             "final_stops": simulated_stops  # Include final simulated stops
         }
+
+        print(f"[Exit-Check] Step 5: Returning no-exit response", file=sys.stderr)
+        print(f"[Exit-Check] Step 5 DETAIL: current_price={current_price}", file=sys.stderr)
 
         # If we have a last exit_result from the loop, include strategy-calculated stops
         # This provides consistency with PositionMonitor's stop/TP syncing
@@ -573,5 +758,19 @@ if __name__ == "__main__":
         sys.exit(1)
 
     result = check_strategy_exit(trade_id, strategy_name, candles, trade_data, pair_candles)
+
+    # Log result
+    if result.get("should_exit"):
+        print(f"[Exit-Check] ========== STRATEGY EXIT CHECK COMPLETED ==========", file=sys.stderr)
+        print(f"[Exit-Check] Result: EXIT SIGNAL", file=sys.stderr)
+        print(f"[Exit-Check] Reason: {result.get('exit_reason')}", file=sys.stderr)
+        print(f"[Exit-Check] Exit Price: {result.get('exit_price')}", file=sys.stderr)
+        print(f"{'='*80}\n", file=sys.stderr)
+    else:
+        print(f"[Exit-Check] ========== STRATEGY EXIT CHECK COMPLETED ==========", file=sys.stderr)
+        print(f"[Exit-Check] Result: NO EXIT SIGNAL", file=sys.stderr)
+        print(f"[Exit-Check] Current Price: {result.get('current_price')}", file=sys.stderr)
+        print(f"{'='*80}\n", file=sys.stderr)
+
     print(json.dumps(result))
 

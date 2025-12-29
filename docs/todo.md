@@ -10,26 +10,26 @@ A live trade: dry_run = 0, status = 'submitted' (or 'filled', etc.).
 This distinction allows the system to track the overall nature of a trade (dry_run) while also managing its progression through the simulation pipeline (status).
 --------------
 
-# General 
+# General
 [ ] run production audit in terms of security, efficency and robustness (minal changes )
 
 ----
 
-# Improvments 
+# Improvments
 [ ] is the the value from confidence calculation from analysis actually used in the bot for trading deccisions?
 - Yes
 
 ----
 
 
-# Advisor 
+# Advisor
 [ ] we need  a new service the job of this advisor is to inject extra context in to the prompt before seding it to the assitant. the bot loop must wait for this advisor to complete it must be fully tracable for the logtrail
 [ ] it must also be plugged in after we got the reccomendation from the ai so we can ad extra info
-[ ] the advisor must work with candle data only and should use import pandas_ta as ta 
+[ ] the advisor must work with candle data only and should use import pandas_ta as ta
 [ ] advisor must be intergrated with global database layer. The job is to perform classic ta based on configurable strategies. the first strategy to integrate is:
 docs/Strategies/trade_entry_strategies_E3lYZsy8nYE_HH_LL_alex_strat.md
-[ ] instance needs a setting for which strategy to use for advisor. 
-[ ] the architecture should be nodes based so we can combine strategies or individual functions the advisor needs its own page and the ui should show and make this node systhe editable. 
+[ ] instance needs a setting for which strategy to use for advisor.
+[ ] the architecture should be nodes based so we can combine strategies or individual functions the advisor needs its own page and the ui should show and make this node systhe editable.
 [ ] one streategy we need is: docs/Strategies/market regime_check.py
 
 -----
@@ -41,7 +41,7 @@ docs/Strategies/trade_entry_strategies_E3lYZsy8nYE_HH_LL_alex_strat.md
 2025-12-07 11:34:45 | ERROR | trading_bot.core.timeframe_extractor | OpenAI API rate limit exceeded (429): Out of credits or too many requests. Skipping timeframe extraction.
 ```
 
-catch this error pause the bot imidialy and display a banner with confirm button once confirm is clicked resume the bot. 
+catch this error pause the bot imidialy and display a banner with confirm button once confirm is clicked resume the bot.
 -------
 
 
@@ -62,7 +62,7 @@ The tournament data is likely stored in Supabase PostgreSQL (via other parts of 
 Would you like me to fix this by updating BacktestStore to use the centralized database client (python/trading_bot/db/client.py) that properly handles SQLite/PostgreSQL switching?
 
 ---
-# for statstis this could mess up vlaues because we ae getting later the already filled but cancled trades in our pnl calculaiton need some thought 
+# for statstis this could mess up vlaues because we ae getting later the already filled but cancled trades in our pnl calculaiton need some thought
 
 In the first cancellation block (lines 424-437):
 
@@ -91,23 +91,23 @@ Again, exit_price is set to currentPrice (line 544). So indeed, the simulator se
 
 ------
 [ ] each part of the trading cycle must be instance aware
-[ ] each step of the trading cycle must check its own data iteegrety 
+[ ] each step of the trading cycle must check its own data iteegrety
 [ ] each part of the trading cylce must be timeframe and boundery aware
 - example sources must check if there already images fnow or the current timeframe and boundery
-- cleaner must only clean images that are outside the crrent boundery based on tieframe 
-[ ] analyzer must only analze images if there is no recomendation for current timeframe and boundery and instance than return results as if it analyzed them but with the note of chached results so later parts of the code can run 
+- cleaner must only clean images that are outside the crrent boundery based on tieframe
+[ ] analyzer must only analze images if there is no recomendation for current timeframe and boundery and instance than return results as if it analyzed them but with the note of chached results so later parts of the code can run
 [ ] execution must check in dry run of the given recomendation was already executed based on database status in live trading ofcause based on exchnage data
 [ ] we need to define a set of error that pause the bot permantly until manually resumed
 
 ----
 
-[ ] the cleaner step from trade cycle must be a microservice calle by rhe innstance and manage duplicated calles, since it can be used by multiple istance if that happens than the one that was launched second thors error becuase it cant find the imagease already  cleaned up by the first instance 
+[ ] the cleaner step from trade cycle must be a microservice calle by rhe innstance and manage duplicated calles, since it can be used by multiple istance if that happens than the one that was launched second thors error becuase it cant find the imagease already  cleaned up by the first instance
 
 [ ] 2025-12-12 11:06:25 | ERROR | __main__ | Failed to check for OpenAI rate limit error: tuple index out of range
 [ErrorLogger] ✅ Stored ERROR to DB: Failed to check for OpenAI rate limit error: tuple index out of range
-2025-12-12 11:06:28 | INFO | __main__ | 
+2025-12-12 11:06:28 | INFO | __main__ |
 
-also the banner is blocking the ui it should be less highs yes promitnetn but not makingg the dashboard unusalble 
+also the banner is blocking the ui it should be less highs yes promitnetn but not makingg the dashboard unusalble
 
 ---------
 🔴 REMAINING HARDCODED VALUES (12 values across 4 categories)
@@ -140,17 +140,17 @@ Location:  python/trading_bot/engine/trading_cycle.py (line 822)
 
 
 convert these hardcoded values to configurable settings
--- 
+--
 
 [ ] the sumulator activity must be a shared component used in the simulator page and also the instanve overview page replace individual components with the sahred one
 
 -----
 
 # Logtrail
-[ ] right now i have fast trader ad playboy 1 running but the   
+[ ] right now i have fast trader ad playboy 1 running but the
 [ ] logtrails only shows active for fastrader
 [ ] it themes like i do not see older logs for some reason
-[ ] for example the eader fir playboy shows trades 35 trades ut only 2 cycles? 
+[ ] for example the eader fir playboy shows trades 35 trades ut only 2 cycles?
 
 
 -----
@@ -265,14 +265,53 @@ old agent mories:
 
 ------
 
+# Auto-Closer Candle Fetching Improvements
 
-YES, there WAS a profitable exit opportunity around 2025-12-24 21:00:
+The auto-closer must fetch ALL candles from signal time to now and walk forward checking each candle for exit conditions. Currently it doesn't fetch enough candles and doesn't account for minimum candles needed by strategies.
 
-Z-score crossed the 0.2 exit threshold
-This was the optimal exit point
-The trade should have closed with a profit
-Why it didn't close:
+## Task 1: Increase Bybit API Limit from 200 to 1000 Candles
+[ ] Update getHistoricalCandles() function in app/api/bot/simulator/auto-close/route.ts
+- Line 455: Change `const limit = Math.min(expectedCandles + 5, 200);` to `const limit = Math.min(expectedCandles + 120, 1000);`
+- This allows fetching up to 1000 candles per API request (Bybit supports this)
+- The +120 buffer accounts for strategy lookback period (cointegration needs 120 candles minimum)
 
-The auto-close system either didn't run or didn't detect the signal
+## Task 2: Calculate Minimum Candles Required Based on Strategy
+[ ] Add function to determine minimum candles needed by strategy type
+- For spread-based strategies (cointegration): minimum = 120 candles (lookback period)
+- For price-based strategies: minimum = 1 candle (just need current price)
+- Function should read lookback from strategy config if available
+- Location: app/api/bot/simulator/auto-close/route.ts
 
-the autocloser is supposed to do a forward walk as it does for price based trades so it should even fill and close old trades 
+## Task 3: Update getHistoricalCandles() to Account for Minimum Candles
+[ ] Modify getHistoricalCandles() to calculate total candles needed
+- Calculate: `totalNeeded = minCandlesRequired + (now - startTime) / timeframeMs`
+- This ensures we fetch enough candles to satisfy both lookback AND cover the entire period
+- Update expectedCandles calculation to use totalNeeded instead of just time-based calculation
+- Location: app/api/bot/simulator/auto-close/route.ts lines 427-455
+
+## Task 4: Fix Variable Name Error in Spread-Based Candle Fetching
+[ ] Replace `tradeCreatedMs` with `signalTime` in spread-based pair candle fetch
+- Line 1210 in app/api/bot/simulator/auto-close/route.ts
+- This ensures pair candles are fetched from the same signal time as main candles
+- Location: app/api/bot/simulator/auto-close/route.ts line 1210
+
+## Task 5: Ensure Pair Candles Use Same Time Range as Main Candles
+[ ] Update pair candle fetching to use signalTime consistently
+- Both main symbol and pair symbol should fetch from signalTime to now
+- This ensures z-score calculations have matching candle ranges
+- Location: app/api/bot/simulator/auto-close/route.ts lines 1205-1211
+
+## Task 6: Add Logging for Candle Fetch Verification
+[ ] Add detailed logging to verify candles are fetched correctly
+- Log: minimum candles required, total candles fetched, time range covered
+- Log: for spread-based trades, log both main and pair candle counts
+- This helps debug if exit signals aren't being detected
+- Location: app/api/bot/simulator/auto-close/route.ts
+
+## Task 7: Test Auto-Closer with Historical Trades
+[ ] Run auto-closer against historical paper trades to verify:
+- Candles are fetched from signal time to now (not just recent candles)
+- Minimum candles requirement is satisfied (120+ for cointegration)
+- Exit signals are detected correctly when z-score crosses threshold
+- Both main and pair symbols have matching candle counts
+- Test with OGUSDT/WETUSDT trade from 2025-12-24 as reference case
