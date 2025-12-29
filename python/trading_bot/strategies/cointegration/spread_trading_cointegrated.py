@@ -47,7 +47,19 @@ def calculate_dynamic_position(
     """
     # 1. Calculate adaptive stop loss
     z_sl_min = z_entry + 1.5
-    z_99 = np.percentile([abs(z) for z in z_history], 99) if z_history else z_sl_min
+
+    # TASK 1.4 & 6: NO FALLBACK - z_history must be provided
+    if not z_history or len(z_history) == 0:
+        error_msg = (
+            f"CRITICAL: Empty z_history for position sizing. "
+            f"Cannot calculate adaptive stop loss without historical z-scores."
+        )
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.critical(error_msg)
+        raise ValueError(error_msg)
+
+    z_99 = np.percentile([abs(z) for z in z_history], 99)
     z_sl = max(z_sl_min, z_99)
 
     # 2. Compute spread levels based on signal direction

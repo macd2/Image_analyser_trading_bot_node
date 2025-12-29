@@ -662,16 +662,45 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         if beta is not None and spread_mean is not None and spread_std is not None:
             z_exit = self.get_config_value('z_exit', 0.5)
 
-            # Calculate adaptive max_spread_deviation from z_history (99th percentile)
+            # TASK 1 & 7: Calculate adaptive max_spread_deviation from z_history (99th percentile)
             # This prevents premature stops due to normal volatility while protecting against tail risk
-            adaptive_sl_z = 3.0  # Default fallback
-            if z_history and len(z_history) > 0:
-                try:
-                    z_99 = float(np.percentile([abs(z) for z in z_history], 99))
-                    # Add 1.5σ buffer to 99th percentile for crypto fat-tail protection
-                    adaptive_sl_z = max(z_entry + 1.5, z_99 + 1.5)
-                except (ValueError, TypeError):
-                    adaptive_sl_z = 3.0
+            # NO FALLBACKS - missing z_history is a CRITICAL error
+            if not z_history or len(z_history) == 0:
+                error_msg = (
+                    f"CRITICAL: Empty z_history for adaptive stop loss calculation. "
+                    f"Instance: {self.instance_id}, Symbol: {symbol}, Pair: {pair_symbol}. "
+                    f"Cannot calculate adaptive SL without historical z-scores. "
+                    f"Need at least 30 candles of data."
+                )
+                logger.critical(error_msg)
+                raise ValueError(error_msg)
+
+            try:
+                z_99 = float(np.percentile([abs(z) for z in z_history], 99))
+                # Add 1.5σ buffer to 99th percentile for crypto fat-tail protection
+                adaptive_sl_z = max(z_entry + 1.5, z_99 + 1.5)
+                logger.info(
+                    f"Calculated adaptive max_spread_deviation for {symbol}/{pair_symbol}: "
+                    f"z_99={z_99:.2f}, buffer=1.5σ, final={adaptive_sl_z:.2f}"
+                )
+            except (ValueError, TypeError) as e:
+                error_msg = (
+                    f"CRITICAL: Failed to calculate z_99 from z_history. "
+                    f"Instance: {self.instance_id}, Symbol: {symbol}, Pair: {pair_symbol}. "
+                    f"Error: {e}, z_history length: {len(z_history) if z_history else 0}"
+                )
+                logger.critical(error_msg)
+                raise ValueError(error_msg)
+
+            # TASK 11: Validate z_exit before storing
+            if z_exit is None:
+                error_msg = (
+                    f"CRITICAL: z_exit_threshold is None. "
+                    f"Instance: {self.instance_id}, Symbol: {symbol}, Pair: {pair_symbol}. "
+                    f"Cannot create trade without exit threshold."
+                )
+                logger.critical(error_msg)
+                raise ValueError(error_msg)
 
             strategy_metadata = {
                 # Current values (for realtime calculations)
@@ -690,9 +719,29 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 "price_x_at_entry": float(current_price),
                 "price_y_at_entry": float(pair_candles[-1]['close']) if pair_candles else None,
 
-                # Adaptive stop loss
+                # Adaptive stop loss (DYNAMIC - calculated from z_history)
                 "max_spread_deviation": float(adaptive_sl_z),
             }
+
+            # TASK 11: Validate metadata has all required fields
+            required_fields = [
+                "beta", "spread_mean", "spread_std", "z_exit_threshold",
+                "pair_symbol", "z_score_at_entry", "max_spread_deviation"
+            ]
+            for field in required_fields:
+                if field not in strategy_metadata or strategy_metadata[field] is None:
+                    error_msg = (
+                        f"CRITICAL: Missing required field in strategy_metadata: {field}. "
+                        f"Instance: {self.instance_id}, Symbol: {symbol}, Pair: {pair_symbol}. "
+                        f"Cannot create trade without all required metadata."
+                    )
+                    logger.critical(error_msg)
+                    raise ValueError(error_msg)
+
+            logger.info(
+                f"Created strategy_metadata with all required fields for {symbol}/{pair_symbol}: "
+                f"z_exit={z_exit}, max_spread_deviation={adaptive_sl_z:.2f}"
+            )
 
         # Normalize position size multiplier to 0.5-1.5 range
         raw_multiplier = signal.get('size_multiplier', 1.0)
@@ -982,15 +1031,17 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             z_exit_threshold = metadata.get("z_exit_threshold")
             pair_symbol = metadata.get("pair_symbol")
 
-            # Validate we have all needed data (use 'is not None' to allow 0 values)
+            # TASK 2: Validate we have all needed data (use 'is not None' to allow 0 values)
             if beta is None or spread_mean is None or spread_std is None or z_exit_threshold is None:
-                return {
-                    "should_exit": False,
-                    "exit_details": {
-                        "reason": "no_exit",
-                        "error": "Missing strategy metadata for z-score calculation",
-                    }
-                }
+                error_msg = (
+                    f"CRITICAL: Missing strategy metadata for z-score exit calculation. "
+                    f"Trade ID: {trade.get('id')}, Symbol: {trade.get('symbol')}. "
+                    f"Missing: beta={beta is None}, spread_mean={spread_mean is None}, "
+                    f"spread_std={spread_std is None}, z_exit_threshold={z_exit_threshold is None}. "
+                    f"Cannot calculate z-score without this data. Trade will remain open."
+                )
+                logger.critical(error_msg)
+                raise ValueError(error_msg)
 
             # Get current prices
             current_price = current_candle.get("close")
@@ -1010,24 +1061,34 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
 
             pair_price = pair_candle.get("close") if pair_candle else None
 
+            # TASK 3: Add critical error logging for missing pair candle data
             if not current_price or not pair_price:
-                return {
-                    "should_exit": False,
-                    "exit_details": {
-                        "reason": "no_exit",
-                        "error": "Missing candle data for z-score calculation",
-                    }
-                }
+                error_msg = (
+                    f"CRITICAL: Missing candle data for z-score exit calculation. "
+                    f"Trade ID: {trade.get('id')}, Symbol: {trade.get('symbol')}, "
+                    f"Pair: {metadata.get('pair_symbol')}. "
+                    f"Missing: current_price={not current_price}, pair_price={not pair_price}. "
+                    f"Cannot calculate spread without both prices. Trade will remain open."
+                )
+                logger.critical(error_msg)
+                raise ValueError(error_msg)
 
             # Recalculate z-score with current prices
             spread = pair_price - beta * current_price
             z_score = (spread - spread_mean) / spread_std if spread_std > 0 else 0
 
-            # Get adaptive max_spread_deviation from metadata (stored at entry time)
-            # Falls back to global config if not in metadata (for backward compatibility)
+            # TASK 1.2: Get adaptive max_spread_deviation from metadata (stored at entry time)
+            # NO FALLBACK - must be in metadata
             max_spread_deviation = metadata.get("max_spread_deviation")
             if max_spread_deviation is None:
-                max_spread_deviation = self.get_config_value("max_spread_deviation", 3.0)
+                error_msg = (
+                    f"CRITICAL: max_spread_deviation is required in strategy_metadata for exit logic. "
+                    f"This should have been calculated at entry time from z_history. "
+                    f"Trade ID: {trade.get('id')}, Symbol: {trade.get('symbol')}. "
+                    f"Check that strategy_metadata was properly stored in the trade record."
+                )
+                logger.critical(error_msg)
+                raise ValueError(error_msg)
 
             # Check if z-score crossed exit threshold (mean reversion)
             threshold_crossed = abs(z_score) <= z_exit_threshold

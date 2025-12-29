@@ -265,3 +265,14 @@ old agent mories:
 
 ------
 
+
+YES, there WAS a profitable exit opportunity around 2025-12-24 21:00:
+
+Z-score crossed the 0.2 exit threshold
+This was the optimal exit point
+The trade should have closed with a profit
+Why it didn't close:
+
+The auto-close system either didn't run or didn't detect the signal
+
+the autocloser is supposed to do a forward walk as it does for price based trades so it should even fill and close old trades 

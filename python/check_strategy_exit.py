@@ -211,6 +211,72 @@ def check_strategy_exit(
                 "error": error_msg
             }
 
+        # TASK 9: Validate pair candles for spread-based strategies
+        strategy_type = trade_data.get("strategy_type")
+        is_spread_based = strategy_type == "spread_based"
+
+        if is_spread_based:
+            # For spread-based strategies, pair_candles are CRITICAL
+            if pair_candles is None or len(pair_candles) == 0:
+                error_msg = (
+                    f"CRITICAL: Pair candles not provided for spread-based exit check. "
+                    f"Trade ID: {trade_id}, Strategy: {strategy_name}. "
+                    f"Cannot calculate z-score without pair price data."
+                )
+                logger.critical(error_msg)
+                log_error_to_db(trade_id, trade_data.get("symbol", "unknown"), "missing_pair_candles", error_msg)
+                return {
+                    "should_exit": False,
+                    "exit_price": None,
+                    "exit_reason": None,
+                    "exit_timestamp": None,
+                    "current_price": None,
+                    "error": error_msg
+                }
+
+            # TASK 9: Validate pair candles length matches main candles
+            if len(pair_candles) != len(candles):
+                error_msg = (
+                    f"CRITICAL: Pair candles length mismatch. "
+                    f"Trade ID: {trade_id}, Strategy: {strategy_name}. "
+                    f"Main candles: {len(candles)}, Pair candles: {len(pair_candles)}. "
+                    f"Cannot align prices for z-score calculation."
+                )
+                logger.critical(error_msg)
+                log_error_to_db(trade_id, trade_data.get("symbol", "unknown"), "pair_candles_mismatch", error_msg, {
+                    "main_candles_count": len(candles),
+                    "pair_candles_count": len(pair_candles)
+                })
+                return {
+                    "should_exit": False,
+                    "exit_price": None,
+                    "exit_reason": None,
+                    "exit_timestamp": None,
+                    "current_price": None,
+                    "error": error_msg
+                }
+
+            # TASK 9: Validate each pair candle has required fields
+            for i, pair_candle in enumerate(pair_candles):
+                if not pair_candle.get("close"):
+                    error_msg = (
+                        f"CRITICAL: Pair candle missing close price. "
+                        f"Trade ID: {trade_id}, Candle index: {i}. "
+                        f"Cannot calculate spread without pair close price."
+                    )
+                    logger.critical(error_msg)
+                    log_error_to_db(trade_id, trade_data.get("symbol", "unknown"), "pair_candle_missing_close", error_msg, {
+                        "candle_index": i
+                    })
+                    return {
+                        "should_exit": False,
+                        "exit_price": None,
+                        "exit_reason": None,
+                        "exit_timestamp": None,
+                        "current_price": None,
+                        "error": error_msg
+                    }
+
         # Iterate through candles and check for exit
         # NOTE: For spread-based strategies, pair_candles are provided from the database cache
         # If not available, the strategy's should_exit() method can fetch from live API as fallback
@@ -219,12 +285,6 @@ def check_strategy_exit(
         # Determine position side (LONG or SHORT)
         # trade_data["side"] can be 'Buy' (LONG) or 'Sell' (SHORT)
         is_long = trade_data.get("side", "Buy").lower() in ["buy", "long"]
-
-        # Get strategy type to determine exit logic
-        # CRITICAL: Spread-based trades should ONLY use strategy.should_exit() for exits
-        # Price-based trades can use both strategy.should_exit() AND price-level SL/TP checks
-        strategy_type = trade_data.get("strategy_type")
-        is_spread_based = strategy_type == "spread_based"
 
         # Track simulated stops/TPs as they change each candle
         simulated_stops = {

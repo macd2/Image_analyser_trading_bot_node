@@ -870,12 +870,16 @@ async function checkStrategyExit(
         env: { ...process.env }
       });
 
-      // Set timeout to prevent hanging processes (30 seconds)
+      // TASK 10: Set timeout to prevent hanging processes (30 seconds)
       const timeout = setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          const errorMsg = `Strategy exit check TIMEOUT for ${trade.symbol} (${strategyName}) - process took > 30 seconds`;
-          console.error(`[Auto-Close] CRITICAL: ${errorMsg}`);
+          const errorMsg = (
+            `[Auto-Close] CRITICAL TIMEOUT: Strategy exit check TIMEOUT for ` +
+            `${trade.symbol} (${strategyName}) - process took > 30 seconds. ` +
+            `Trade ID: ${trade.id}. Exit signal may have been missed.`
+          );
+          console.error(errorMsg);
           pythonProcess.kill();
           resolve({ success: false, error: errorMsg });
         }
@@ -957,7 +961,8 @@ async function checkStrategyExit(
  */
 export async function POST() {
   const checkStartTime = Date.now();
-  console.log(`[Auto-Close] POST handler called at ${new Date().toISOString()}`);
+  // TASK 10: Log when auto-close route starts
+  console.log(`[Auto-Close] Starting auto-close check at ${new Date().toISOString()}`);
 
   try {
     if (!await isTradingDbAvailable()) {
@@ -1189,23 +1194,44 @@ export async function POST() {
         let fillResult: FillResult;
 
         if (strategyMetadata && strategyMetadata.pair_symbol) {
-          // Spread-based strategy - SIGNAL-BASED FILL
+          // TASK 8: Spread-based strategy - SIGNAL-BASED FILL
           // For signal-based trades, fill immediately at signal time without waiting for pair candles
           console.log(`[Auto-Close] ${trade.symbol} - Spread-based strategy detected (signal-based fill)`);
 
-          // Signal-based fill: Trade fills at the first candle after signal generation
-          // No need to fetch pair candles - the signal was already generated when trade was created
+          // TASK 8: Fetch FULL pair candles for exit signal detection
+          const pairSymbol = strategyMetadata.pair_symbol;
           const pairEntryPrice = strategyMetadata.price_y_at_entry || 0;
 
-          // Create a minimal pair candles array for the function signature
-          // For signal-based fills, we only need the first candle to get the timestamp
-          const minimalPairCandles: Candle[] = candlesAfterCreation.length > 0
-            ? [candlesAfterCreation[0]]  // Use first main candle as reference
-            : [];
+          let pairCandles: Candle[] = [];
+          try {
+            pairCandles = await getHistoricalCandles(
+              pairSymbol,
+              timeframe,
+              tradeCreatedMs
+            );
 
+            if (!pairCandles || pairCandles.length === 0) {
+              console.error(
+                `[Auto-Close] CRITICAL: Failed to fetch pair candles for ${pairSymbol}. ` +
+                `Cannot check exit signals for spread-based trade ${trade.symbol}`
+              );
+            } else {
+              console.log(
+                `[Auto-Close] Fetched ${pairCandles.length} pair candles for ${pairSymbol} ` +
+                `(${candlesAfterCreation.length} main candles)`
+              );
+            }
+          } catch (e) {
+            console.error(
+              `[Auto-Close] CRITICAL: Error fetching pair candles for ${pairSymbol}: ${e}. ` +
+              `Cannot check exit signals for spread-based trade ${trade.symbol}`
+            );
+          }
+
+          // Signal-based fill: Trade fills at the first candle after signal generation
           fillResult = findSpreadBasedFillCandle(
             candlesAfterCreation,
-            minimalPairCandles,
+            pairCandles.length > 0 ? pairCandles : [],  // Pass full pair candles array
             entryPrice,
             pairEntryPrice
           );
@@ -1848,7 +1874,13 @@ export async function POST() {
     }
 
     const checkDuration = Date.now() - checkStartTime;
-    console.log(`[Auto-Close] Check complete: ${filledCount} filled, ${closedCount} closed, ${cancelledCount} cancelled (took ${checkDuration}ms)`);
+    // TASK 10: Log completion statistics
+    console.log(
+      `[Auto-Close] Completed auto-close check: ` +
+      `${filledCount} filled, ${closedCount} closed, ${cancelledCount} cancelled, ` +
+      `${openTrades.length - filledCount - closedCount - cancelledCount} still open ` +
+      `(took ${checkDuration}ms)`
+    );
 
     return NextResponse.json({
       success: true,

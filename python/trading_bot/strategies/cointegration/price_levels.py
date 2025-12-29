@@ -72,11 +72,20 @@ def calculate_levels(
     # 95th percentile gives wider stops than 99th, better for real trading
     z_sl_min = z_entry + min_sl_buffer  # e.g., 2.0 + 1.2 = 3.2
 
-    if z_history and len(z_history) >= 30:
-        z_95 = np.percentile(z_history, 95)
-        z_sl = max(z_sl_min, z_95)
-    else:
-        z_sl = z_sl_min  # fallback to theoretical minimum
+    # TASK 1.3 & 5: NO FALLBACK - z_history must have at least 30 points
+    if not z_history or len(z_history) < 30:
+        error_msg = (
+            f"CRITICAL: Insufficient z_history points for empirical tail analysis. "
+            f"Required: 30 points, Got: {len(z_history) if z_history else 0}. "
+            f"Cannot calculate adaptive stop loss without sufficient historical data."
+        )
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.critical(error_msg)
+        raise ValueError(error_msg)
+
+    z_95 = np.percentile(z_history, 95)
+    z_sl = max(z_sl_min, z_95)
 
     if signal == 1:  # Long spread: z <= -2.0 (spread is BELOW mean, expect RISE to mean)
         # Entry: spread is at -2σ (below mean)
