@@ -834,6 +834,9 @@ async function checkStrategyExit(
       let stderr = '';
       let resolved = false;
 
+      console.log(`[Auto-Close] Calling Python script for ${trade.symbol} (${strategyName})`);
+      console.log(`[Auto-Close] Candles: ${candlesData.length}, Pair candles: ${pairCandlesData.length}`);
+
       const pythonProcess = spawn('python3', [
         pythonScript,
         trade.id,
@@ -869,6 +872,9 @@ async function checkStrategyExit(
         resolved = true;
         clearTimeout(timeout);
 
+        console.log(`[Auto-Close] Python process closed for ${trade.symbol} with code ${code}`);
+        console.log(`[Auto-Close] Python stdout length: ${stdout.length}, stderr length: ${stderr.length}`);
+
         if (code !== 0) {
           console.error(`[Auto-Close] CRITICAL: Strategy exit check FAILED for ${trade.symbol} (${strategyName})`);
           console.error(`[Auto-Close] Exit code: ${code}`);
@@ -899,6 +905,9 @@ async function checkStrategyExit(
           } else {
             const errorMsg = result.error ? ` Error: ${result.error}` : '';
             console.log(`[Auto-Close] Strategy exit check returned no exit for ${trade.symbol}: should_exit=${result.should_exit}${errorMsg}`);
+            if (stderr) {
+              console.log(`[Auto-Close] Python stderr: ${stderr}`);
+            }
             resolve(null);
           }
         } catch (error) {

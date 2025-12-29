@@ -23,3 +23,14 @@ description: "Example description"
 
 # General
 - I ALWAYS try to rely on only ONE single source of truth for each concern and rather create a centralized solution than having different code for the same concern in different files for example (trading-db.ts).
+
+- you are NOT allowed to silently accept bad data:
+example:
+win_rate = analysis.get('win_rate', 0) ← BAD (assumes 0)
+
+total_pnl = analysis.get('total_historical_pnl', None) ← GOOD (uses None)
+Then checks if total_pnl is None and skips ← CORRECT
+
+Missing data should NEVER be silently assumed
+
+use centralized validation for eficent validation either per file or global what ever is more efficent! 
