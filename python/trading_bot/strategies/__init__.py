@@ -27,8 +27,9 @@ __all__ = [
 ]
 
 # Register strategies with factory
-StrategyFactory.register_strategy("AiImageAnalyzer", PromptStrategy)
-StrategyFactory.register_strategy("MarketStructure", AlexAnalysisModule)
-StrategyFactory.register_strategy("CointegrationSpreadTrader", CointegrationAnalysisModule)
-StrategyFactory.register_strategy("NewListingStrategy", NewListingStrategy)
+# Strategy classes define their own names - factory uses those names
+StrategyFactory.register_strategy(PromptStrategy.STRATEGY_NAME, PromptStrategy)
+StrategyFactory.register_strategy(AlexAnalysisModule.STRATEGY_NAME, AlexAnalysisModule)
+StrategyFactory.register_strategy(CointegrationAnalysisModule.STRATEGY_NAME, CointegrationAnalysisModule)
+StrategyFactory.register_strategy(NewListingStrategy.STRATEGY_NAME, NewListingStrategy)
 

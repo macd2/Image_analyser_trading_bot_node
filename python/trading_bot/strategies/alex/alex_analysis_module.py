@@ -26,7 +26,7 @@ class AlexAnalysisModule(BaseAnalysisModule):
 
     # Strategy type identification
     STRATEGY_TYPE = "price_based"
-    STRATEGY_NAME = "AlexAnalysisModule"
+    STRATEGY_NAME = "MarketStructure"
     STRATEGY_VERSION = "1.0"
 
     # Default configuration

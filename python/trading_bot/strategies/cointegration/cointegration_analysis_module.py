@@ -33,7 +33,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
 
     # Strategy type identification
     STRATEGY_TYPE = "spread_based"
-    STRATEGY_NAME = "CointegrationAnalysisModule"
+    STRATEGY_NAME = "CointegrationSpreadTrader"
     STRATEGY_VERSION = "1.0"
 
     # Strategy-specific configuration (ready to move to instances.settings.strategy_config)

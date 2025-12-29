@@ -46,7 +46,7 @@ class PromptStrategy(BaseAnalysisModule):
 
     # Strategy type identification
     STRATEGY_TYPE = "price_based"
-    STRATEGY_NAME = "PromptStrategy"
+    STRATEGY_NAME = "AiImageAnalyzer"
     STRATEGY_VERSION = "1.0"
 
     # Signal ranking weights (same as trading cycle)
