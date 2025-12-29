@@ -233,6 +233,14 @@ def check_strategy_exit(
         }
         stop_updates = []  # Audit trail of all stop/TP changes
 
+        # PERFORMANCE FIX: Create lookup dict for pair candles by timestamp (O(1) lookup instead of O(n) search)
+        pair_candles_by_ts = {}
+        if pair_candles:
+            for pair_candle in pair_candles:
+                ts = pair_candle.get("timestamp")
+                if ts is not None:
+                    pair_candles_by_ts[ts] = pair_candle
+
         for i, candle in enumerate(candles):
             try:
                 current_candle_dict = {
@@ -243,19 +251,18 @@ def check_strategy_exit(
                     "close": candle.get("close"),
                 }
 
-                # Find corresponding pair candle by timestamp
+                # Find corresponding pair candle by timestamp (O(1) lookup)
                 pair_candle_dict = None
-                if pair_candles:
-                    for pair_candle in pair_candles:
-                        if pair_candle.get("timestamp") == current_candle_dict.get("timestamp"):
-                            pair_candle_dict = {
-                                "timestamp": pair_candle.get("timestamp"),
-                                "open": pair_candle.get("open"),
-                                "high": pair_candle.get("high"),
-                                "low": pair_candle.get("low"),
-                                "close": pair_candle.get("close"),
-                            }
-                            break
+                if pair_candles_by_ts:
+                    pair_candle = pair_candles_by_ts.get(current_candle_dict.get("timestamp"))
+                    if pair_candle:
+                        pair_candle_dict = {
+                            "timestamp": pair_candle.get("timestamp"),
+                            "open": pair_candle.get("open"),
+                            "high": pair_candle.get("high"),
+                            "low": pair_candle.get("low"),
+                            "close": pair_candle.get("close"),
+                        }
 
                 # Call strategy.should_exit()
                 # For spread-based strategies, pair_candle is provided from database cache

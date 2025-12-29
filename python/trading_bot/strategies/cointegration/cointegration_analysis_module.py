@@ -995,19 +995,18 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             # Get current prices
             current_price = current_candle.get("close")
 
-            # If pair_candle not provided, fetch from live API
+            # If pair_candle not provided, return error (don't fetch from API)
+            # CRITICAL: Fetching from API during simulator exit checks causes 30+ second timeouts
+            # The Node.js auto-close route MUST provide pair_candles from database cache
             if not pair_candle and pair_symbol:
-                try:
-                    pair_candle = self._fetch_pair_candle_from_api(pair_symbol, current_candle)
-                except Exception as e:
-                    logger.error(f"Failed to fetch pair candle for {pair_symbol}: {e}")
-                    return {
-                        "should_exit": False,
-                        "exit_details": {
-                            "reason": "no_exit",
-                            "error": f"Failed to fetch pair candle: {e}",
-                        }
+                logger.warning(f"Pair candle not provided for {pair_symbol} - cannot calculate z-score without it")
+                return {
+                    "should_exit": False,
+                    "exit_details": {
+                        "reason": "no_exit",
+                        "error": f"Pair candle not provided for {pair_symbol} - cannot calculate z-score",
                     }
+                }
 
             pair_price = pair_candle.get("close") if pair_candle else None
 
