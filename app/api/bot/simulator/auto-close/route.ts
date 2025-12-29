@@ -1207,7 +1207,7 @@ export async function POST() {
             pairCandles = await getHistoricalCandles(
               pairSymbol,
               timeframe,
-              tradeCreatedMs
+              signalTime
             );
 
             if (!pairCandles || pairCandles.length === 0) {
