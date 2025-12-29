@@ -83,7 +83,7 @@ class StrategyFactory:
             else:
                 settings = settings_raw if isinstance(settings_raw, dict) else {}
 
-            strategy_name = settings.get('strategy', 'AiImageAnalyzer')  # Default to AiImageAnalyzer
+            strategy_name = settings.get('strategy') 
             strategy_config = settings.get('strategy_config', {})
             
         finally:
