@@ -8,6 +8,8 @@ the appropriate strategy class.
 import json
 import logging
 from typing import Optional, Type, Dict, Any, Callable
+from trading_bot.config.settings_v2 import Config
+from trading_bot.strategies.base import BaseAnalysisModule
 
 logger = logging.getLogger(__name__)
 
