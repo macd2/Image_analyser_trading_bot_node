@@ -160,11 +160,11 @@ def check_strategy_exit(
         # or create a minimal config
         try:
             from trading_bot.db.client import get_connection, query_one, release_connection
-            conn = get_connection()
+            conn = get_connection(timeout_seconds=5.0)
             instance = query_one(conn, "SELECT id FROM instances LIMIT 1")
             release_connection(conn)
             instance_id = instance.get('id') if instance else 'simulator'
-        except Exception:
+        except Exception as e:
             instance_id = 'simulator'
 
         try:

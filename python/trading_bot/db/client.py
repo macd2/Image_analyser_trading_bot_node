@@ -267,15 +267,16 @@ def _get_pg_connection_with_timeout(timeout_seconds: float = 10.0):
         ValueError: If DATABASE_URL not set
     """
     import psycopg2.extras
+    from psycopg2.pool import PoolError
 
-    pool = _get_pg_pool()
+    pool_obj = _get_pg_pool()
     start_time = time.time()
 
     # Try to get connection with timeout
     while True:
         try:
             # Try non-blocking first
-            conn = pool.getconn()
+            conn = pool_obj.getconn()
             conn.cursor_factory = psycopg2.extras.RealDictCursor
 
             # Validate connection is still alive (detect stale connections)
@@ -286,17 +287,17 @@ def _get_pg_connection_with_timeout(timeout_seconds: float = 10.0):
                 cursor.close()
             except Exception as e:
                 # Connection is dead, return it to pool and try again
-                pool.putconn(conn, close=True)
-                raise pool.PoolError(f"Connection validation failed: {e}")
+                pool_obj.putconn(conn, close=True)
+                raise PoolError(f"Connection validation failed: {e}")
 
             return conn
-        except pool.PoolError:
+        except PoolError:
             # Pool exhausted or connection invalid, check if we've exceeded timeout
             elapsed = time.time() - start_time
             if elapsed >= timeout_seconds:
                 raise TimeoutError(
                     f"Connection pool exhausted: Could not get connection within {timeout_seconds}s. "
-                    f"Pool size: {pool.minconn}-{pool.maxconn}. "
+                    f"Pool size: {pool_obj.minconn}-{pool_obj.maxconn}. "
                     f"Consider increasing maxconn in database configuration."
                 )
             # Wait a bit before retrying

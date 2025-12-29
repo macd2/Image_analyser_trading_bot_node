@@ -247,6 +247,19 @@ interface ExitResult {
   pair_exit_price?: number | null;  // For spread-based trades
 }
 
+/**
+ * Result from strategy exit check
+ * Distinguishes between:
+ * - { success: true, exit: ExitResult } = strategy check succeeded, trade should exit
+ * - { success: true, exit: null } = strategy check succeeded, trade should NOT exit (normal)
+ * - { success: false, error: string } = strategy check failed (actual error)
+ */
+interface StrategyExitCheckResult {
+  success: boolean;
+  exit?: ExitResult | null;  // Only present if success=true
+  error?: string;  // Only present if success=false
+}
+
 const TIMEFRAME_MAP: Record<string, string> = {
   '1m': '1', '3m': '3', '5m': '5', '15m': '15', '30m': '30',
   '1h': '60', '2h': '120', '4h': '240', '6h': '360', '12h': '720',
@@ -679,18 +692,20 @@ function checkHistoricalSLTP(
 
 /**
  * Check strategy-specific exit conditions using Python strategy.should_exit()
- * Returns exit result if strategy says to exit, null otherwise
- * Falls back to price-level checks if strategy is not available
+ * Returns:
+ * - { success: true, exit: ExitResult } if strategy says to exit
+ * - { success: true, exit: null } if strategy says don't exit (normal case)
+ * - { success: false, error: string } if strategy check failed (actual error)
  */
 async function checkStrategyExit(
   trade: TradeRow,
   candles: Candle[],
   startFromIndex: number = 0,
   strategyName?: string | null
-): Promise<ExitResult | null> {
+): Promise<StrategyExitCheckResult> {
   // If no strategy name, cannot use strategy-specific logic
   if (!strategyName) {
-    return null;
+    return { success: false, error: 'No strategy name provided' };
   }
 
   try {
@@ -731,7 +746,8 @@ async function checkStrategyExit(
       stop_loss: trade.stop_loss,
       take_profit: trade.take_profit,
       strategy_metadata: strategyMetadata,
-      strategy_type: trade.strategy_type  // CRITICAL: Pass strategy_type to Python script for exit logic
+      strategy_type: trade.strategy_type,  // CRITICAL: Pass strategy_type to Python script for exit logic
+      pair_symbol: strategyMetadata?.pair_symbol  // CRITICAL: Pass pair_symbol for spread-based trades to avoid API calls
     };
 
     // Fetch pair candles if this is a spread-based trade
@@ -837,6 +853,11 @@ async function checkStrategyExit(
       console.log(`[Auto-Close] Calling Python script for ${trade.symbol} (${strategyName})`);
       console.log(`[Auto-Close] Candles: ${candlesData.length}, Pair candles: ${pairCandlesData.length}`);
 
+      // DEBUG: Log exact arguments being passed to Python
+      if (trade.symbol === 'OGUSDT') {
+        console.log(`[Auto-Close] DEBUG OGUSDT - Python args: [${pythonScript}, ${trade.id}, "${strategyName}", ...]`);
+      }
+
       const pythonProcess = spawn('python3', [
         pythonScript,
         trade.id,
@@ -853,9 +874,10 @@ async function checkStrategyExit(
       const timeout = setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          console.error(`[Auto-Close] CRITICAL: Strategy exit check TIMEOUT for ${trade.symbol} (${strategyName}) - process took > 30 seconds`);
+          const errorMsg = `Strategy exit check TIMEOUT for ${trade.symbol} (${strategyName}) - process took > 30 seconds`;
+          console.error(`[Auto-Close] CRITICAL: ${errorMsg}`);
           pythonProcess.kill();
-          resolve(null);
+          resolve({ success: false, error: errorMsg });
         }
       }, 30000);
 
@@ -872,15 +894,12 @@ async function checkStrategyExit(
         resolved = true;
         clearTimeout(timeout);
 
-        console.log(`[Auto-Close] Python process closed for ${trade.symbol} with code ${code}`);
-        console.log(`[Auto-Close] Python stdout length: ${stdout.length}, stderr length: ${stderr.length}`);
-
         if (code !== 0) {
-          console.error(`[Auto-Close] CRITICAL: Strategy exit check FAILED for ${trade.symbol} (${strategyName})`);
-          console.error(`[Auto-Close] Exit code: ${code}`);
+          const errorMsg = `Strategy exit check failed with exit code ${code}`;
+          console.error(`[Auto-Close] CRITICAL: ${errorMsg} for ${trade.symbol} (${strategyName})`);
           console.error(`[Auto-Close] stderr: ${stderr}`);
           console.error(`[Auto-Close] stdout: ${stdout}`);
-          resolve(null);
+          resolve({ success: false, error: errorMsg });
           return;
         }
 
@@ -901,20 +920,17 @@ async function checkStrategyExit(
               exitResult.pair_exit_price = result.pair_exit_price;
             }
 
-            resolve(exitResult);
+            resolve({ success: true, exit: exitResult });
           } else {
-            const errorMsg = result.error ? ` Error: ${result.error}` : '';
-            console.log(`[Auto-Close] Strategy exit check returned no exit for ${trade.symbol}: should_exit=${result.should_exit}${errorMsg}`);
-            if (stderr) {
-              console.log(`[Auto-Close] Python stderr: ${stderr}`);
-            }
-            resolve(null);
+            // Strategy check succeeded, but no exit signal - this is normal
+            console.log(`[Auto-Close] ${trade.symbol} - Strategy exit check completed: no exit signal (should_exit=${result.should_exit})`);
+            resolve({ success: true, exit: null });
           }
         } catch (error) {
-          console.error(`[Auto-Close] CRITICAL: Failed to parse strategy exit result for ${trade.symbol}: ${error}`);
+          const errorMsg = `Failed to parse strategy exit result: ${error}`;
+          console.error(`[Auto-Close] CRITICAL: ${errorMsg} for ${trade.symbol}`);
           console.error(`[Auto-Close] stdout was: ${stdout}`);
-          console.error(`[Auto-Close] stderr was: ${stderr}`);
-          resolve(null);
+          resolve({ success: false, error: errorMsg });
         }
       });
 
@@ -922,13 +938,15 @@ async function checkStrategyExit(
         if (resolved) return; // Already timed out
         resolved = true;
         clearTimeout(timeout);
-        console.error(`[Auto-Close] CRITICAL: Error spawning strategy exit check for ${trade.symbol}: ${error}`);
-        resolve(null);
+        const errorMsg = `Error spawning strategy exit check: ${error}`;
+        console.error(`[Auto-Close] CRITICAL: ${errorMsg} for ${trade.symbol}`);
+        resolve({ success: false, error: errorMsg });
       });
     });
   } catch (error) {
-    console.error(`[Auto-Close] CRITICAL: Error calling strategy exit check for ${trade.symbol}: ${error}`);
-    return null;
+    const errorMsg = `Error calling strategy exit check: ${error}`;
+    console.error(`[Auto-Close] CRITICAL: ${errorMsg} for ${trade.symbol}`);
+    return { success: false, error: errorMsg };
   }
 }
 
@@ -997,6 +1015,14 @@ export async function POST() {
       const timeframe = trade.timeframe || '1h';
       // Use trade.strategy_name directly (stored in database), fall back to instance settings for backwards compatibility
       const strategyName = trade.strategy_name || getStrategyNameFromSettings((trade as any).instance_settings);
+
+      // DEBUG: Log the exact source of strategy name
+      if (trade.symbol === 'OGUSDT') {
+        console.log(`[Auto-Close] DEBUG OGUSDT - trade.strategy_name="${trade.strategy_name}"`);
+        console.log(`[Auto-Close] DEBUG OGUSDT - instance_settings=${JSON.stringify((trade as any).instance_settings)}`);
+        console.log(`[Auto-Close] DEBUG OGUSDT - final strategyName="${strategyName}"`);
+      }
+
       try {
         const isLong = trade.side === 'Buy';
         const entryPrice = trade.entry_price || 0;
@@ -1390,14 +1416,33 @@ export async function POST() {
       } else if (strategyType === 'spread_based') {
         // Spread-based strategies use strategy.should_exit() ONLY
         console.log(`[Auto-Close] ${trade.symbol} - Spread-based strategy (${strategyName}), checking strategy exit`);
-        exitResult = await checkStrategyExit(trade, candlesAfterCreation, fillCandleIndex, strategyName);
+        const strategyCheckResult = await checkStrategyExit(trade, candlesAfterCreation, fillCandleIndex, strategyName);
+
+        // Handle strategy check result
+        if (!strategyCheckResult.success) {
+          // Strategy check failed - log error and skip trade
+          console.error(`[Auto-Close] CRITICAL: ${strategyCheckResult.error} for ${trade.symbol}`);
+          results.push({
+            trade_id: trade.id,
+            symbol: trade.symbol,
+            action: 'checked',
+            current_price: await getCurrentPrice(trade.symbol),
+            instance_name: trade.instance_name,
+            strategy_name: strategyName || undefined,
+            timeframe: timeframe,
+            candles_checked: candlesAfterCreation.length,
+            bars_open: barsOpen,
+            checked_at: new Date().toISOString()
+          });
+          continue;
+        }
+
+        // Strategy check succeeded - use the exit result (may be null if no exit signal)
+        exitResult = strategyCheckResult.exit || null;
 
         if (!exitResult || !exitResult.hit) {
-          // CRITICAL: For spread-based trades, NEVER fall back to SL/TP
-          // Spread-based trades require strategy-specific exit logic (z-score, mean reversion, etc.)
-          // If strategy exit check fails, skip the trade instead of using incorrect SL/TP logic
-          const exitResultStr = exitResult ? JSON.stringify(exitResult) : 'null';
-          console.error(`[Auto-Close] ${trade.symbol} - CRITICAL: Strategy exit check failed for spread-based trade. exitResult=${exitResultStr}. Skipping trade to prevent incorrect SL/TP closure.`);
+          // No exit signal - trade remains open (this is normal)
+          console.log(`[Auto-Close] ${trade.symbol} - No exit signal from strategy. Trade remains open.`);
           results.push({
             trade_id: trade.id,
             symbol: trade.symbol,
