@@ -836,9 +836,19 @@ async function checkStrategyExit(
       close: c.close
     }));
 
-    // Fetch strategy metadata from recommendation (single source of truth)
+    // Fetch strategy metadata (single source of truth)
+    // CRITICAL: Use trade's own strategy_metadata (stored during trade creation)
+    // Fallback to recommendation only if trade doesn't have it
     let strategyMetadata: any = {};
-    if (trade.recommendation_id) {
+
+    // PRIORITY 1: Use strategy_metadata from trade (stored during trade creation)
+    if (trade.strategy_metadata) {
+      strategyMetadata = typeof trade.strategy_metadata === 'string'
+        ? JSON.parse(trade.strategy_metadata)
+        : trade.strategy_metadata;
+    }
+    // PRIORITY 2: Fallback to recommendation if trade doesn't have metadata
+    else if (trade.recommendation_id) {
       try {
         const rec = await dbQuery<any>(`
           SELECT strategy_metadata FROM recommendations WHERE id = ?
@@ -923,9 +933,6 @@ async function checkStrategyExit(
             console.log(`[Exit-Check] Pair DB status: latest=${latestPairCandleStr}, complete=${latestCompleteStr}`);
           }
 
-          // Check if pair candles are stale (latest DB candle is older than latest complete candle)
-          const pairCandlesStale = latestPairCandleTs < latestCompleteCandle;
-
           // STEP 2: Query pair candles from klines table
           const pairCandles = await dbQuery<any>(`
             SELECT
@@ -941,39 +948,12 @@ async function checkStrategyExit(
 
           pairCandlesData = pairCandles || [];
 
-          // STEP 3: If no candles or stale, fetch from Bybit API
-          if (pairCandlesData.length === 0 || pairCandlesStale) {
-            if (pairCandlesData.length === 0) {
-              if (isSpreadBased) console.log(`[Exit-Check] No pair candles in DB, fetching from Bybit...`);
-            } else {
-              if (isSpreadBased) console.log(`[Exit-Check] Pair candles stale, fetching from Bybit...`);
-            }
-            try {
-              await fetchAndStoreCandles(pairSymbol, timeframe);
-
-              // Now try to fetch from database again
-              const pairCandlesFromApi = await dbQuery<any>(`
-                SELECT
-                  start_time as timestamp,
-                  open_price as open,
-                  high_price as high,
-                  low_price as low,
-                  close_price as close
-                FROM klines
-                WHERE symbol = ? AND timeframe = ? AND start_time >= ? AND start_time <= ?
-                ORDER BY start_time ASC
-              `, [pairSymbol, timeframe, startTime, endTime]);
-
-              pairCandlesData = pairCandlesFromApi || [];
-              if (pairCandlesData.length > 0 && isSpreadBased) {
-                console.log(`[Exit-Check] Fetched ${pairCandlesData.length} pair candles from Bybit`);
-              }
-            } catch (apiError) {
-              console.error(`[Auto-Close] Failed to fetch pair candles from Bybit API for ${pairSymbol}: ${apiError}`);
-              // Continue without pair candles - strategy will fetch from API if needed
-            }
+          // STEP 3: For simulator, use whatever candles we have (don't fetch from API)
+          // The simulator works with historical data, not real-time
+          if (pairCandlesData.length === 0) {
+            if (isSpreadBased) console.log(`[Exit-Check] No pair candles in DB for ${pairSymbol}`);
           } else {
-            if (isSpreadBased) console.log(`[Exit-Check] Using ${pairCandlesData.length} pair candles from DB (up-to-date)`);
+            if (isSpreadBased) console.log(`[Exit-Check] Using ${pairCandlesData.length} pair candles from DB`);
           }
         }
       } catch (error) {
@@ -1351,12 +1331,23 @@ export async function POST() {
       console.log(`[Auto-Close] Step 7 DETAIL: alreadyFilled=${alreadyFilled}, trade.status=${trade.status}`);
 
       // Fetch strategy metadata for spread-based fill detection
+      // CRITICAL: Use trade's own strategy_metadata (single source of truth)
+      // Fallback to recommendation only if trade doesn't have it
       let strategyMetadata: any = {};
       let pairSymbolForExit: string | null = null;
       let pairCandlesForExit: Candle[] = [];
 
-      if (trade.recommendation_id) {
-        console.log(`[Auto-Close] Step 7 DETAIL: Fetching strategy metadata...`);
+      // PRIORITY 1: Use strategy_metadata from trade (stored during trade creation)
+      if (trade.strategy_metadata) {
+        console.log(`[Auto-Close] Step 7 DETAIL: Using strategy_metadata from trade`);
+        strategyMetadata = typeof trade.strategy_metadata === 'string'
+          ? JSON.parse(trade.strategy_metadata)
+          : trade.strategy_metadata;
+        console.log(`[Auto-Close] Step 7 DETAIL: Strategy metadata from trade, pair_symbol=${strategyMetadata.pair_symbol}`);
+      }
+      // PRIORITY 2: Fallback to recommendation if trade doesn't have metadata
+      else if (trade.recommendation_id) {
+        console.log(`[Auto-Close] Step 7 DETAIL: Trade has no strategy_metadata, fetching from recommendation...`);
         try {
           const rec = await dbQuery<any>(`
             SELECT strategy_metadata FROM recommendations WHERE id = ?
@@ -1366,10 +1357,10 @@ export async function POST() {
             strategyMetadata = typeof rec[0].strategy_metadata === 'string'
               ? JSON.parse(rec[0].strategy_metadata)
               : rec[0].strategy_metadata;
-            console.log(`[Auto-Close] Step 7 DETAIL: Strategy metadata fetched, pair_symbol=${strategyMetadata.pair_symbol}`);
+            console.log(`[Auto-Close] Step 7 DETAIL: Strategy metadata from recommendation, pair_symbol=${strategyMetadata.pair_symbol}`);
           }
         } catch (error) {
-          console.warn(`[Auto-Close] Step 7 WARNING: Failed to fetch strategy metadata: ${error}`);
+          console.warn(`[Auto-Close] Step 7 WARNING: Failed to fetch strategy metadata from recommendation: ${error}`);
         }
       }
 

@@ -1025,6 +1025,14 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         try:
             # Get strategy metadata stored during trade creation
             metadata = trade.get("strategy_metadata", {})
+
+            # Handle case where metadata is a JSON string (from database)
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except (json.JSONDecodeError, TypeError):
+                    metadata = {}
+
             beta = metadata.get("beta")
             spread_mean = metadata.get("spread_mean")
             spread_std = metadata.get("spread_std")
