@@ -61,7 +61,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         "candle_limit": 1000,       # Number of candles to fetch per symbol in screener
 
         # Cointegration parameters (strategy-specific)
-        "lookback": 90,           # Lookback period for cointegration analysis
+        "lookback": 120,           # Lookback period for cointegration analysis
         "z_entry": 2.0,            # Z-score entry threshold for cointegration
         "z_exit": 0.5,             # Z-score exit threshold for cointegration
         "use_adf": True,            # Use ADF test for mean reversion detection (True) or Hurst exponent (False)
@@ -330,7 +330,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
 
                 # Fetch candles for both symbols using analysis_timeframe from config
                 # Use maximum API limit (1000) to ensure we get enough candles for analysis
-                lookback = self.get_config_value('lookback', 90)
+                lookback = self.get_config_value('lookback', 120)
                 min_candles_needed = max(lookback + 10, 50)  # Need at least lookback + buffer
                 self._heartbeat(f"Fetching candles for {symbol} and {pair_symbol}")
                 candles1 = await self.candle_adapter.get_candles(
@@ -413,7 +413,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 logger.info(f"🔗 Analyzing {symbol}/{pair_symbol}", extra={"symbol": symbol, "pair": pair_symbol})
                 self._heartbeat(f"Running cointegration analysis for {symbol}")
                 strategy = CointegrationStrategy(
-                    lookback=self.get_config_value('lookback', 90),
+                    lookback=self.get_config_value('lookback', 120),
                     z_entry=self.get_config_value('z_entry', 2.0),
                     z_exit=self.get_config_value('z_exit', 0.5),
                     use_adf=self.get_config_value('use_adf', True),
@@ -1225,7 +1225,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             # Cointegration analysis settings
             "lookback": {
                 "type": "number",
-                "default": 90,
+                "default": 120,
                 "description": "Lookback period (candles) for cointegration analysis",
             },
             "z_entry": {

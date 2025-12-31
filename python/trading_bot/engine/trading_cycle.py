@@ -25,6 +25,12 @@ from trading_bot.core.utils import (  # type: ignore
     get_current_cycle_boundary,  # type: ignore
     seconds_until_next_boundary,  # type: ignore
 )
+from trading_bot.core.trade_cycle_validator import (
+    SignalValidator,
+    TradeExecutionValidator,
+    CycleValidator,
+    TradeCycleValidationError,
+)
 from trading_bot.strategies.factory import StrategyFactory
 from trading_bot.db.client import get_connection, release_connection, execute, query
 from trading_bot.services.sl_adjuster import StopLossAdjuster
@@ -650,6 +656,14 @@ class TradingCycle:
             if self.heartbeat_callback:
                 self.heartbeat_callback()
 
+            # VALIDATE CYCLE STATE before execution
+            try:
+                CycleValidator.validate_cycle_state(cycle_id, selected_signals, available_slots)
+            except TradeCycleValidationError as e:
+                logger.error(f"❌ CYCLE VALIDATION FAILED: {e}")
+                results["errors"].append({"cycle": True, "error": str(e)})
+                return results
+
             # STEP 7: Execute selected signals
             logger.info(f"\n🚀 STEP 7: Executing {len(selected_signals)} selected signal(s)...")
             for signal in selected_signals:
@@ -783,6 +797,9 @@ class TradingCycle:
 
         Returns:
             Trade result or None if no callback
+
+        Raises:
+            TradeCycleValidationError: If signal validation fails
         """
         if not self.execute_signal:
             logger.warning("No execute_signal callback configured")
@@ -794,6 +811,18 @@ class TradingCycle:
             logger.error("Critical error: recommendation is None - cannot build signal")
             return None
         analysis = signal.get("analysis", {})
+
+        # VALIDATE SIGNAL before building and executing
+        try:
+            SignalValidator.validate_signal_for_execution(signal, symbol, cycle_id)
+        except TradeCycleValidationError as e:
+            logger.error(f"❌ SIGNAL VALIDATION FAILED for {symbol}: {e}")
+            return {
+                "symbol": symbol,
+                "status": "rejected",
+                "error": str(e),
+                "cycle_id": cycle_id,
+            }
 
         # Build signal dict for trading engine
         # Pass entire signal object so _build_signal can extract strategy_type and strategy_name from top level
@@ -817,6 +846,19 @@ class TradingCycle:
             recommendation_id=signal.get("recommendation_id"),
             cycle_id=cycle_id,  # Pass cycle_id for audit trail
         )
+
+        # VALIDATE TRADE EXECUTION RESULT - NO SILENT FAILURES
+        try:
+            TradeExecutionValidator.validate_trade_execution_result(trade_result, symbol, cycle_id)
+        except TradeCycleValidationError as e:
+            logger.error(f"❌ TRADE EXECUTION VALIDATION FAILED for {symbol}: {e}")
+            # Return error result instead of None
+            return {
+                "symbol": symbol,
+                "status": "error",
+                "error": f"Trade execution validation failed: {str(e)}",
+                "cycle_id": cycle_id,
+            }
 
         if trade_result.get("status") == "rejected":
             logger.info(f"   ❌ {symbol} rejected: {trade_result.get('error')}")

@@ -357,6 +357,9 @@ class TradingEngine:
 
         Returns:
             Execution result dict
+
+        Raises:
+            ValueError: If signal validation fails (no silent failures)
         """
         # MULTI-INSTANCE: Generate trade_id with instance_id prefix for WebSocket filtering
         # Format: {instance_id}_{uuid} so StateManager can identify ownership
@@ -364,10 +367,23 @@ class TradingEngine:
         trade_id = f"{self.instance_id}_{trade_uuid}" if self.instance_id else trade_uuid
         timestamp = datetime.now(timezone.utc)
 
+        # VALIDATE: symbol must be provided
+        if not symbol or not isinstance(symbol, str):
+            rejection_reason = f"Invalid symbol: {symbol}"
+            logger.error(f"❌ VALIDATION FAILED: {rejection_reason}")
+            self._insert_rejected_trade(trade_id, symbol, signal, rejection_reason, recommendation_id, cycle_id, timestamp)
+            return {
+                "id": trade_id,
+                "status": "rejected",
+                "error": rejection_reason,
+                "timestamp": timestamp,
+            }
+
         # Validate signal
         recommendation = signal.get("recommendation", "").upper()
         if recommendation not in ("BUY", "SELL", "LONG", "SHORT"):
             rejection_reason = f"Invalid recommendation: {recommendation}"
+            logger.error(f"❌ VALIDATION FAILED for {symbol}: {rejection_reason}")
             self._insert_rejected_trade(trade_id, symbol, signal, rejection_reason, recommendation_id, cycle_id, timestamp)
             return {
                 "id": trade_id,

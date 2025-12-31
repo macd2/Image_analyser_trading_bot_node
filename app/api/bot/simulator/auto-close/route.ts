@@ -811,7 +811,8 @@ async function checkStrategyExit(
   startFromIndex: number = 0,
   strategyName?: string | null,
   pairCandles: Candle[] = [],
-  pairSymbol?: string | null
+  pairSymbol?: string | null,
+  timeframe: string = '1h'
 ): Promise<StrategyExitCheckResult> {
   // If no strategy name, cannot use strategy-specific logic
   if (!strategyName) {
@@ -873,7 +874,9 @@ async function checkStrategyExit(
       strategy_metadata: strategyMetadata,
       strategy_type: trade.strategy_type,  // CRITICAL: Pass strategy_type to Python script for exit logic
       pair_symbol: strategyMetadata?.pair_symbol,  // CRITICAL: Pass pair_symbol for spread-based trades to avoid API calls
-      fill_candle_index: startFromIndex  // CRITICAL: Pass fill candle index to Python script to skip lookback candles
+      fill_candle_index: startFromIndex,  // CRITICAL: Pass fill candle index to Python script to skip lookback candles
+      filled_at: trade.filled_at,  // CRITICAL: Pass filled_at timestamp for Python to recalculate fill_candle_index after alignment
+      timeframe: timeframe  // CRITICAL: Pass timeframe for Python to calculate candle periods
     };
 
     // Use pair candles passed from Step 7, or fetch if not provided
@@ -1060,7 +1063,8 @@ async function checkStrategyExit(
           } else {
             // Strategy check succeeded, but no exit signal - this is normal
             if (isSpreadBased) {
-              console.log(`[Exit-Check] No exit signal (should_exit=${result.should_exit})`);
+              const pairPriceStr = result.pair_current_price ? `, pair_price=${result.pair_current_price.toFixed(4)}` : '';
+              console.log(`[Exit-Check] No exit signal (should_exit=${result.should_exit}), current_price=${result.current_price?.toFixed(4)}${pairPriceStr}`);
             } else {
               console.log(`[Auto-Close] ${trade.symbol} - Strategy exit check completed: no exit signal (should_exit=${result.should_exit})`);
             }
@@ -1699,7 +1703,7 @@ export async function POST() {
         console.log(`[Auto-Close] Step 8 DETAIL: Spread-based strategy - calling Python exit check`);
         console.log(`[Auto-Close] Step 8 DETAIL: About to call checkStrategyExit for ${trade.symbol} with pair_symbol=${pairSymbolForExit}...`);
         const checkStartTime = Date.now();
-        const strategyCheckResult = await checkStrategyExit(trade, candlesAfterCreation, fillCandleIndex, strategyName, pairCandlesForExit, pairSymbolForExit || undefined);
+        const strategyCheckResult = await checkStrategyExit(trade, candlesAfterCreation, fillCandleIndex, strategyName, pairCandlesForExit, pairSymbolForExit || undefined, timeframe);
         const checkDuration = Date.now() - checkStartTime;
         console.log(`[Auto-Close] Step 8 DETAIL: checkStrategyExit returned after ${checkDuration}ms`);
 
