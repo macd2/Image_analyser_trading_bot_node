@@ -1087,6 +1087,15 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             z_exit_threshold = metadata.get("z_exit_threshold")
             pair_symbol = metadata.get("pair_symbol")
 
+            # Ensure numeric values are floats (not strings from database)
+            try:
+                beta = float(beta) if beta is not None else None
+                spread_mean = float(spread_mean) if spread_mean is not None else None
+                spread_std = float(spread_std) if spread_std is not None else None
+                z_exit_threshold = float(z_exit_threshold) if z_exit_threshold is not None else None
+            except (ValueError, TypeError):
+                pass  # Keep original values if conversion fails
+
             # TASK 2: Validate we have all needed data (use 'is not None' to allow 0 values)
             if beta is None or spread_mean is None or spread_std is None or z_exit_threshold is None:
                 error_msg = (
@@ -1138,6 +1147,12 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             enable_divergence_check = self.get_config_value('enable_divergence_check', True)
             divergence_threshold = self.get_config_value('divergence_threshold', 4.0)
 
+            # Ensure divergence_threshold is numeric
+            try:
+                divergence_threshold = float(divergence_threshold) if divergence_threshold is not None else 4.0
+            except (ValueError, TypeError):
+                divergence_threshold = 4.0
+
             # Check divergence blowup (|z - z_entry| > threshold)
             if enable_divergence_check and z_score_at_entry is not None and divergence_threshold > 0:
                 divergence = abs(z_score - z_score_at_entry)
@@ -1184,6 +1199,18 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     f"This should have been calculated at entry time from z_history. "
                     f"Trade ID: {trade.get('id')}, Symbol: {trade.get('symbol')}. "
                     f"Check that strategy_metadata was properly stored in the trade record."
+                )
+                logger.critical(error_msg)
+                raise ValueError(error_msg)
+
+            # Ensure max_spread_deviation is numeric
+            try:
+                max_spread_deviation = float(max_spread_deviation)
+            except (ValueError, TypeError):
+                error_msg = (
+                    f"CRITICAL: max_spread_deviation must be numeric. "
+                    f"Got: {max_spread_deviation} (type: {type(max_spread_deviation).__name__}). "
+                    f"Trade ID: {trade.get('id')}, Symbol: {trade.get('symbol')}."
                 )
                 logger.critical(error_msg)
                 raise ValueError(error_msg)
