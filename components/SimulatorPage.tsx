@@ -209,6 +209,62 @@ function getStrategyTypeColor(strategyType?: string | null): string {
   }
 }
 
+// Helper function to extract unique strategy names from closed/cancelled trades
+function getUniqueStrategyNames(trades: ClosedTrade[]): string[] {
+  const names = new Set<string>()
+  trades.forEach(trade => {
+    if (trade.strategy_name) {
+      names.add(trade.strategy_name)
+    }
+  })
+  return Array.from(names).sort()
+}
+
+// Helper function to extract unique strategy types from closed/cancelled trades
+function getUniqueStrategyTypes(trades: ClosedTrade[]): string[] {
+  const types = new Set<string>()
+  trades.forEach(trade => {
+    if (trade.strategy_type) {
+      types.add(trade.strategy_type)
+    }
+  })
+  return Array.from(types).sort()
+}
+
+// Helper function to extract unique strategy names from open trades
+function getUniqueOpenTradeStrategyNames(openTrades: InstanceWithRuns[]): string[] {
+  const names = new Set<string>()
+  openTrades.forEach(instance => {
+    instance.runs.forEach(run => {
+      run.cycles.forEach(cycle => {
+        cycle.trades.forEach(trade => {
+          if (trade.strategy_name) {
+            names.add(trade.strategy_name)
+          }
+        })
+      })
+    })
+  })
+  return Array.from(names).sort()
+}
+
+// Helper function to extract unique strategy types from open trades
+function getUniqueOpenTradeStrategyTypes(openTrades: InstanceWithRuns[]): string[] {
+  const types = new Set<string>()
+  openTrades.forEach(instance => {
+    instance.runs.forEach(run => {
+      run.cycles.forEach(cycle => {
+        cycle.trades.forEach(trade => {
+          if (trade.strategy_type) {
+            types.add(trade.strategy_type)
+          }
+        })
+      })
+    })
+  })
+  return Array.from(types).sort()
+}
+
 export function SimulatorPage() {
   const [stats, setStats] = useState<SimulatorStats | null>(null)
   const [openTrades, setOpenTrades] = useState<InstanceWithRuns[]>([])
@@ -243,6 +299,20 @@ export function SimulatorPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [maxBarsConfigOpen, setMaxBarsConfigOpen] = useState(false)
   const [maxBarsStrategyType, setMaxBarsStrategyType] = useState<'global' | 'price_based' | 'spread_based'>('global')
+
+  // Filter and collapse state for trade sections
+  const [openTradesExpanded, setOpenTradesExpanded] = useState(true)
+  const [closedTradesExpanded, setClosedTradesExpanded] = useState(true)
+  const [cancelledTradesExpanded, setCancelledTradesExpanded] = useState(true)
+
+  const [openTradesStrategyFilter, setOpenTradesStrategyFilter] = useState<string>('')
+  const [openTradesStrategyTypeFilter, setOpenTradesStrategyTypeFilter] = useState<string>('')
+
+  const [closedTradesStrategyFilter, setClosedTradesStrategyFilter] = useState<string>('')
+  const [closedTradesStrategyTypeFilter, setClosedTradesStrategyTypeFilter] = useState<string>('')
+
+  const [cancelledTradesStrategyFilter, setCancelledTradesStrategyFilter] = useState<string>('')
+  const [cancelledTradesStrategyTypeFilter, setCancelledTradesStrategyTypeFilter] = useState<string>('')
 
   // Check if any max bars settings have changed (for current strategy type)
   const hasMaxBarsChanges = useMemo(() => {
@@ -1309,11 +1379,51 @@ export function SimulatorPage() {
       {/* Open Trades - Full Width Vertical List */}
       <Card className="bg-slate-800 border-slate-700">
         <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2">
-            <Target className="w-5 h-5 text-blue-400" />
-            Open Paper Trades ({openTrades.reduce((sum, inst) => sum + inst.runs.reduce((rSum, run) => rSum + run.cycles.reduce((cSum, cycle) => cSum + cycle.trades.length, 0), 0), 0)})
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Target className="w-5 h-5 text-blue-400" />
+              Open Paper Trades ({openTrades.reduce((sum, inst) => sum + inst.runs.reduce((rSum, run) => rSum + run.cycles.reduce((cSum, cycle) => cSum + cycle.trades.length, 0), 0), 0)})
+            </CardTitle>
+            <button
+              onClick={() => setOpenTradesExpanded(!openTradesExpanded)}
+              className="p-1 hover:bg-slate-700 rounded transition-colors"
+              title={openTradesExpanded ? 'Collapse' : 'Expand'}
+            >
+              <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${openTradesExpanded ? '' : '-rotate-90'}`} />
+            </button>
+          </div>
         </CardHeader>
+        {openTradesExpanded && (
+          <>
+            {/* Filters for Open Trades */}
+            <div className="px-6 pb-4 flex gap-3 flex-wrap">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">Strategy Name</label>
+                <select
+                  value={openTradesStrategyFilter}
+                  onChange={(e) => setOpenTradesStrategyFilter(e.target.value)}
+                  className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 hover:border-slate-500 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="">All Strategies</option>
+                  {getUniqueOpenTradeStrategyNames(openTrades).map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">Strategy Type</label>
+                <select
+                  value={openTradesStrategyTypeFilter}
+                  onChange={(e) => setOpenTradesStrategyTypeFilter(e.target.value)}
+                  className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 hover:border-slate-500 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="">All Types</option>
+                  {getUniqueOpenTradeStrategyTypes(openTrades).map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
         <CardContent>
           {openTrades.length === 0 ? (
             <div className="text-center py-8 text-slate-400">
@@ -1338,6 +1448,11 @@ export function SimulatorPage() {
                   )
                 )
                 .sort((a, b) => new Date(b.trade.created_at).getTime() - new Date(a.trade.created_at).getTime())
+                .filter(({ trade }) => {
+                  const matchesStrategy = !openTradesStrategyFilter || trade.strategy_name === openTradesStrategyFilter
+                  const matchesType = !openTradesStrategyTypeFilter || trade.strategy_type === openTradesStrategyTypeFilter
+                  return matchesStrategy && matchesType
+                })
                 .map(({ trade, instance_name, strategy_name, instance_id, run_id, boundary_time: _boundaryTime }) => {
                   const { pnl, pnlPercent, currentPrice } = calculateUnrealizedPnL(trade)
                   // Check if trade is filled before checking for SL/TP
@@ -1801,16 +1916,58 @@ export function SimulatorPage() {
             </div>
           )}
         </CardContent>
+          </>
+        )}
       </Card>
 
       {/* Closed Trades Section */}
       <Card className="bg-slate-800 border-slate-700">
         <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2">
-            <CheckCircle className="w-5 h-5 text-green-400" />
-            Closed Paper Trades ({closedTrades.length})
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-green-400" />
+              Closed Paper Trades ({closedTrades.length})
+            </CardTitle>
+            <button
+              onClick={() => setClosedTradesExpanded(!closedTradesExpanded)}
+              className="p-1 hover:bg-slate-700 rounded transition-colors"
+              title={closedTradesExpanded ? 'Collapse' : 'Expand'}
+            >
+              <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${closedTradesExpanded ? '' : '-rotate-90'}`} />
+            </button>
+          </div>
         </CardHeader>
+        {closedTradesExpanded && (
+          <>
+            {/* Filters for Closed Trades */}
+            <div className="px-6 pb-4 flex gap-3 flex-wrap">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">Strategy Name</label>
+                <select
+                  value={closedTradesStrategyFilter}
+                  onChange={(e) => setClosedTradesStrategyFilter(e.target.value)}
+                  className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 hover:border-slate-500 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="">All Strategies</option>
+                  {getUniqueStrategyNames(closedTrades).map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-400">Strategy Type</label>
+                <select
+                  value={closedTradesStrategyTypeFilter}
+                  onChange={(e) => setClosedTradesStrategyTypeFilter(e.target.value)}
+                  className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 hover:border-slate-500 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="">All Types</option>
+                  {getUniqueStrategyTypes(closedTrades).map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
         <CardContent>
           {closedTrades.length === 0 ? (
             <div className="text-center py-8 text-slate-400">
@@ -1820,6 +1977,11 @@ export function SimulatorPage() {
             <div className="space-y-3">
               {[...closedTrades]
                 .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                .filter(trade => {
+                  const matchesStrategy = !closedTradesStrategyFilter || trade.strategy_name === closedTradesStrategyFilter
+                  const matchesType = !closedTradesStrategyTypeFilter || trade.strategy_type === closedTradesStrategyTypeFilter
+                  return matchesStrategy && matchesType
+                })
                 .map(trade => {
                   const isWin = trade.pnl > 0
                   const isLong = trade.side === 'Buy'
@@ -2274,22 +2436,69 @@ export function SimulatorPage() {
             </div>
           )}
         </CardContent>
+          </>
+        )}
       </Card>
 
       {/* Cancelled Trades Section */}
       {cancelledTrades.length > 0 && (
         <Card className="bg-slate-800 border-slate-700">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-orange-400" />
-              Cancelled Trades ({cancelledTrades.length})
-              <span className="text-xs text-slate-500 font-normal ml-2">Max bars exceeded</span>
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-orange-400" />
+                Cancelled Trades ({cancelledTrades.length})
+                <span className="text-xs text-slate-500 font-normal ml-2">Max bars exceeded</span>
+              </CardTitle>
+              <button
+                onClick={() => setCancelledTradesExpanded(!cancelledTradesExpanded)}
+                className="p-1 hover:bg-slate-700 rounded transition-colors"
+                title={cancelledTradesExpanded ? 'Collapse' : 'Expand'}
+              >
+                <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${cancelledTradesExpanded ? '' : '-rotate-90'}`} />
+              </button>
+            </div>
           </CardHeader>
+          {cancelledTradesExpanded && (
+            <>
+              {/* Filters for Cancelled Trades */}
+              <div className="px-6 pb-4 flex gap-3 flex-wrap">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-slate-400">Strategy Name</label>
+                  <select
+                    value={cancelledTradesStrategyFilter}
+                    onChange={(e) => setCancelledTradesStrategyFilter(e.target.value)}
+                    className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 hover:border-slate-500 focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="">All Strategies</option>
+                    {getUniqueStrategyNames(cancelledTrades).map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-slate-400">Strategy Type</label>
+                  <select
+                    value={cancelledTradesStrategyTypeFilter}
+                    onChange={(e) => setCancelledTradesStrategyTypeFilter(e.target.value)}
+                    className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 hover:border-slate-500 focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="">All Types</option>
+                    {getUniqueStrategyTypes(cancelledTrades).map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
           <CardContent>
             <div className="space-y-3">
               {[...cancelledTrades]
                 .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                .filter(trade => {
+                  const matchesStrategy = !cancelledTradesStrategyFilter || trade.strategy_name === cancelledTradesStrategyFilter
+                  const matchesType = !cancelledTradesStrategyTypeFilter || trade.strategy_type === cancelledTradesStrategyTypeFilter
+                  return matchesStrategy && matchesType
+                })
                 .map(trade => {
                   const isWin = trade.pnl > 0
                   const isLong = trade.side === 'Buy'
@@ -2657,6 +2866,8 @@ export function SimulatorPage() {
                 })}
             </div>
           </CardContent>
+            </>
+          )}
         </Card>
       )}
 
