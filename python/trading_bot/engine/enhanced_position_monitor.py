@@ -847,18 +847,20 @@ class EnhancedPositionMonitor:
                 logger.warning(f"Failed to get monitoring metadata from strategy: {e}")
 
         # Check if strategy specifies age-based cancellation override
-        # (e.g., spread-based strategies ALWAYS have age-based cancellation enabled)
+        # (e.g., spread-based strategies may have age-based cancellation config)
         strategy_age_cancellation_config = None
         if monitoring_metadata and "enable_age_cancellation" in monitoring_metadata:
-            # Strategy overrides global config
+            # RESPECT the database setting - don't let strategy override it
+            age_cancellation_enabled = self.age_cancellation_config.enabled
+
             strategy_age_cancellation_config = AgeCancellationConfig(
-                enabled=monitoring_metadata["enable_age_cancellation"],
+                enabled=age_cancellation_enabled,  # Use database setting, not strategy's
                 max_age_bars=monitoring_metadata.get("age_cancellation_bars", {}),
                 max_age_seconds=monitoring_metadata.get("age_cancellation_seconds")
             )
             logger.debug(
                 f"[{instance_id}] Using strategy-specific age cancellation config: "
-                f"enabled={strategy_age_cancellation_config.enabled}, "
+                f"enabled={strategy_age_cancellation_config.enabled} (from database), "
                 f"seconds={strategy_age_cancellation_config.max_age_seconds}, "
                 f"bars={strategy_age_cancellation_config.max_age_bars}"
             )
