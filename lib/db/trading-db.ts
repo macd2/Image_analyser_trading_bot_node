@@ -54,7 +54,7 @@ function getPgPool(): Pool {
       max: 10,                    // Maximum connections in pool
       idleTimeoutMillis: 30000,   // Close idle connections after 30s
       connectionTimeoutMillis: 10000,  // Wait max 10s for connection
-      allowExitOnIdle: true       // Allow process to exit when pool is idle
+      allowExitOnIdle: false      // Don't auto-close pool - we manage lifecycle
     });
 
     // Handle connection errors gracefully - reset pool on fatal errors
@@ -119,7 +119,9 @@ async function pgQueryWithRetry<T>(
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const result: QueryResult = await pool.query(sql, params);
+      // Get fresh pool on retry (in case previous one was reset)
+      const currentPool = attempt > 0 ? getPgPool() : pool;
+      const result: QueryResult = await currentPool.query(sql, params);
       return result.rows as T[];
     } catch (err) {
       lastError = err as Error;
@@ -229,7 +231,9 @@ async function pgExecuteWithRetry(
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const result: QueryResult = await pool.query(sql, params);
+      // Get fresh pool on retry (in case previous one was reset)
+      const currentPool = attempt > 0 ? getPgPool() : pool;
+      const result: QueryResult = await currentPool.query(sql, params);
       return { changes: result.rowCount || 0 };
     } catch (err) {
       lastError = err as Error;
@@ -875,6 +879,14 @@ export const CONFIG_METADATA: Record<string, ConfigMeta> = {
   'strategy_specific.cointegration.min_volume_usd': { type: 'number', category: 'strategy', group: '3. Screener', description: 'Minimum 24h volume (USD)', tooltip: 'Minimum 24h trading volume in USD for pair screening. Filters out low-volume assets. Range: 100000-10000000', order: 28 },
   'strategy_specific.cointegration.batch_size': { type: 'number', category: 'strategy', group: '3. Screener', description: 'Screener batch size', tooltip: 'Number of symbols to process per batch during screening. Affects API call efficiency. Range: 5-50', order: 29 },
   'strategy_specific.cointegration.candle_limit': { type: 'number', category: 'strategy', group: '3. Screener', description: 'Candles per symbol', tooltip: 'Number of candles to fetch per symbol during screening. More candles = more data but slower. Default: 1000. Range: 100-2000', order: 30 },
+
+  // Half-life and mean reversion speed settings
+  'strategy_specific.cointegration.enable_half_life_check': { type: 'boolean', category: 'strategy', group: '3. Cointegration Trade Settings', description: 'Enable half-life validation', tooltip: 'Default: true | Skip entry if mean reversion is too slow (half-life > max_half_life_bars)', order: 39 },
+  'strategy_specific.cointegration.max_half_life_bars': { type: 'number', category: 'strategy', group: '3. Cointegration Trade Settings', description: 'Maximum acceptable half-life (bars)', tooltip: 'Maximum half-life in bars (e.g., 100 1h bars ≈ 4 days). Skips entry if half-life exceeds this. Default: 100. Range: 20-500', order: 40 },
+
+  // Divergence blowup exit settings
+  'strategy_specific.cointegration.enable_divergence_check': { type: 'boolean', category: 'strategy', group: '3. Cointegration Trade Settings', description: 'Enable divergence blowup exit', tooltip: 'Default: true | Exit position if spread diverges too far from entry z-score (|z - z_entry| > threshold)', order: 41 },
+  'strategy_specific.cointegration.divergence_threshold': { type: 'number', category: 'strategy', group: '3. Cointegration Trade Settings', description: 'Divergence threshold (σ)', tooltip: 'Z-score divergence threshold from entry. Exit if |z - z_entry| exceeds this. Default: 4.0. Range: 2.0-6.0', order: 42 },
 };
 
 /**

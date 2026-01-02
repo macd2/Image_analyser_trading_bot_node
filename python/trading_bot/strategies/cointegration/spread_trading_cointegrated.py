@@ -3,7 +3,122 @@ import pandas as pd
 from statsmodels.tsa.stattools import adfuller
 from statsmodels.regression.linear_model import OLS
 import warnings
+import logging
 warnings.filterwarnings('ignore')
+
+logger = logging.getLogger(__name__)
+
+
+def estimate_half_life(spread: np.ndarray | pd.Series, min_samples: int = 20) -> float:
+    """
+    Estimate the mean-reversion half-life of a spread using the Ornstein-Uhlenbeck process.
+
+    The half-life is defined as:  ln(2) / λ, where λ > 0 is the speed of mean reversion.
+    Estimated via linear regression: ΔS_t = -λ * S_{t-1} + ε_t
+
+    Parameters
+    ----------
+    spread : array-like
+        Time series of the spread (e.g., BTC-β*ETH). Must be stationary or near-stationary.
+    min_samples : int, default=20
+        Minimum number of observations required for estimation.
+
+    Returns
+    -------
+    half_life : float
+        Estimated half-life in time units of the input series.
+        - Returns np.inf if λ ≤ 0 (non-mean-reverting)
+        - Returns np.nan if estimation fails (e.g., insufficient data, zero variance)
+
+    Raises
+    ------
+    ValueError: If critical validation fails (logged as CRITICAL)
+    """
+    # Input validation & preprocessing
+    if isinstance(spread, pd.Series):
+        spread = spread.dropna().values
+    else:
+        spread = np.asarray(spread)
+        spread = spread[~np.isnan(spread)]
+
+    # ❌ VALIDATION 1: Insufficient samples
+    if len(spread) < min_samples:
+        logger.warning(
+            f"⚠️  [HALF-LIFE] Insufficient samples for half-life estimation. "
+            f"Got {len(spread)} samples, need minimum {min_samples}. "
+            f"Returning np.nan."
+        )
+        return np.nan
+
+    # Compute lagged spread and first difference
+    spread_lag = spread[:-1]  # S_{t-1}
+    spread_diff = np.diff(spread)  # ΔS_t = S_t - S_{t-1}
+
+    # ❌ VALIDATION 2: Zero variance in lagged series
+    lag_std = np.std(spread_lag)
+    if lag_std < 1e-12:
+        logger.warning(
+            f"⚠️  [HALF-LIFE] Zero variance in lagged spread series. "
+            f"Std dev: {lag_std:.2e} (threshold: 1e-12). "
+            f"Cannot estimate lambda. Returning np.nan."
+        )
+        return np.nan
+
+    # Fit: ΔS_t = -λ * S_{t-1} + ε_t  →  slope = -λ
+    try:
+        from sklearn.linear_model import LinearRegression
+        model = LinearRegression(fit_intercept=True)
+        model.fit(spread_lag.reshape(-1, 1), spread_diff)
+        lambda_hat = -model.coef_[0]  # λ = -slope
+
+        r_squared = model.score(spread_lag.reshape(-1, 1), spread_diff)
+        logger.debug(
+            f"✓ [HALF-LIFE] OLS regression successful. "
+            f"Lambda: {lambda_hat:.6f}, R²: {r_squared:.4f}"
+        )
+    except Exception as e:
+        logger.error(
+            f"❌ [HALF-LIFE] OLS regression failed: {e}. "
+            f"Cannot estimate lambda. Returning np.nan.",
+            exc_info=True
+        )
+        return np.nan
+
+    # ❌ VALIDATION 3: Non-positive lambda (non-stationary)
+    if lambda_hat <= 0:
+        logger.warning(
+            f"⚠️  [HALF-LIFE] Non-positive lambda: {lambda_hat:.6f}. "
+            f"Indicates non-stationarity or trending behavior. "
+            f"Returning np.inf (no mean reversion)."
+        )
+        return np.inf
+
+    # Calculate half-life = ln(2) / λ
+    half_life = np.log(2) / lambda_hat
+
+    # ❌ VALIDATION 4: Non-finite half-life values
+    if not np.isfinite(half_life):
+        logger.error(
+            f"❌ [HALF-LIFE] Non-finite half-life calculated: {half_life}. "
+            f"Lambda: {lambda_hat:.6f}. Returning np.inf."
+        )
+        return np.inf
+
+    # ❌ VALIDATION 5: Extremely large half-life
+    if half_life > 1e6:
+        logger.warning(
+            f"⚠️  [HALF-LIFE] Extremely large half-life: {half_life:.1f} bars. "
+            f"Lambda: {lambda_hat:.2e}. Indicates very slow mean reversion. "
+            f"Returning np.inf."
+        )
+        return np.inf
+
+    # ✅ SUCCESS
+    logger.debug(
+        f"✓ [HALF-LIFE] Successfully estimated half-life: {half_life:.2f} bars. "
+        f"Lambda: {lambda_hat:.6f}, Samples: {len(spread)}"
+    )
+    return float(half_life)
 
 
 def calculate_dynamic_position(

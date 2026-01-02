@@ -20,7 +20,7 @@ import asyncio
 from pathlib import Path
 from datetime import datetime, timedelta
 from trading_bot.strategies.base import BaseAnalysisModule
-from trading_bot.strategies.cointegration.spread_trading_cointegrated import CointegrationStrategy, calculate_dynamic_position
+from trading_bot.strategies.cointegration.spread_trading_cointegrated import CointegrationStrategy, calculate_dynamic_position, estimate_half_life
 from trading_bot.strategies.cointegration.price_levels import calculate_levels
 from trading_bot.strategies.cointegration.run_full_screener import run_screener
 from trading_bot.core.utils import normalize_symbol_for_bybit
@@ -68,6 +68,14 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         "use_soft_vol": False,      # Use soft volatility adjustment for cointegration
         "min_sl_buffer": 1.5,       # Minimum z-distance from entry to stop loss
         "enable_dynamic_sizing": True,  # Enable dynamic position sizing based on edge and volatility
+
+        # Half-life and mean reversion speed settings
+        "enable_half_life_check": True,      # Enable half-life validation at entry
+        "max_half_life_bars": 100,           # Max half-life in bars (e.g., 100 1h bars = ~4 days)
+
+        # Divergence blowup exit settings
+        "enable_divergence_check": True,     # Enable divergence blowup exit
+        "divergence_threshold": 4.0,         # |z - z_entry| > 4.0 triggers exit
     }
 
     DEFAULT_CONFIG = STRATEGY_CONFIG  # Use STRATEGY_CONFIG as default
@@ -477,6 +485,41 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 # Compute z_history for adaptive SL calculation
                 z_history = [abs((s - spread_mean) / spread_std) for s in spread] if spread_std > 0 else []
 
+                # ===== HALF-LIFE CHECK AT ENTRY =====
+                enable_half_life_check = self.get_config_value('enable_half_life_check', True)
+                max_half_life_bars = self.get_config_value('max_half_life_bars', 100)
+
+                # Calculate half-life from spread history
+                half_life = estimate_half_life(spread) if len(spread) >= 20 else np.nan
+
+                # Check if half-life is acceptable
+                if enable_half_life_check and np.isfinite(half_life) and half_life > max_half_life_bars:
+                    logger.warning(
+                        f"⚠️  [ENTRY] Half-life check FAILED for {symbol}/{pair_symbol}. "
+                        f"Half-life: {half_life:.1f} bars exceeds max {max_half_life_bars} bars. "
+                        f"Mean reversion too slow - skipping signal.",
+                        extra={"symbol": symbol, "pair": pair_symbol, "half_life": half_life}
+                    )
+                    self._heartbeat(f"Skipped {symbol}: half-life {half_life:.1f} > {max_half_life_bars}")
+                    results.append({
+                        "symbol": symbol,
+                        "recommendation": "HOLD",
+                        "confidence": 0.0,
+                        "entry_price": None,
+                        "stop_loss": None,
+                        "take_profit": None,
+                        "risk_reward": 0,
+                        "setup_quality": 0.0,
+                        "market_environment": 0.5,
+                        "analysis": {"error": f"Half-life {half_life:.1f} bars exceeds max {max_half_life_bars}"},
+                        "chart_path": "",
+                        "timeframe": analysis_timeframe,
+                        "cycle_id": cycle_id,
+                        "skipped": True,
+                        "skip_reason": f"Half-life {half_life:.1f} > {max_half_life_bars}",
+                    })
+                    continue
+
                 # Convert aligned dataframe back to candle format for price level calculation
                 # This ensures we use prices at the same timestamp as the signal
                 aligned_candles_1 = [
@@ -501,7 +544,8 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                     beta=beta,
                     spread_mean=spread_mean,
                     spread_std=spread_std,
-                    z_history=z_history
+                    z_history=z_history,
+                    half_life=half_life
                 )
 
                 self._validate_output(recommendation)
@@ -554,6 +598,7 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
         spread_mean: Optional[float] = None,
         spread_std: Optional[float] = None,
         z_history: Optional[List[float]] = None,
+        half_life: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Convert cointegration signal to analyzer format with calculated price levels."""
         z_score = signal['z_score']
@@ -721,12 +766,15 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
 
                 # Adaptive stop loss (DYNAMIC - calculated from z_history)
                 "max_spread_deviation": float(adaptive_sl_z),
+
+                # Mean reversion speed (FROZEN - for exit logic and monitoring)
+                "half_life": float(half_life) if half_life is not None and np.isfinite(half_life) else None,
             }
 
             # TASK 11: Validate metadata has all required fields
             required_fields = [
                 "beta", "spread_mean", "spread_std", "z_exit_threshold",
-                "pair_symbol", "z_score_at_entry", "max_spread_deviation"
+                "pair_symbol", "z_score_at_entry", "max_spread_deviation", "half_life"
             ]
             for field in required_fields:
                 if field not in strategy_metadata or strategy_metadata[field] is None:
@@ -1085,6 +1133,48 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
             spread = pair_price - beta * current_price
             z_score = (spread - spread_mean) / spread_std if spread_std > 0 else 0
 
+            # ===== DIVERGENCE BLOWUP CHECK (BEFORE other exits) =====
+            z_score_at_entry = metadata.get("z_score_at_entry")
+            enable_divergence_check = self.get_config_value('enable_divergence_check', True)
+            divergence_threshold = self.get_config_value('divergence_threshold', 4.0)
+
+            # Check divergence blowup (|z - z_entry| > threshold)
+            if enable_divergence_check and z_score_at_entry is not None and divergence_threshold > 0:
+                divergence = abs(z_score - z_score_at_entry)
+                if divergence > divergence_threshold:
+                    logger.warning(
+                        f"⚠️  [EXIT] Divergence blowup detected for {trade.get('symbol')}. "
+                        f"Z-score diverged {divergence:.2f} from entry {z_score_at_entry:.2f}. "
+                        f"Current z-score: {z_score:.2f}. Threshold: {divergence_threshold}. "
+                        f"Closing position.",
+                        extra={
+                            "symbol": trade.get('symbol'),
+                            "pair": pair_symbol,
+                            "z_score_at_entry": z_score_at_entry,
+                            "z_score_current": z_score,
+                            "divergence": divergence,
+                            "threshold": divergence_threshold
+                        }
+                    )
+                    return {
+                        "should_exit": True,
+                        "exit_details": {
+                            "reason": "divergence_blowup",
+                            "z_score": float(z_score),
+                            "z_score_at_entry": float(z_score_at_entry),
+                            "divergence": float(divergence),
+                            "threshold": float(divergence_threshold),
+                            "divergence_exceeded": True,
+                            "spread": float(spread),
+                            "beta": float(beta),
+                            "spread_mean": float(spread_mean),
+                            "spread_std": float(spread_std),
+                            "pair_symbol": pair_symbol,
+                            "current_price": float(current_price),
+                            "pair_price": float(pair_price),
+                        }
+                    }
+
             # TASK 1.2: Get adaptive max_spread_deviation from metadata (stored at entry time)
             # NO FALLBACK - must be in metadata
             max_spread_deviation = metadata.get("max_spread_deviation")
@@ -1269,6 +1359,30 @@ class CointegrationAnalysisModule(BaseAnalysisModule):
                 "type": "float",
                 "default": 0.5,
                 "description": "Minimum z-score distance to SL for signal validation",
+            },
+
+            # Half-life and mean reversion speed settings
+            "enable_half_life_check": {
+                "type": "boolean",
+                "default": True,
+                "description": "Enable half-life validation at entry (skip if mean reversion is too slow)",
+            },
+            "max_half_life_bars": {
+                "type": "number",
+                "default": 100,
+                "description": "Maximum acceptable half-life in bars (e.g., 100 1h bars ≈ 4 days)",
+            },
+
+            # Divergence blowup exit settings
+            "enable_divergence_check": {
+                "type": "boolean",
+                "default": True,
+                "description": "Enable divergence blowup exit (|z - z_entry| > threshold triggers exit)",
+            },
+            "divergence_threshold": {
+                "type": "float",
+                "default": 4.0,
+                "description": "Z-score divergence threshold from entry (e.g., 4.0 = 4σ away from entry)",
             },
         }
 
