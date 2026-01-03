@@ -689,12 +689,17 @@ function findFillCandle(
  *
  * The signal is generated when z-score crosses the entry threshold (e.g., z >= 2.0 or z <= -2.0).
  * The trade should fill at the FIRST CANDLE after signal generation.
+ *
+ * CRITICAL: signalTime is required to find the correct fill candle.
+ * The candles array includes lookback period (before signal time) + walk-forward period (after signal time).
+ * We must find the FIRST CANDLE AT OR AFTER signalTime, not just use index 0.
  */
 function findSpreadBasedFillCandle(
   mainCandles: Candle[],
   pairCandles: Candle[],
   entryPrice: number,
-  pairEntryPrice: number
+  pairEntryPrice: number,
+  signalTime: number // Unix timestamp in ms - REQUIRED to find correct fill candle
 ): FillResult {
   // Signal-based fill: Trade fills at the FIRST CANDLE after signal generation
   // This is because the signal was already generated when the trade was created
@@ -704,10 +709,29 @@ function findSpreadBasedFillCandle(
     return { filled: false, fillPrice: null, fillTimestamp: null, fillCandleIndex: -1 };
   }
 
-  // For signal-based trades, fill at the first candle
-  // This represents the trade filling at the signal time (or next candle)
-  const mainCandle = mainCandles[0];
-  const pairCandle = pairCandles[0];
+  // CRITICAL: Find the first candle AT OR AFTER signal time
+  // The candles array includes lookback period, so we can't just use index 0
+  let fillCandleIndex = -1;
+  for (let i = 0; i < mainCandles.length; i++) {
+    const candleTs = normalizeTimestamp(mainCandles[i].timestamp);
+    if (candleTs !== null && candleTs >= signalTime) {
+      fillCandleIndex = i;
+      break;
+    }
+  }
+
+  // If no candle found at or after signal time, trade cannot fill
+  if (fillCandleIndex === -1) {
+    return { filled: false, fillPrice: null, fillTimestamp: null, fillCandleIndex: -1 };
+  }
+
+  // Find corresponding pair candle at same index
+  if (fillCandleIndex >= pairCandles.length) {
+    return { filled: false, fillPrice: null, fillTimestamp: null, fillCandleIndex: -1 };
+  }
+
+  const mainCandle = mainCandles[fillCandleIndex];
+  const pairCandle = pairCandles[fillCandleIndex];
 
   // Verify we have valid candles with prices
   if (!mainCandle || !pairCandle || mainCandle.close <= 0 || pairCandle.close <= 0) {
@@ -720,7 +744,7 @@ function findSpreadBasedFillCandle(
     filled: true,
     fillPrice: entryPrice,
     fillTimestamp: mainCandle.timestamp,
-    fillCandleIndex: 0,
+    fillCandleIndex: fillCandleIndex,
     pair_fill_price: pairEntryPrice
   };
 }
@@ -1482,7 +1506,8 @@ export async function POST() {
             candlesAfterCreation,
             pairCandlesForExit.length > 0 ? pairCandlesForExit : [],  // Pass full pair candles array
             entryPrice,
-            pairEntryPrice
+            pairEntryPrice,
+            signalTime  // CRITICAL: Pass signal time to find correct fill candle
           );
 
           if (fillResult.filled) {
